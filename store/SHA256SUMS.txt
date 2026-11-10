@@ -1,0 +1,4 @@
+9320d9eb806640a44aa2222bc7ba09e4d8fba602ecaa678dbc191f938ab7aa33  app-arm64-v8a-release.apk
+ee517c90e1cfde255da1862b48f9b7a90c714212ceda466ee22425a3800a8700  app-armeabi-v7a-release.apk
+1bc8d2ec9d72abeb49b47f87ebac8a6821615538a7e4a592d0fd0e6b1be2f70f  app-x86_64-release.apk
+Signing certificate SHA-256: 959a8a3e4986bcf1651d3b7a90aaaf9e8631f0b83e77b1401ca61b3bb5f19c05

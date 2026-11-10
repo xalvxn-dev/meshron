@@ -1,0 +1,76 @@
+name: Build iPhone .ipa
+
+# Builds an unsigned Meshron.ipa on GitHub's macOS runners. Install it with Sideloadly using
+# your own Apple ID (it re-signs the app; free accounts must reinstall every 7 days).
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install networking packages
+        run: npm ci || npm install
+
+      - name: Pack the worklet (shared host + networking)
+        run: npx bare-pack --preset ios --linked --out cross/ios/app.bundle cross/core/boot-bare.js
+
+      - name: Link native addons into xcframeworks
+        run: |
+          npx bare-link --preset ios --out cross/ios/addons cross/core/boot-bare.js
+          ls cross/ios/addons
+
+      - name: List addons for XcodeGen
+        run: |
+          cd cross/ios
+          {
+            echo "targets:"
+            echo "  Meshron:"
+            echo "    dependencies:"
+            for f in addons/*.xcframework; do
+              echo "      - framework: $f"
+              echo "        embed: true"
+              echo "        codeSign: false"
+            done
+          } > addons.yml
+          cat addons.yml
+
+      - name: Copy the screens
+        run: cp -R cross/ui cross/ios/App/ui
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd cross/ios && xcodegen generate
+
+      - name: Build
+        run: |
+          cd cross/ios
+          xcodebuild -project Meshron.xcodeproj -scheme Meshron -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+          test -d build/Build/Products/Release-iphoneos/Meshron.app
+
+      - name: Package .ipa
+        run: |
+          cd cross/ios
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Meshron.app Payload/
+          zip -qry Meshron-unsigned.ipa Payload
+          ls -la Meshron-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Meshron-iPhone
+          path: cross/ios/Meshron-unsigned.ipa
+          retention-days: 30

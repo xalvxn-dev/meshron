@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'">
+  <title>Meshron</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="boot"><div class="boot-logo"></div></div>
+  <div id="onboarding" hidden></div>
+  <div id="shell" hidden>
+    <nav id="rail"></nav>
+    <section id="side"></section>
+    <main id="main"></main>
+  </div>
+  <div id="layer"></div>
+  <div id="toasts"></div>
+  <input id="file-input" type="file" multiple hidden>
+  <script src="vendor/qrcode.js"></script>
+  <script src="bridge.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

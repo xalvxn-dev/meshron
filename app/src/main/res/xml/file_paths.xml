@@ -1,0 +1,5 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Only chat files are shareable with other apps (to open them); never the logs or keys. -->
+<paths>
+    <files-path name="chatfiles" path="chatfiles/" />
+</paths>

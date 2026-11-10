@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Meshron" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
+    <color name="app_background">#FF07050C</color>
+</resources>

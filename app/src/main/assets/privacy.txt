@@ -1,0 +1,52 @@
+Meshron Privacy Policy
+
+Last updated: 10 November 2026
+
+Meshron is a messaging app by xalvxnLab. Messages and calls go directly between phones, end-to-end encrypted. xalvxnLab collects no data about you and can't read your messages or calls.
+
+What we collect
+
+Nothing. Meshron has no accounts, no analytics, no ads and no crash reporting. xalvxnLab never receives your messages, contacts, phone number, location or any other data.
+
+What stays on your phone
+
+• Your identity key. It is created on your phone and locked with Android Keystore.
+• Your messages, files and contacts. They are stored in encrypted form (SQLCipher database, Keystore-encrypted contact list).
+• Your recovery key. It is shown only when you ask for it. Anyone who has it can use your Meshron ID, so keep it private.
+
+Uninstalling Meshron deletes all of this from your phone. You can also delete single messages or whole chats at any time. Other people keep their own copies of chats you had with them.
+
+How connections work, and what others can see
+
+Meshron is peer-to-peer:
+
+• Internet: Meshron uses the Hyperswarm network (a public, distributed hash table) to find your contacts. As with any peer-to-peer system:
+    ◦ Other nodes on that network can see your public Meshron ID and your IP address and port.
+    ◦ Phones you connect to can see your IP address.
+    ◦ If two phones can't connect directly (common on mobile data), the connection goes through a relay: another Meshron phone with an open connection, or a relay run by xalvxnLab. A relay only passes on encrypted data it cannot read. It sees the two IP addresses, and keeps no logs of them.
+    ◦ If you choose an @username, it is announced on this network in hashed form so others can look you up. Anyone who searches that exact @username can find your public ID.
+• Same Wi-Fi, Bluetooth and Wi-Fi Direct: nearby phones running Meshron see a random code that changes each time the app starts, never your ID.
+• Encryption: every connection is encrypted end to end (Noise protocol). Messages are also encrypted and signed, so nobody can read or alter them on the way.
+• Passing messages on: if "Help pass messages on" is switched on, your phone may store other people's encrypted messages and hand them over when it meets the recipient. Your phone cannot read them, and they are not linked to anyone it can identify.
+
+You can switch the internet, Wi-Fi, Bluetooth and message passing on or off in the Me tab.
+
+Permissions
+
+• Nearby devices, Bluetooth, Wi-Fi, location: To find and connect to Meshron phones nearby without internet. Android requires location permission for Bluetooth scanning. Meshron never reads or stores your location.
+• Microphone: Voice and video calls, only while a call is running. Nothing is recorded.
+• Camera: Video calls and scanning QR codes, only while you use them. Nothing is recorded.
+• Notifications: To tell you about new messages and calls. These are created on your phone, not sent by a server.
+• Run in background (foreground service): "Stay connected" and ongoing calls, so messages and calls keep working while the app is closed.
+
+Children
+
+Meshron is not directed at children under 13.
+
+Changes
+
+If this policy changes, the new version will be published at the same address with a new date.
+
+Contact
+
+Questions: baxxkid@gmail.com

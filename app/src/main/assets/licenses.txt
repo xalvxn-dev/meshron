@@ -1,0 +1,24 @@
+Meshron is built with these open-source projects. Thank you to their authors.
+
+Bare, Bare Kit, Hyperswarm, HyperDHT, Hypercore, Corestore, Hyperblobs, Protomux, compact-encoding, @hyperswarm/secret-stream, streamx, b4a, z32 (Holepunch)
+License: Apache-2.0 / MIT
+
+libsodium and sodium-universal
+License: ISC
+
+SQLCipher for Android (Zetetic)
+License: BSD-style (SQLCipher Community Edition)
+
+ZXing ("Zebra Crossing") and ZXing Android Embedded
+License: Apache-2.0
+
+AndroidX, Jetpack Compose, Material Components and Material Icons (Google)
+License: Apache-2.0
+
+Kotlin and kotlinx.coroutines (JetBrains)
+License: Apache-2.0
+
+Google Play services Nearby Connections (Google)
+License: Android Software Development Kit License
+
+Full license texts: https://www.apache.org/licenses/LICENSE-2.0, https://opensource.org/license/mit, https://opensource.org/license/isc-license-txt, https://www.zetetic.net/sqlcipher/license/

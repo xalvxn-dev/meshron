@@ -1,8 +1,8 @@
 # Meshron Privacy Policy
 
-_Last updated: 9 November 2026_
+_Last updated: 10 November 2026_
 
-Meshron is a messaging app by xalvxnLab. Messages and calls go directly between phones. **xalvxnLab runs no servers for Meshron and collects no data about you.**
+Meshron is a messaging app by xalvxnLab. Messages and calls go directly between phones, end-to-end encrypted. **xalvxnLab collects no data about you and can't read your messages or calls.**
 
 ## What we collect
 
@@ -23,6 +23,7 @@ Meshron is peer-to-peer:
 - **Internet:** Meshron uses the Hyperswarm network (a public, distributed hash table) to find your contacts. As with any peer-to-peer system:
   - Other nodes on that network can see your public Meshron ID and your IP address and port.
   - Phones you connect to can see your IP address.
+  - If two phones can't connect directly (common on mobile data), the connection goes through a relay: another Meshron phone with an open connection, or a relay run by xalvxnLab. A relay only passes on encrypted data it cannot read. It sees the two IP addresses, and keeps no logs of them.
   - If you choose an @username, it is announced on this network in hashed form so others can look you up. Anyone who searches that exact @username can find your public ID.
 - **Same Wi-Fi, Bluetooth and Wi-Fi Direct:** nearby phones running Meshron see a random code that changes each time the app starts, never your ID.
 - **Encryption:** every connection is encrypted end to end (Noise protocol). Messages are also encrypted and signed, so nobody can read or alter them on the way.
