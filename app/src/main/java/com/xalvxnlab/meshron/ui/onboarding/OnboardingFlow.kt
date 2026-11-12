@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -144,9 +146,14 @@ private fun CreateIdentityScreen(repo: IdentityRepository) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(48.dp))
-        Avatar(Identity.cleanName(name).ifEmpty { "?" }, "me", 88.dp)
-        Spacer(Modifier.height(24.dp))
+        // Small phones: with the keyboard open, drop the big avatar so Continue stays in view.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        val typing = WindowInsets.isImeVisible
+        if (!typing) {
+            Spacer(Modifier.height(48.dp))
+            Avatar(Identity.cleanName(name).ifEmpty { "?" }, "me", 88.dp)
+            Spacer(Modifier.height(24.dp))
+        }
         Text("What should friends call you?", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
         Text(
@@ -175,6 +182,8 @@ private fun CreateIdentityScreen(repo: IdentityRepository) {
             enabled = !busy,
             isError = handleProblem != null,
             supportingText = { Text(handleProblem ?: "Friends can find you by it. You can change it later.") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (valid && !busy) submit() }),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(16.dp))

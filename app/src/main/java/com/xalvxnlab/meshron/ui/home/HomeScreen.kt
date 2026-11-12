@@ -1,6 +1,11 @@
 package com.xalvxnlab.meshron.ui.home
 
 import android.content.Context
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Close
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.automirrored.rounded.Chat
@@ -218,53 +223,50 @@ fun HomeScreen(
             containerColor = Color.Transparent,
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             topBar = {
-                AnimatedContent(targetState = searching, transitionSpec = {
-                    fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                }, label = "topbar") { isSearching ->
-                    if (isSearching) {
-                        TopAppBar(
-                            title = {
-                                TextField(
-                                    value = query,
-                                    onValueChange = { query = it },
-                                    placeholder = { Text(if (current == Tab.Chats) "Search chats" else "Search contacts") },
-                                    leadingIcon = { Icon(Icons.Rounded.Search, null, tint = MeshColors.TextSecondary) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(14.dp),
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = MeshColors.Surface2,
-                                        unfocusedContainerColor = MeshColors.Surface2,
-                                        focusedIndicatorColor = Color.Transparent,
-                                        unfocusedIndicatorColor = Color.Transparent,
-                                    ),
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                )
-                            },
-                            actions = {
-                                TextButton(onClick = { searching = false; query = "" }) { Text("Cancel") }
-                            },
-                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MeshColors.Bg),
+                // Same header as the iPhone app: big title, SOS, status, quick actions on one
+                // line, and the search bar always there underneath.
+                Column(Modifier.fillMaxWidth().background(MeshColors.Bg).statusBarsPadding().padding(start = 20.dp, end = 10.dp, top = 12.dp, bottom = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            current.title, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp, letterSpacing = (-0.5).sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                         )
-                    } else {
-                        MediumTopAppBar(
-                            title = { Text(current.title, fontWeight = FontWeight.ExtraBold) },
-                            actions = {
-                                // Emergency SOS, always one tap away.
-                                Box(
-                                    Modifier.padding(end = 6.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE5243B))
-                                        .clickable { showSos = true }.padding(horizontal = 12.dp, vertical = 6.dp),
-                                ) { Text("SOS", color = Color.White, fontWeight = FontWeight.Black) }
-                                StatusPill(net) { tab = Tab.Profile.ordinal }
-                                if (current != Tab.Profile) {
-                                    IconButton(onClick = { searching = true }) { Icon(Icons.Rounded.Search, "Search") }
-                                } else Spacer(Modifier.width(8.dp))
-                            },
-                            scrollBehavior = scrollBehavior,
-                            colors = TopAppBarDefaults.mediumTopAppBarColors(
-                                containerColor = MeshColors.Bg,
-                                scrolledContainerColor = MeshColors.Surface1,
+                        // Emergency SOS, always one tap away.
+                        Box(
+                            Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFE5243B))
+                                .clickable { showSos = true }.padding(horizontal = 13.dp, vertical = 7.dp),
+                        ) { Text("SOS", color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp) }
+                        StatusPill(net, compact = true) { tab = Tab.Profile.ordinal }
+                        when (current) {
+                            Tab.Chats -> {
+                                IconButton(onClick = { creatingGroup = true }) { Icon(Icons.Outlined.People, "New group", tint = MeshColors.TextSecondary) }
+                                IconButton(onClick = { addingContact = true }) { Icon(Icons.Rounded.PersonAdd, "Add contact", tint = MeshColors.TextSecondary) }
+                            }
+                            Tab.Contacts -> IconButton(onClick = { addingContact = true }) { Icon(Icons.Rounded.PersonAdd, "Add contact", tint = MeshColors.TextSecondary) }
+                            Tab.Profile -> Spacer(Modifier.width(8.dp))
+                        }
+                    }
+                    if (current != Tab.Profile) {
+                        Spacer(Modifier.height(10.dp))
+                        TextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text(if (current == Tab.Chats) "Search chats and messages" else "Search contacts", color = MeshColors.TextTertiary) },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null, tint = MeshColors.TextTertiary) },
+                            trailingIcon = if (query.isNotEmpty()) ({
+                                IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear", tint = MeshColors.TextTertiary) }
+                            }) else null,
+                            singleLine = true,
+                            shape = RoundedCornerShape(50),
+                            textStyle = MaterialTheme.typography.bodyLarge,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MeshColors.Surface2,
+                                unfocusedContainerColor = MeshColors.Surface2,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = MeshColors.GradMid,
                             ),
+                            modifier = Modifier.fillMaxWidth().padding(end = 10.dp).heightIn(min = 50.dp),
                         )
                     }
                 }
@@ -358,7 +360,7 @@ fun HomeScreen(
 
 /** One-glance network status. Tap to see the details in the Me tab. */
 @Composable
-private fun StatusPill(net: NetworkState, onClick: () -> Unit) {
+private fun StatusPill(net: NetworkState, compact: Boolean = false, onClick: () -> Unit) {
     val connected = net.peers.values.count { it.state == PeerInfo.State.CONNECTED }
     val (label, color) = when (net.status) {
         NetworkState.Status.FAILED -> "Problem" to MeshColors.Danger
@@ -379,9 +381,11 @@ private fun StatusPill(net: NetworkState, onClick: () -> Unit) {
                 0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "dot",
             ).value
         } else 1f
-        Box(Modifier.size(8.dp).graphicsLayer { this.alpha = alpha }.background(color, CircleShape))
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MeshColors.TextSecondary)
+        Box(Modifier.size(if (compact) 10.dp else 8.dp).graphicsLayer { this.alpha = alpha }.background(color, CircleShape))
+        if (!compact) {
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MeshColors.TextSecondary)
+        }
     }
 }
 

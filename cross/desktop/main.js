@@ -29,6 +29,7 @@ let win = null
 let tray = null
 let quitting = false
 let pendingLink = null
+const startHidden = process.argv.includes('--hidden')
 
 // ---- Secrets (DPAPI) --------------------------------------------------------------
 
@@ -58,12 +59,37 @@ const send = (ev, data) => {
   if (win && !win.isDestroyed()) win.webContents.send('host-event', ev, data)
 }
 let unread = 0
+let settings = { notifications: true }
 function emit(ev, data) {
   if (ev === 'summaries') {
     unread = data.reduce((n, s) => n + s.unread, 0)
     updateTray()
   }
+  if (ev === 'prefs' && data && data.settings) settings = data.settings
+  if (ev === 'incoming') notifyMessage(data)
   send(ev, data)
+}
+
+/**
+ * Message alerts come from here, not the page, so they show whenever the window is
+ * minimised, hidden in the tray or in the background (Windows can pause a hidden page).
+ */
+function notifyMessage({ conv, row, title }) {
+  if (settings.notifications === false || !row || !Notification.isSupported()) return
+  const away = !win || win.isDestroyed() || !win.isVisible() || win.isMinimized() || !win.isFocused()
+  if (!away) return
+  const reply = /^↩ .*\n([\s\S]+)$/.exec(row.body || '')
+  const body = row.kind === 'file' ? 'Sent a file'
+    : row.kind === 'invite' ? 'Added you to a group'
+    : row.kind === 'text' ? (reply ? reply[1] : row.body)
+    : null
+  if (!body) return
+  const n = new Notification({ title: String(title || 'Meshron'), body: String(body).slice(0, 200), icon: iconPath })
+  n.on('click', () => {
+    showWindow()
+    if (conv) send('open-chat', { conv })
+  })
+  n.show()
 }
 
 const { startNodeHost } = require(path.join(bundle, 'core', 'boot-node.js'))
@@ -123,12 +149,15 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: true
+      spellcheck: true,
+      // Keep the chat list, sounds and "online" live while minimised or in the tray.
+      backgroundThrottling: false
     }
   })
   win.removeMenu()
   win.loadFile(path.join(bundle, 'ui', 'index.html'))
-  win.once('ready-to-show', () => win.show())
+  // Started with Windows: stay in the tray (still online, still notifying).
+  if (!startHidden) win.once('ready-to-show', () => win.show())
   if (process.env.MESHRON_SNAPSHOT) {
     const shoot = async (n) => {
       const img = await win.webContents.capturePage()
@@ -205,8 +234,18 @@ app.whenReady().then(() => {
     host.call('init').then((s) => s.identity || host.call('identity.create', { name: process.env.MESHRON_TEST_NAME, handle: '' })).catch((e) => console.error(e))
   }
   pendingLink = linkFrom(process.argv)
+  // Start with Windows, quietly in the tray, so messages and alerts arrive after a restart.
+  // (Can be switched off in Task Manager → Startup apps.)
+  if (app.isPackaged) {
+    const flag = path.join(app.getPath('userData'), 'login-item-set')
+    if (!fs.existsSync(flag)) {
+      app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] })
+      try { fs.writeFileSync(flag, '1') } catch {}
+    }
+  }
   createWindow()
   createTray()
+  host.call('init').then((s) => { if (s && s.prefs && s.prefs.settings) settings = s.prefs.settings }).catch(() => {})
 })
 
 app.on('before-quit', () => {

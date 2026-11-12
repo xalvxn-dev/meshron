@@ -177,21 +177,30 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
     deliver(["ev": "open-link", "data": ["text": link]])
   }
 
-  /// iOS gives a little time after leaving the app; stay online for it, then suspend.
+  /// Leaving the app: stay connected (messages, notifications, "online") until the app is
+  /// swiped away. iOS normally suspends apps after ~30 s; a silent audio session that mixes
+  /// with other audio keeps Meshron running. There's no push server, so once the app is
+  /// swiped away nothing can arrive until it's opened again.
   func enterBackground() {
     inBackground = true
-    writeToWorklet(["lifecycle": "suspend"])
-    backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "meshron-sync") { [weak self] in
-      self?.endBackgroundTask()
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
-      self?.worklet?.suspend(linger: 5000)
-      self?.endBackgroundTask()
+    writeToWorklet(["lifecycle": "flush"])
+    if !KeepAlive.shared.start() {
+      // Couldn't keep running: use the time iOS gives, then suspend cleanly.
+      writeToWorklet(["lifecycle": "suspend"])
+      backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "meshron-sync") { [weak self] in
+        self?.endBackgroundTask()
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
+        guard let self, self.inBackground else { return }
+        self.worklet?.suspend(linger: 5000)
+        self.endBackgroundTask()
+      }
     }
   }
 
   func enterForeground() {
     inBackground = false
+    KeepAlive.shared.stop()
     worklet?.resume()
     writeToWorklet(["lifecycle": "resume"])
     endBackgroundTask()

@@ -61,6 +61,18 @@ fun AppRoot(app: MeshronApp) {
                         askLocal.launch(LocalTransports.allPermissions())
                     }
                 }
+                // Notifications while minimised or closed: allow notifications, and ask once to
+                // keep Meshron out of battery saving (otherwise Android pauses it after a while).
+                val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+                    askBatteryOnce(app)
+                }
+                LaunchedEffect(Unit) {
+                    if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(
+                            app, android.Manifest.permission.POST_NOTIFICATIONS,
+                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    else askBatteryOnce(app)
+                }
                 // Join the swarm once an identity exists (idempotent; also starts the network).
                 LaunchedEffect(Unit) {
                     app.startMessaging()
@@ -93,5 +105,22 @@ fun AppRoot(app: MeshronApp) {
                 if (inCall && !full) CallMini(app.calls, onExpand = { minimized = false })
             }
         }
+    }
+}
+
+/** Asks Android (once) to let Meshron keep running, so messages arrive while it's minimised. */
+@android.annotation.SuppressLint("BatteryLife")
+private fun askBatteryOnce(app: MeshronApp) {
+    val prefs = app.getSharedPreferences("meshron-ui", android.content.Context.MODE_PRIVATE)
+    if (prefs.getBoolean("askedBattery", false)) return
+    val pm = app.getSystemService(android.os.PowerManager::class.java) ?: return
+    if (pm.isIgnoringBatteryOptimizations(app.packageName)) return
+    prefs.edit().putBoolean("askedBattery", true).apply()
+    runCatching {
+        app.startActivity(
+            android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(android.net.Uri.parse("package:" + app.packageName))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }

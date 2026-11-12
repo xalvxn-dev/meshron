@@ -55,6 +55,8 @@ async function onMessage(m) {
     return
   }
   if (m.lifecycle === 'suspend') return host.suspend()
+  // In the background but staying connected: just save everything to disk.
+  if (m.lifecycle === 'flush') return host.flush()
   if (m.lifecycle === 'resume') return host.resume()
   if (m.id == null) return
   try {

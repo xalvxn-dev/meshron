@@ -4,7 +4,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.4.0'
+  const VERSION = '1.5.0'
   const DOWNLOAD_URL = 'https://github.com/xalvxn-dev/meshron/releases/latest'
   const PRIVACY_URL = 'https://xalvxn-dev.github.io/meshron/PRIVACY'
   const GROUP = 'g:'
@@ -1665,6 +1665,7 @@
     if (s.sounds) ping()
     const who = isGroup(conv) && row.senderKey ? `${nameOf(row.senderKey)} in ${title}` : title
     const body = displayBody(row)
+    if (!focused && M.native.alertsInBackground) return // the desktop app shows its own alert
     if (!focused && s.notifications && M.native.notify) return M.native.notify({ title: who, body, conv })
     if (!s.notifications) return
     const note = h('div', { class: 'toast note', onClick: () => { note.remove(); openChat(conv) } },

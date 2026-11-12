@@ -123,7 +123,7 @@ fun ProfileTab(identity: Identity, repo: IdentityRepository, network: NetworkSer
     var showDetails by rememberSaveable { mutableStateOf(false) }
     var selfTest by remember { mutableStateOf<Boolean?>(null) }
     val app = context.applicationContext as MeshronApp
-    val stayConnected by app.settings.stayConnected.collectAsState(initial = false)
+    val stayConnected by app.settings.stayConnected.collectAsState(initial = true)
     val local by app.localTransports.status.collectAsState()
     val useInternet by app.settings.useInternet.collectAsState(initial = true)
     val sameWifi by app.settings.sameWifi.collectAsState(initial = true)

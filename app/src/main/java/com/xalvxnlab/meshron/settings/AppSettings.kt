@@ -22,8 +22,8 @@ class AppSettings(context: Context) {
         store.edit { it[key] = on }
     }
 
-    /** Keep the network running in a foreground service when the app is in the background. */
-    val stayConnected = flag(STAY_CONNECTED, false)
+    /** Keep the network running in a foreground service when the app is in the background (on by default: notifications and "online" while minimised or closed). */
+    val stayConnected = flag(STAY_CONNECTED, true)
     suspend fun setStayConnected(on: Boolean) = set(STAY_CONNECTED, on)
 
     /** Reach contacts over the internet (Hyperswarm). Off = nearby connections only. */

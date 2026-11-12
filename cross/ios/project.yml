@@ -44,6 +44,9 @@ targets:
         NSMicrophoneUsageDescription: Meshron uses the microphone for voice and video calls.
         NSPhotoLibraryUsageDescription: Meshron lets you pick photos to send in a chat.
         NSPhotoLibraryAddUsageDescription: Meshron can save photos you received to your library.
+        NSLocationWhenInUseUsageDescription: Emergency SOS adds your location so your contacts can find you.
+        # Stay connected in the background (silent audio keep-alive) and wake now and then.
+        UIBackgroundModes: [audio, fetch]
         CFBundleURLTypes:
           - CFBundleURLName: com.xalvxnlab.meshron.link
             CFBundleURLSchemes: [meshron]
