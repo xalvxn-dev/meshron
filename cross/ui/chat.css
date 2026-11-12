@@ -112,9 +112,9 @@
 .sos-route .ic { width: 44px; height: 44px; flex: none; border-radius: 50%; background: #e5243b; display: grid; place-items: center; }
 .sos-route b { display: block; font-size: 16px; }
 .sos-route small { display: block; color: rgba(255, 255, 255, .65); font-size: 13px; }
-.bubble.sos, .msg.mine .bubble.sos { background: #e5243b; color: #fff; }
-.bubble.sos .text { font-weight: 600; }
-.bubble.sos .meta { color: rgba(255, 255, 255, .8); }
+.bubble.sos-msg, .msg.mine .bubble.sos-msg { background: #e5243b; color: #fff; }
+.bubble.sos-msg .text { font-weight: 600; }
+.bubble.sos-msg .meta { color: rgba(255, 255, 255, .8); }
 .sos-map { display: inline-block; margin-top: 6px; padding: 5px 12px; border-radius: 999px; background: #fff; color: #e5243b !important; font-weight: 800; font-size: 13px; text-decoration: none !important; }
 
 /* Small phones: header keeps title, SOS and buttons on one line (status shows as a dot). */
@@ -124,23 +124,4 @@
   .side-head { gap: 4px; }
   .side-head .status-pill { font-size: 0; gap: 0; padding: 10px; }
   .side-head .status-pill .net-dot { width: 10px; height: 10px; }
-}
-
-/* ---- Windows / wide screens: the iPhone design on the left, the open chat on the right ---- */
-@media (min-width: 821px) {
-  #shell { grid-template-columns: 400px 1fr; }
-  #side { border-right: 1px solid var(--hair); }
-  /* The floating pill tab bar from the phone, at the bottom of the chat list. */
-  #rail { position: fixed; left: 18px; width: 364px; bottom: 14px; top: auto; z-index: 8; flex-direction: row; height: 64px; padding: 6px; gap: 6px; border-radius: 32px; background: var(--s2); border: 1px solid rgba(255, 255, 255, .07); box-shadow: 0 18px 40px -8px rgba(139, 92, 246, .35), 0 8px 24px rgba(0, 0, 0, .5); }
-  #rail .logo, #rail .rail-spacer, #rail .rail-net { display: none; }
-  .rail-btn { flex: 1; width: auto; height: 100%; border-radius: 26px; display: flex; justify-content: center; align-items: center; gap: 8px; transition: flex .28s var(--ease), background .2s; }
-  .rail-btn.on { flex: 1.7; }
-  .rail-btn.on .label { display: inline; font-weight: 800; font-size: 14px; }
-  .side-body { padding-bottom: 170px; }
-  .fab { bottom: 92px; }
-  .side-head .status-pill { display: inline-flex; }
-  /* Roomier, phone-like chat view. */
-  .msgs { padding-left: max(18px, calc((100% - 820px) / 2)); padding-right: max(18px, calc((100% - 820px) / 2)); }
-  .composer { padding-left: max(10px, calc((100% - 840px) / 2)); padding-right: max(10px, calc((100% - 840px) / 2)); }
-  .reply-bar { padding-left: max(14px, calc((100% - 820px) / 2)); }
 }

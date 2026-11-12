@@ -4,7 +4,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.5.0'
+  const VERSION = '1.5.2'
   const DOWNLOAD_URL = 'https://github.com/xalvxn-dev/meshron/releases/latest'
   const PRIVACY_URL = 'https://xalvxn-dev.github.io/meshron/PRIVACY'
   const GROUP = 'g:'
@@ -411,7 +411,8 @@
           icon(ic, 24), h('span', { class: 'label' }, text), n && st.tab !== id ? h('span', { class: 'badge' }, n > 99 ? '99+' : n) : null)
       }),
       h('div', { class: 'rail-spacer' }),
-      h('button', { class: 'rail-btn rail-net', title: label, onClick: showConnection }, h('span', { class: 'net-dot ' + cls })))
+      h('button', { class: 'rail-sos', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
+      h('button', { class: 'rail-btn rail-net', title: label, onClick: showConnection }, h('span', { class: 'net-dot ' + cls }), h('span', { class: 'label' }, label)))
     const pill = $('#status-pill')
     if (pill) pill.replaceChildren(h('span', { class: 'net-dot ' + cls }), label)
     const total = unreadTotal()
@@ -437,6 +438,7 @@
       h('h1', { class: 't-h1' }, title),
       h('button', { class: 'sos-pill', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
       h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
+      st.tab === 'chats' ? h('button', { class: 'icon-btn desk-only', title: 'New chat (Ctrl+N)', onClick: showNewChat }, icon('edit')) : null,
       st.tab === 'chats' ? h('button', { class: 'icon-btn', title: 'New group', onClick: showNewGroup }, icon('users')) : null,
       st.tab !== 'me' ? h('button', { class: 'icon-btn', title: 'Add contact', onClick: () => showAddContact() }, icon('userPlus')) : null)
     const kids = [head]
@@ -960,7 +962,12 @@
       h('div', { class: 'orb' }, icon('logo', 40)),
       h('div', { class: 't-h1' }, 'Meshron'),
       h('p', {}, 'Pick a chat on the left, or start a new one. Messages go straight to your friends, end-to-end encrypted.'),
-      h('div', { class: 'actions' }, h('button', { class: 'btn primary', onClick: showNewChat }, icon('edit', 18), 'New chat')))))
+      h('div', { class: 'actions' }, h('button', { class: 'btn primary', onClick: showNewChat }, icon('edit', 18), 'New chat'),
+        h('button', { class: 'btn soft', onClick: () => showAddContact() }, icon('userPlus', 18), 'Add contact')),
+      h('div', { class: 'keys' },
+        [['Ctrl', 'K', 'Search'], ['Ctrl', 'N', 'New chat'], ['Alt', '↑ ↓', 'Switch chat'], ['Ctrl', 'I', 'Chat details'], ['Esc', '', 'Close']].map(([a, b, t]) =>
+          h('div', {}, h('kbd', {}, a), b ? h('kbd', {}, b) : null, h('span', {}, t)))))))
+    main.classList.remove('with-details')
     chatEls = null
   }
 
@@ -1033,6 +1040,7 @@
     chatEls.av.replaceChildren(avatar(title, conv, 42, { group: isGroup(conv), online: !isGroup(conv) && isOnline(conv) }))
     const c = !isGroup(conv) && contact(conv)
     chatEls.banner.hidden = !(c && c.status === 'REQUEST')
+    if ($('#details')) renderDetailsSoon()
   }
 
   function buildChat() {
@@ -1095,6 +1103,7 @@
       av, who,
       isGroup(conv) ? null : h('button', { class: 'icon-btn', title: 'Video call', onClick: () => startCall(conv, true) }, icon('video', 22)),
       isGroup(conv) ? null : h('button', { class: 'icon-btn', title: 'Voice call', onClick: () => startCall(conv, false) }, icon('phone', 21)),
+      h('button', { class: 'icon-btn desk-only details-btn', title: 'Details (Ctrl+I)', onClick: toggleDetails }, icon('info', 22)),
       h('button', { class: 'icon-btn', title: 'More', onClick: (e) => { const r = e.currentTarget.getBoundingClientRect(); chatHeadMenu(conv, r.right - 210, r.bottom + 6) } }, icon('more')))
 
     main.classList.add('enter')
@@ -1108,7 +1117,81 @@
     refreshHeader()
     renderMsgs(true)
     if (!isIos && innerWidth > 820) input.focus()
+    renderDetails()
   }
+
+  // ---- Details panel (desktop): who this is, shared photos and files, chat settings ----
+
+  const isDesk = () => matchMedia('(min-width: 821px)').matches
+  let detailsPref = true
+  try { detailsPref = localStorage.getItem('meshron.details') !== '0' } catch {}
+  const detailsOpen = () => !!(chatEls && isDesk() && detailsPref && innerWidth >= 1100)
+  function toggleDetails() {
+    detailsPref = !detailsOpen()
+    try { localStorage.setItem('meshron.details', detailsPref ? '1' : '0') } catch {}
+    if (detailsPref && innerWidth < 1100) toast('Make the window wider to show details')
+    renderDetails()
+  }
+  let detailsTimer = null
+  const renderDetailsSoon = () => { if (!detailsTimer) detailsTimer = setTimeout(() => { detailsTimer = null; renderDetails() }, 200) }
+  function renderDetails() {
+    const old = $('#details')
+    if (!detailsOpen() || !st.open) {
+      if (old) old.remove()
+      main.classList.remove('with-details')
+      return
+    }
+    const conv = st.open
+    const groupChat = isGroup(conv)
+    const c = !groupChat && contact(conv)
+    const g = groupChat && group(conv)
+    const title = convTitle(conv)
+    const [status] = headerStatus(conv)
+    const muted = st.prefs.muted.includes(conv)
+    const pinned = st.prefs.pinned.includes(conv)
+    const photos = []
+    const files = []
+    for (let i = st.rows.length - 1; i >= 0; i--) {
+      const r = st.rows[i]
+      if (r.kind !== 'file' || !r.localPath) continue
+      const fi = fileInfo(r)
+      if (!fi) continue
+      if (fi.mime.startsWith('image/') && fi.size < 12 * 1024 * 1024) { if (photos.length < 9) photos.push([r, fi]) } else if (files.length < 6) files.push([r, fi])
+    }
+    const action = (ic, label, onClick, cls = '') => h('button', { class: 'd-act ' + cls, onClick }, h('span', {}, icon(ic, 20)), label)
+    const panel = h('aside', { class: 'details' + (old ? '' : ' enter'), id: 'details' },
+      h('div', { class: 'd-top' },
+        h('button', { class: 'icon-btn d-close', title: 'Close (Ctrl+I)', onClick: toggleDetails }, icon('x', 20)),
+        avatar(title, conv, 96, { group: groupChat, online: !groupChat && isOnline(conv) }),
+        h('div', { class: 'd-name' }, title, c && c.verified ? h('span', { class: 'd-ver', title: 'Safety code verified' }, icon('verified', 18)) : null),
+        h('div', { class: 'd-sub' }, c && c.handle ? '@' + c.handle + ' · ' : '', status)),
+      h('div', { class: 'd-actions' },
+        groupChat ? null : action('phone', 'Call', () => startCall(conv, false)),
+        groupChat ? null : action('video', 'Video', () => startCall(conv, true)),
+        action(muted ? 'bell' : 'bellOff', muted ? 'Unmute' : 'Mute', () => M.call('prefs.mute', { conv, on: !muted })),
+        action('pin', pinned ? 'Unpin' : 'Pin', () => M.call('prefs.pin', { conv, on: !pinned }))),
+      c ? h('div', { class: 'd-sec' }, h('div', { class: 'd-label' }, 'Meshron ID'),
+        h('button', { class: 'd-id', title: 'Copy', onClick: () => copy(c.id, 'ID copied') }, c.id)) : null,
+      g ? h('div', { class: 'd-sec' }, h('div', { class: 'd-label' }, g.members.length + ' members'),
+        g.members.slice(0, 12).map((k) => h('div', { class: 'd-member' }, avatar(k === st.me.publicKey ? st.me.username : nameOf(k), k, 30, { online: k !== st.me.publicKey && isOnline(k) }),
+          h('span', { class: 'ellipsis' }, k === st.me.publicKey ? 'You' : nameOf(k))))) : null,
+      h('div', { class: 'd-sec' }, h('div', { class: 'd-label' }, 'Photos', photos.length ? h('span', {}, photos.length) : null),
+        photos.length ? h('div', { class: 'd-grid' }, photos.map(([r, fi]) => {
+          const img = h('img', { alt: fi.name })
+          loadBlob(r, fi.mime).then((b) => { img.src = b.url; img.onclick = () => lightbox(r, fi, b.url) }).catch(() => {})
+          return img
+        })) : h('div', { class: 'd-empty' }, 'Photos you share show up here')),
+      files.length ? h('div', { class: 'd-sec' }, h('div', { class: 'd-label' }, 'Files'),
+        files.map(([r, fi]) => h('button', { class: 'd-file', onClick: () => openFile(r) }, icon('file', 18), h('span', { class: 'ellipsis' }, fi.name), h('small', {}, fileSize(fi.size))))) : null,
+      h('div', { class: 'd-sec d-danger' },
+        c ? h('button', { onClick: () => showSafety(conv) }, icon('shield', 18), c.verified ? 'Safety code (verified)' : 'Verify safety code') : null,
+        h('button', { class: 'danger', onClick: () => deleteChat(conv) }, icon('trash', 18), 'Delete chat'),
+        c ? h('button', { class: 'danger', onClick: () => blockContact(conv) }, icon('block', 18), 'Block ' + title) : null))
+    if (old) old.replaceWith(panel)
+    else main.appendChild(panel)
+    main.classList.add('with-details')
+  }
+  window.addEventListener('resize', () => renderDetailsSoon())
 
   let lastTyping = 0
   function renderReplyBar() {
@@ -1429,7 +1512,7 @@
       } else kids.push(h('div', { class: 'text' + (big ? ' big' : '') }, richText(row.body, hl)))
     }
     kids.push(h('div', { class: 'meta' }, row.edited && row.kind === 'text' ? h('span', { class: 'edited' }, 'edited ·') : null, clock(row.sentAt), row.outgoing && row.kind !== 'deleted' ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
-    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos' : '') }, kids)
+    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos-msg' : '') }, kids)
     onContext(b, (x, y) => messageMenu(row, x, y))
     if (row.kind === 'deleted') return b
     // Double-click / double-tap: quick heart.
@@ -2540,7 +2623,7 @@
   M.on('contacts', (list) => { st.contacts = list; renderRail(); renderSide(); refreshHeader() })
   M.on('groups', (list) => { st.groups = list; renderSide(); refreshHeader() })
   M.on('summaries', (list) => { st.summaries = list; renderRail(); if (st.tab === 'chats') renderSide() })
-  M.on('prefs', (p) => { st.prefs = p; renderRail(); renderSide() })
+  M.on('prefs', (p) => { st.prefs = p; renderRail(); renderSide(); if ($('#details')) renderDetailsSoon() })
   M.on('net', (n) => { st.net = n; renderRail(); if (st.tab !== 'me' || true) renderSideSoon(); refreshHeader() })
   M.on('file-status', ({ key, text }) => {
     if (text == null) delete st.fileStatus[key]
@@ -2558,6 +2641,7 @@
     }
     if (added) st.rows.sort((a, b) => a.localTime - b.localTime)
     renderMsgs()
+    if ($('#details') && rows.some((r) => r.kind === 'file')) renderDetailsSoon()
     if (mine) scrollBottom(false)
     updateToBottom()
     if (added) markRead()
@@ -2593,11 +2677,23 @@
       if ($('#menu')) return closeMenu()
       if ($('#emoji')) return $('#emoji').remove()
       if (openModals.length) return openModals[openModals.length - 1].close()
+      if ($('.sos')) return $('.sos').remove()
       if (st.open) return closeChat()
     }
     const mod = e.ctrlKey || e.metaKey
     if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); if (st.tab === 'me') setTab('chats'); const s = $('#search'); if (s) s.focus() }
     if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); if (st.me) showNewChat() }
+    if (mod && e.key.toLowerCase() === 'i' && st.open) { e.preventDefault(); toggleDetails() }
+    // Alt+↑/↓: previous / next chat in the list.
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && st.me) {
+      e.preventDefault()
+      const list = chatRows()
+      if (!list.length) return
+      const i = list.findIndex((r) => r.conv === st.open)
+      const next = e.key === 'ArrowDown' ? (i < 0 ? 0 : Math.min(list.length - 1, i + 1)) : Math.max(0, i - 1)
+      if (st.tab !== 'chats') setTab('chats')
+      openChat(list[next].conv)
+    }
   })
   window.addEventListener('focus', markRead)
   document.addEventListener('visibilitychange', () => { if (!document.hidden) markRead() })

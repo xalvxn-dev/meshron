@@ -1,0 +1,25 @@
+// Test only: screenshots the dev server's screens at a desktop window size.
+// npx electron shot.js <out-prefix> [width] [height]
+const { app, BrowserWindow } = require('electron')
+const fs = require('fs')
+const args = process.argv.slice(2).filter((a) => !a.startsWith('--') && !a.endsWith('shot.js') && a !== '.')
+const [out, w = '1366', hgt = '820'] = args
+app.whenReady().then(async () => {
+  const win = new BrowserWindow({ width: +w, height: +hgt, show: false, webPreferences: { backgroundThrottling: false }, paintWhenInitiallyHidden: true })
+  await win.loadURL('http://127.0.0.1:8787/')
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  const snap = async (name) => fs.writeFileSync(`${out}-${name}.png`, (await win.webContents.capturePage()).toPNG())
+  const run = (js) => win.webContents.executeJavaScript(js)
+  await wait(4000)
+  await snap('home')
+  await run(`(() => { const r = [...document.querySelectorAll('.row')].find((x) => x.textContent.includes('Sam')); r && r.dispatchEvent(new MouseEvent('click', { bubbles: true })) })()`)
+  await wait(2500)
+  await snap('chat')
+  await run(`document.querySelectorAll('.rail-btn')[1].click()`)
+  await wait(1200)
+  await snap('contacts')
+  await run(`document.querySelectorAll('.rail-btn')[2].click()`)
+  await wait(1200)
+  await snap('me')
+  app.quit()
+})
