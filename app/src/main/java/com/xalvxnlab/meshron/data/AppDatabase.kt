@@ -66,6 +66,20 @@ data class MessageEntity(
         const val KIND_TEXT = "text"
         const val KIND_INVITE = "invite"
         const val KIND_FILE = "file"
+        /** A 24-hour story (body: StoryBody JSON), fanned out to each contact's 1:1 log. */
+        const val KIND_STORY = "story"
+        /** A view receipt for a story (body: {"sid": …}). */
+        const val KIND_SEEN = "seen"
+        /** Changes the author's earlier text message (body: {"id": wire ID, "text": …}). */
+        const val KIND_EDIT = "edit"
+        /** Deletes the author's earlier message for everyone (body: {"id": wire ID}). */
+        const val KIND_UNSEND = "unsend"
+        /** Sets the sender's reaction to a message (body: {"id": row ID, "e": emoji or ""}). */
+        const val KIND_REACT = "react"
+        /** What an unsent message becomes on every device: no body, shown as "deleted". */
+        const val KIND_DELETED = "deleted"
+        /** Log entries that aren't shown as chat bubbles. */
+        val HIDDEN_KINDS = setOf(KIND_STORY, KIND_SEEN, KIND_EDIT, KIND_UNSEND, KIND_REACT)
         const val GROUP_PREFIX = "g:"
 
         fun groupConversation(groupId: String) = GROUP_PREFIX + groupId
@@ -116,15 +130,41 @@ data class ConversationSummary(
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM messages WHERE peerKey = :peerKey ORDER BY localTime ASC")
+    @Query("SELECT * FROM messages WHERE peerKey = :peerKey AND kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react') ORDER BY localTime ASC")
     fun conversation(peerKey: String): Flow<List<MessageEntity>>
+
+    /** Edits and reactions in a chat (oldest first), applied on top of the bubbles. */
+    @Query("SELECT * FROM messages WHERE peerKey = :peerKey AND kind IN ('edit', 'react') ORDER BY sentAt ASC")
+    fun modifiers(peerKey: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages WHERE peerKey = :peerKey AND id = :id LIMIT 1")
+    suspend fun find(peerKey: String, id: String): MessageEntity?
+
+    @Query("UPDATE messages SET body = :body WHERE peerKey = :peerKey AND id = :id")
+    suspend fun updateBody(peerKey: String, id: String, body: String)
+
+    /** Delete for everyone: the row stays (so the chat shows where it was) but its content goes. */
+    @Query("UPDATE messages SET kind = 'deleted', body = '', localPath = NULL WHERE peerKey = :peerKey AND id = :id")
+    suspend fun markUnsent(peerKey: String, id: String)
+
+    /** Stories and view receipts from the last 24 hours (newest last). */
+    @Query("SELECT * FROM messages WHERE kind IN ('story', 'seen') AND sentAt > :since ORDER BY sentAt ASC")
+    fun stories(since: Long): Flow<List<MessageEntity>>
+
+    /** Story photo rows, for removing their files once they expire. */
+    @Query("SELECT * FROM messages WHERE kind = 'story' AND localPath IS NOT NULL AND sentAt < :before")
+    suspend fun expiredStoryFiles(before: Long): List<MessageEntity>
+
+    @Query("UPDATE messages SET localPath = NULL WHERE peerKey = :peerKey AND id = :id")
+    suspend fun clearLocalPath(peerKey: String, id: String)
 
     @Query(
         """
         SELECT m.*, (SELECT COUNT(*) FROM messages u
-                     WHERE u.peerKey = m.peerKey AND u.outgoing = 0 AND u.read = 0) AS unread
+                     WHERE u.peerKey = m.peerKey AND u.outgoing = 0 AND u.read = 0 AND u.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react')) AS unread
         FROM messages m
-        WHERE m.localTime = (SELECT MAX(localTime) FROM messages x WHERE x.peerKey = m.peerKey)
+        WHERE m.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react')
+          AND m.localTime = (SELECT MAX(localTime) FROM messages x WHERE x.peerKey = m.peerKey AND x.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react'))
         GROUP BY m.peerKey
         ORDER BY m.localTime DESC
         """
@@ -200,6 +240,9 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE kind = 'file' AND outgoing = 0 AND localPath IS NULL")
     suspend fun filesToDownload(): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE kind = 'story' AND outgoing = 0 AND localPath IS NULL AND sentAt > :since")
+    suspend fun storyPhotosToDownload(since: Long): List<MessageEntity>
 
     @Query("UPDATE messages SET localPath = :path WHERE peerKey = :peerKey AND id = :id")
     suspend fun setLocalPath(peerKey: String, id: String, path: String)

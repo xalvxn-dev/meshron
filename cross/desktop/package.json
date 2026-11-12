@@ -2,7 +2,7 @@
   "private": true,
   "name": "meshron-desktop",
   "productName": "Meshron",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "Private messages, device to device",
   "author": "xalvxnLab <baxxkid@gmail.com>",
   "homepage": "https://github.com/xalvxn-dev/meshron",
@@ -16,6 +16,7 @@
     "@hyperswarm/secret-stream": "^6.9.2",
     "b4a": "^1.9.0",
     "blind-relay": "^1.6.1",
+    "bonjour-service": "^1.3.0",
     "compact-encoding": "^3.6.0",
     "corestore": "^7.16.1",
     "hyperblobs": "^2.13.0",
@@ -34,11 +35,35 @@
     "appId": "com.xalvxnlab.meshron.desktop",
     "productName": "Meshron",
     "copyright": "© 2026 xalvxnLab",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "bundle/**/*", "node_modules/**/*", "package.json"],
-    "asarUnpack": ["**/*.node", "**/*.bare", "**/prebuilds/**"],
-    "protocols": [{ "name": "Meshron link", "schemes": ["meshron"] }],
-    "win": { "target": "nsis", "icon": "build/icon.png", "artifactName": "Meshron-Setup-${version}.${ext}" },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "bundle/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/*.bare",
+      "**/prebuilds/**"
+    ],
+    "protocols": [
+      {
+        "name": "Meshron link",
+        "schemes": [
+          "meshron"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png",
+      "artifactName": "Meshron-Setup-${version}.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,

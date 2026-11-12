@@ -4,7 +4,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.1.0'
+  const VERSION = '1.3.0'
   const DOWNLOAD_URL = 'https://github.com/xalvxn-dev/meshron/releases/latest'
   const PRIVACY_URL = 'https://xalvxn-dev.github.io/meshron/PRIVACY'
   const GROUP = 'g:'
@@ -33,6 +33,8 @@
   }
 
   const ICONS = {
+    reply: '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+    expand: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
     chat: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
     users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
@@ -65,6 +67,14 @@
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
     down: '<polyline points="6 9 12 15 18 9"/>',
     right: '<polyline points="9 18 15 12 9 6"/>',
+    pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    video: '<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>',
+    videoOff: '<path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>',
+    mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>',
+    micOff: '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/>',
+    hangup: '<path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7a2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/>',
+    flip: '<path d="M20 7h-3l-2-3H9L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M9 13a3 3 0 0 0 5.2 2"/><path d="M15 13a3 3 0 0 0-5.2-2"/>',
     info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
     sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
@@ -96,7 +106,7 @@
     me: null, contacts: [], groups: [], summaries: [], net: { status: 'stopped', peers: {}, log: [] },
     prefs: { settings: {}, pinned: [], muted: [], drafts: {} }, fileStatus: {}, limits: { MAX_BODY: 4000, MAX_NAME: 32, MAX_FILE: 25 * 1024 * 1024 },
     tab: 'chats', open: null, rows: [], shown: PAGE, query: '', hits: [], firstUnread: null, flash: null,
-    seen: new Set(), sending: 0, pendingBelow: 0
+    seen: new Set(), sending: 0, pendingBelow: 0, typing: {}, reply: null, editing: null
   }
   const isIos = M.platform === 'ios'
   document.body.classList.add(M.platform)
@@ -165,7 +175,20 @@
     const o = parseJson(row.body)
     return o && typeof o.name === 'string' ? { name: o.name, mime: o.mime || 'application/octet-stream', size: Number(o.size) || 0 } : null
   }
+  // Replies: "↩ <quote>" line, newline, the reply (same on every platform).
+  const REPLY_RE = /^↩ (.*)\n([\s\S]+)$/
+  const bodyText = (body) => { const m = REPLY_RE.exec(body); return m ? m[2] : body }
+  function quoteOf(r) {
+    let text = bodyText(r.body)
+    if (r.kind === 'file') { const fi = fileInfo(r); text = fi ? (fi.mime.startsWith('image/') ? '📷 Photo' : '📎 ' + fi.name) : '📎 File' }
+    const line = String(text).replace(/\s+/g, ' ').trim()
+    return line.length > 90 ? line.slice(0, 89) + '…' : line
+  }
+  const QUICK = ['❤️', '😂', '😮', '😢', '🙏', '👍']
+  const EDIT_WINDOW = 15 * 60 * 1000
   function displayBody(row) {
+    if (row.kind === 'deleted') return row.outgoing ? 'You deleted this message' : 'This message was deleted'
+    if (row.kind === 'text') return bodyText(row.body)
     if (row.kind === 'file') {
       const f = fileInfo(row)
       return f ? (f.mime.startsWith('image/') ? 'Photo: ' : 'File: ') + f.name : 'File'
@@ -435,7 +458,9 @@
       })
       kids.push(h('div', { class: 'search' }, icon('search', 20), input, clear))
     }
-    kids.push(h('div', { class: 'side-body', id: 'side-body' }))
+    const bodyEl = h('div', { class: 'side-body enter', id: 'side-body' })
+    setTimeout(() => bodyEl.classList.remove('enter'), 700)
+    kids.push(bodyEl)
     if (st.tab === 'chats') kids.push(h('button', { class: 'fab', onClick: showNewChat }, icon('edit', 20), 'New chat'))
     side.replaceChildren(...kids)
     renderRail()
@@ -524,19 +549,7 @@
     const rows = chatRows().filter((r) => !q || r.title.toLowerCase().includes(q))
     const added = st.contacts.filter((c) => c.status === 'ADDED')
     const kids = []
-    if (!q && added.length) {
-      const sorted = [...added].sort((a, b) => (isOnline(b.keyHex) ? 1 : 0) - (isOnline(a.keyHex) ? 1 : 0))
-      const count = added.filter((c) => isOnline(c.keyHex)).length
-      kids.push(h('div', { class: 'section' }, count ? 'Active now' : 'Friends', count ? [h('span', { class: 'net-dot online', style: { width: '8px', height: '8px' } }), h('span', { style: { color: 'var(--online)' } }, count)] : null))
-      kids.push(h('div', { class: 'stories' },
-        h('button', { class: 'story', onClick: () => showAddContact() }, h('div', { class: 'add' }, icon('plus', 26)), h('span', {}, 'Add')),
-        sorted.map((c) => {
-          const on = isOnline(c.keyHex)
-          return h('button', { class: 'story' + (on ? '' : ' off'), onClick: () => openChat(c.keyHex) },
-            on ? avatar(c.displayName, c.keyHex, 50, { ring: true }) : avatar(c.displayName, c.keyHex, 62),
-            h('span', { class: 'ellipsis' }, c.displayName.split(' ')[0]))
-        })))
-    }
+    if (!q) kids.push(storiesStrip(added))
     if (!rows.length && !q) {
       kids.push(h('div', { class: 'empty' },
         h('div', { class: 'orb' }, icon('chat', 36)),
@@ -1003,6 +1016,7 @@
     }
     const c = contact(conv)
     if (c && c.status === 'REQUEST') return ['Wants to chat with you', false]
+    if ((st.typing[conv] || 0) > Date.now()) return ['typing…', true]
     if (isOnline(conv)) return ['Online', true]
     return ["Offline · they'll get messages later", false]
   }
@@ -1034,6 +1048,7 @@
       h('span', { class: 'grow' }, "This person isn't in your contacts yet."),
       h('button', { class: 'btn ghost small danger', onClick: () => blockContact(conv) }, 'Block'),
       h('button', { class: 'btn primary small', onClick: () => M.call('contacts.add', { key: conv, name: '' }) }, 'Accept'))
+    const replyBar = h('div', { class: 'reply-bar', hidden: true })
     const composer = h('div', { class: 'composer' },
       h('button', { class: 'icon-btn', title: 'Send a photo or file', onClick: () => $('#file-input').click() }, icon('clip', 22)),
       emojiBtn, input, send, counter)
@@ -1047,7 +1062,14 @@
       counter.textContent = left + ' left'
     }
     input.addEventListener('input', autosize)
+    input.addEventListener('input', () => {
+      // "typing…" for the other person, at most every 4 seconds (1:1 chats, live only).
+      if (isGroup(conv) || !input.value.trim() || Date.now() - lastTyping < 4000) return
+      lastTyping = Date.now()
+      M.call('chat.typing', { conv }).catch(() => {})
+    })
     input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && (st.reply || st.editing)) { e.preventDefault(); cancelReply(); return }
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isIos && st.prefs.settings.enterSends !== false) {
         e.preventDefault()
         sendText()
@@ -1066,15 +1088,73 @@
     const head = h('div', { class: 'chat-head' },
       h('button', { class: 'icon-btn back', onClick: closeChat, 'aria-label': 'Back' }, icon('back')),
       av, who,
+      isGroup(conv) ? null : h('button', { class: 'icon-btn', title: 'Video call', onClick: () => startCall(conv, true) }, icon('video', 22)),
+      isGroup(conv) ? null : h('button', { class: 'icon-btn', title: 'Voice call', onClick: () => startCall(conv, false) }, icon('phone', 21)),
       h('button', { class: 'icon-btn', title: 'More', onClick: (e) => { const r = e.currentTarget.getBoundingClientRect(); chatHeadMenu(conv, r.right - 210, r.bottom + 6) } }, icon('more')))
 
-    main.replaceChildren(head, banner, msgs, toBottom, composer)
-    chatEls = { av, who, msgs, input, send, toBottom, banner, composer, autosize }
+    main.classList.add('enter')
+    setTimeout(() => main.classList.remove('enter'), 500)
+    main.replaceChildren(head, banner, msgs, toBottom, replyBar, composer)
+    chatEls = { av, who, msgs, input, send, toBottom, banner, composer, autosize, replyBar }
+    st.reply = null
+    st.editing = null
     input.value = st.prefs.drafts[conv] || ''
     autosize()
     refreshHeader()
     renderMsgs(true)
     if (!isIos && innerWidth > 820) input.focus()
+  }
+
+  let lastTyping = 0
+  function renderReplyBar() {
+    if (!chatEls) return
+    const r = st.editing || st.reply
+    const bar = chatEls.replyBar
+    bar.hidden = !r
+    if (!r) return bar.replaceChildren()
+    const who = st.editing ? 'Editing message' : 'Replying to ' + (r.outgoing ? 'yourself' : isGroup(r.peerKey) ? nameOf(r.senderKey) : convTitle(r.peerKey))
+    bar.replaceChildren(
+      h('div', { class: 'rb-line' }),
+      h('div', { class: 'rb-text' }, h('div', { class: 'rb-who' }, st.editing ? icon('edit', 14) : icon('reply', 14), who), h('div', { class: 'rb-quote ellipsis' }, quoteOf(r))),
+      h('button', { class: 'icon-btn', title: 'Cancel', onClick: cancelReply }, icon('x', 20)))
+  }
+  function startReply(row) {
+    if (!chatEls || row.kind === 'deleted') return
+    if (st.editing) { chatEls.input.value = ''; chatEls.autosize() }
+    st.editing = null
+    st.reply = row
+    renderReplyBar()
+    chatEls.input.focus()
+  }
+  function startEdit(row) {
+    if (!chatEls) return
+    st.reply = null
+    st.editing = row
+    chatEls.input.value = bodyText(row.body)
+    chatEls.autosize()
+    renderReplyBar()
+    chatEls.input.focus()
+  }
+  function cancelReply() {
+    if (st.editing && chatEls) { chatEls.input.value = st.prefs.drafts[st.open] || ''; chatEls.autosize() }
+    st.reply = null
+    st.editing = null
+    renderReplyBar()
+  }
+  function react(row, e) {
+    const mine = (row.reactions || {})[st.me.publicKey]
+    M.call('chat.react', { conv: row.peerKey, id: row.id, e: mine === e ? '' : e }).catch(oops)
+  }
+  function jumpTo(id) {
+    const i = st.rows.findIndex((r) => r.id === id)
+    if (i < 0) return
+    if (st.rows.length - i > st.shown) st.shown = st.rows.length - i + 10
+    st.flash = id
+    renderMsgs()
+  }
+  async function unsend(row) {
+    if (!(await confirmBox('Delete for everyone?', "It's removed from this chat on every device that has it, including theirs. Anyone who already read it may remember it.", 'Delete', true))) return
+    M.call('chat.unsend', { conv: row.peerKey, id: row.id }).catch(oops)
   }
 
   function chatHeadMenu(conv, x, y) {
@@ -1184,13 +1264,68 @@
 
   function messageMenu(row, x, y) {
     const f = row.kind === 'file' ? fileInfo(row) : null
+    const gone = row.kind === 'deleted'
+    const canEdit = row.outgoing && row.kind === 'text' && Date.now() - row.sentAt < EDIT_WINDOW
     menu(x, y, [
-      row.kind === 'text' ? { icon: 'copy', label: 'Copy', onClick: () => copy(row.body) } : null,
+      gone ? null : { icon: 'reply', label: 'Reply', onClick: () => startReply(row) },
+      canEdit ? { icon: 'edit', label: 'Edit', onClick: () => startEdit(row) } : null,
+      row.kind === 'text' ? { icon: 'copy', label: 'Copy', onClick: () => copy(bodyText(row.body)) } : null,
       f && row.localPath ? { icon: isIos ? 'share' : 'download', label: isIos ? 'Share' : 'Open', onClick: () => openFile(row) } : null,
       f && row.localPath && M.native.showFile ? { icon: 'file', label: 'Show in folder', onClick: () => M.native.showFile({ path: row.localPath }) } : null,
       { icon: 'info', label: `${row.outgoing ? 'Sent' : 'Received'} ${dayLabel(row.sentAt)}, ${clock(row.sentAt)}`, onClick: () => {} },
-      { icon: 'trash', label: 'Delete for me', danger: true, onClick: () => M.call('chat.deleteMessage', { conv: row.peerKey, id: row.id }) }
+      { icon: 'trash', label: 'Delete for me', danger: true, onClick: () => M.call('chat.deleteMessage', { conv: row.peerKey, id: row.id }) },
+      row.outgoing && (row.kind === 'text' || row.kind === 'file') ? { icon: 'trash', label: 'Delete for everyone', danger: true, onClick: () => unsend(row) } : null
     ])
+    // Quick reactions across the top of the menu.
+    const m = $('#menu')
+    if (m && !gone) {
+      const mine = (row.reactions || {})[st.me.publicKey]
+      m.prepend(h('div', { class: 'react-row' }, QUICK.map((e) => h('button', { class: e === mine ? 'on' : '', onClick: () => { closeMenu(); react(row, e) } }, e))))
+      const r = m.getBoundingClientRect()
+      if (r.bottom > innerHeight - 8) m.style.top = Math.max(8, innerHeight - r.height - 8) + 'px'
+      if (r.right > innerWidth - 8) m.style.left = Math.max(8, innerWidth - r.width - 8) + 'px'
+    }
+  }
+
+  /** Quick reaction picker on its own (hover button on desktop). */
+  function reactPicker(row, x, y) {
+    closeMenu()
+    const mine = (row.reactions || {})[st.me.publicKey]
+    const el = h('div', { class: 'menu react-pop', id: 'menu' }, h('div', { class: 'react-row' }, QUICK.map((e) => h('button', { class: e === mine ? 'on' : '', onClick: () => { closeMenu(); react(row, e) } }, e))))
+    layer.appendChild(h('div', { class: 'menu-catcher', id: 'menu-catcher', onMousedown: closeMenu }))
+    layer.appendChild(el)
+    const r = el.getBoundingClientRect()
+    el.style.left = Math.max(8, Math.min(x - r.width / 2, innerWidth - r.width - 8)) + 'px'
+    el.style.top = Math.max(8, y - r.height - 8) + 'px'
+  }
+
+  /** Swipe a message sideways (either way) on touch screens to reply to it. */
+  function swipeToReply(el, row) {
+    let x0 = 0
+    let y0 = 0
+    let dx = 0
+    let mode = null
+    el.addEventListener('touchstart', (e) => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; dx = 0; mode = null; el.style.transition = 'none' }, { passive: true })
+    el.addEventListener('touchmove', (e) => {
+      const t = e.touches[0]
+      const mx = t.clientX - x0
+      const my = t.clientY - y0
+      if (!mode && (Math.abs(mx) > 10 || Math.abs(my) > 10)) mode = Math.abs(mx) > Math.abs(my) * 1.3 ? 'x' : 'y'
+      if (mode !== 'x') return
+      dx = Math.max(-96, Math.min(96, mx * 0.6))
+      el.style.transform = 'translateX(' + dx + 'px)'
+      el.classList.toggle('armed', Math.abs(dx) >= 60)
+      el.dataset.dir = dx > 0 ? 'r' : 'l'
+    }, { passive: true })
+    const end = () => {
+      if (mode === 'x' && Math.abs(dx) >= 60) startReply(row)
+      el.style.transition = 'transform .25s cubic-bezier(.3,1.5,.6,1)'
+      el.style.transform = ''
+      el.classList.remove('armed')
+      mode = null
+    }
+    el.addEventListener('touchend', end, { passive: true })
+    el.addEventListener('touchcancel', end, { passive: true })
   }
 
   function bubbleFor(row, first) {
@@ -1217,15 +1352,51 @@
       }
     } else if (row.kind === 'invite') {
       kids.push(h('div', { class: 'invite-card' }, icon('users', 20), h('span', {}, displayBody(row))))
+    } else if (row.kind === 'deleted') {
+      kids.push(h('div', { class: 'text deleted' }, icon('block', 14), displayBody(row)))
+    } else if (REPLY_RE.test(row.body)) {
+      const [, q, text] = REPLY_RE.exec(row.body)
+      const i = st.rows.findIndex((r) => r.id === row.id)
+      let quoted = null
+      for (let k = i - 1; k >= 0; k--) if (st.rows[k].kind !== 'deleted' && quoteOf(st.rows[k]) === q) { quoted = st.rows[k]; break }
+      const who = quoted ? (quoted.outgoing ? 'You' : isGroup(row.peerKey) ? nameOf(quoted.senderKey) : convTitle(row.peerKey)) : 'Reply'
+      kids.push(h('div', { class: 'quote' + (quoted ? ' link' : ''), onClick: () => quoted && jumpTo(quoted.id) }, h('div', { class: 'q-who' }, who), h('div', { class: 'q-text' }, q)))
+      const hl = st.flash === row.id && st.query.trim().length >= 2 ? st.query.trim().toLowerCase() : null
+      kids.push(h('div', { class: 'text' }, richText(text, hl)))
     } else {
       const big = row.body.length <= 12 && BIG_EMOJI.test(row.body) && !/^[\d\s#*]+$/.test(row.body)
       const hl = st.flash === row.id && st.query.trim().length >= 2 ? st.query.trim().toLowerCase() : null
-      kids.push(h('div', { class: 'text' + (big ? ' big' : '') }, richText(row.body, hl)))
+      const reply = /^↪ Story: (.*)\n([\s\S]+)$/.exec(row.body)
+      if (reply) {
+        kids.push(h('div', { class: 'story-quote' }, icon('zap', 14), h('span', { class: 'ellipsis' }, (row.outgoing ? 'You replied to their story: ' : 'Replied to your story: ') + reply[1])))
+        const rbig = reply[2].length <= 12 && BIG_EMOJI.test(reply[2])
+        kids.push(h('div', { class: 'text' + (rbig ? ' big' : '') }, richText(reply[2], hl)))
+      } else kids.push(h('div', { class: 'text' + (big ? ' big' : '') }, richText(row.body, hl)))
     }
-    kids.push(h('div', { class: 'meta' }, clock(row.sentAt), row.outgoing ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
-    const b = h('div', { class: 'bubble' + (media ? ' media' : '') }, kids)
+    kids.push(h('div', { class: 'meta' }, row.edited && row.kind === 'text' ? h('span', { class: 'edited' }, 'edited ·') : null, clock(row.sentAt), row.outgoing && row.kind !== 'deleted' ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
+    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') }, kids)
     onContext(b, (x, y) => messageMenu(row, x, y))
-    return b
+    if (row.kind === 'deleted') return b
+    // Double-click / double-tap: quick heart.
+    b.addEventListener('dblclick', (e) => { e.preventDefault(); window.getSelection && window.getSelection().removeAllRanges(); react(row, '❤️') })
+    const out = [b]
+    const reactions = Object.entries(row.reactions || {})
+    if (reactions.length) {
+      const counts = {}
+      for (const [, e] of reactions) counts[e] = (counts[e] || 0) + 1
+      const mine = (row.reactions || {})[st.me.publicKey]
+      const tops = Object.entries(counts).sort((a, c) => c[1] - a[1]).slice(0, 4).map(([e]) => e)
+      out.push(h('button', {
+        class: 'reacts' + (mine ? ' mine' : ''),
+        title: reactions.map(([k, e]) => e + ' ' + (k === st.me.publicKey ? 'You' : nameOf(k))).join('\n'),
+        onClick: (e) => { if (mine) react(row, mine); else { const r = e.currentTarget.getBoundingClientRect(); reactPicker(row, r.left + r.width / 2, r.top) } }
+      }, tops.join(''), reactions.length > 1 ? h('span', {}, String(reactions.length)) : null))
+    }
+    // Hover actions on desktop: react and reply.
+    out.push(h('div', { class: 'msg-actions' },
+      h('button', { title: 'React', onClick: (e) => { const r = e.currentTarget.getBoundingClientRect(); reactPicker(row, r.left + r.width / 2, r.top) } }, icon('smile', 17)),
+      h('button', { title: 'Reply', onClick: () => startReply(row) }, icon('reply', 17))))
+    return out
   }
 
   const sameGroup = (a, b) => a.outgoing === b.outgoing && a.senderKey === b.senderKey && Math.abs(b.localTime - a.localTime) < 180000 && a.kind !== 'invite' && b.kind !== 'invite'
@@ -1254,7 +1425,10 @@
       const last = !newer || !sameGroup(m, newer) || startOfDay(newer.localTime) !== startOfDay(m.localTime)
       const isNew = !st.seen.has(m.id)
       st.seen.add(m.id)
-      const el = h('div', { class: 'msg' + (m.outgoing ? ' mine' : '') + (first ? ' first' : '') + (last ? ' last' : '') + (isNew ? ' new' : '') + (st.flash === m.id ? ' flash' : '') }, bubbleFor(m, first))
+      const el = h('div', { class: 'msg' + (m.outgoing ? ' mine' : '') + (first ? ' first' : '') + (last ? ' last' : '') + (isNew ? ' new' : '') + (st.flash === m.id ? ' flash' : '') + (m.reactions && Object.keys(m.reactions).length && m.kind !== 'deleted' ? ' has-reacts' : '') },
+        m.kind === 'deleted' ? null : h('div', { class: 'swipe-hint' }, icon('reply', 16)),
+        h('div', { class: 'msg-body' }, bubbleFor(m, first)))
+      if (m.kind !== 'deleted') swipeToReply(el.querySelector('.msg-body'), m)
       if (st.flash === m.id) flashEl = el
       kids.push(el)
     })
@@ -1281,9 +1455,18 @@
     delete st.prefs.drafts[st.open]
     M.call('prefs.draft', { conv: st.open, text: '' })
     st.firstUnread = null
+    const edit = st.editing
+    const reply = st.reply
+    st.editing = null
+    st.reply = null
+    renderReplyBar()
+    lastTyping = 0
     try {
-      await M.call('chat.send', { conv: st.open, text })
-      scrollBottom(false)
+      if (edit) await M.call('chat.edit', { conv: st.open, id: edit.id, text })
+      else {
+        await M.call('chat.send', { conv: st.open, text, replyTo: reply ? reply.id : null })
+        scrollBottom(false)
+      }
     } catch (err) { oops(err) }
     if (!isIos) chatEls.input.focus()
   }
@@ -1294,8 +1477,43 @@
     return btoa(bin)
   }
 
-  async function sendFiles(files) {
+  /** Shows picked / pasted / dropped files first: photo previews, names and sizes, a caption. */
+  function sendFiles(list) {
     const conv = st.open
+    if (!conv) return
+    const files = list.filter((x) => x.size > 0)
+    if (!files.length) return
+    const urls = []
+    const caption = h('textarea', { class: 'input', rows: 2, placeholder: 'Add a caption…', maxlength: 1000 })
+    const items = files.map((file) => {
+      const big = file.size > st.limits.MAX_FILE
+      if (/^image\//.test(file.type) && !big) {
+        const url = URL.createObjectURL(file)
+        urls.push(url)
+        return h('div', { class: 'fp-item photo' }, h('img', { src: url, alt: file.name }), h('div', { class: 'fp-name ellipsis' }, fileSize(file.size)))
+      }
+      return h('div', { class: 'fp-item' + (big ? ' big' : '') }, h('div', { class: 'fp-ic' }, icon('file', 28)),
+        h('div', { class: 'fp-name ellipsis' }, file.name || 'File'), h('div', { class: 'fp-size' }, big ? 'Over 25 MB, can\'t send' : fileSize(file.size)))
+    })
+    const ok = files.filter((x) => x.size <= st.limits.MAX_FILE)
+    modal({
+      title: files.length === 1 ? 'Send ' + (/^image\//.test(files[0].type) ? 'photo' : 'file') : `Send ${files.length} files`,
+      wide: true,
+      body: h('div', { class: 'fp' }, h('div', { class: 'fp-grid' + (files.length === 1 ? ' one' : '') }, items), h('div', { class: 'dim t-small', style: { margin: '10px 4px 6px' } }, 'To ' + convTitle(conv)), caption),
+      onClose: () => urls.forEach((u) => URL.revokeObjectURL(u)),
+      buttons: [
+        { label: 'Cancel', onClick: (m) => m.close() },
+        { label: ok.length > 1 ? `Send ${ok.length}` : 'Send', kind: 'primary', disabled: !ok.length, onClick: async (m) => {
+          const text = caption.value.trim()
+          m.close()
+          await uploadFiles(ok, conv)
+          if (text) M.call('chat.send', { conv, text }).catch(oops)
+        } }
+      ]
+    })
+  }
+
+  async function uploadFiles(files, conv) {
     if (!conv) return
     for (const file of files) {
       if (file.size > st.limits.MAX_FILE) { toast(`“${file.name}” is over 25 MB`); continue }
@@ -1400,6 +1618,859 @@
     setTimeout(() => note.remove(), 4500)
   }
 
+  // ---- Stories ---------------------------------------------------------------------
+  //
+  // Instagram-style 24-hour posts. The strip at the top of Chats shows your story first, then
+  // friends with new stories (gradient ring), friends whose stories you've seen (grey ring),
+  // then friends who are online right now (green dot).
+
+  const STORY_BGS = [
+    'linear-gradient(160deg, #8b5cf6, #d946ef 55%, #ff7a59)',
+    'linear-gradient(160deg, #0ea5e9, #6366f1)',
+    'linear-gradient(160deg, #f43f5e, #f59e0b)',
+    'linear-gradient(160deg, #10b981, #0ea5e9)',
+    'linear-gradient(160deg, #111827, #4b5563)',
+    'linear-gradient(160deg, #ec4899, #8b5cf6)',
+    'linear-gradient(160deg, #f97316, #ef4444 60%, #7c3aed)',
+    'radial-gradient(circle at 30% 20%, #22d3ee, #6366f1 45%, #0a0a0f)'
+  ]
+  const REACTIONS = ['❤️', '🔥', '😂', '😮', '😢', '👏']
+  const STORY_MS = 5500
+
+  function timeAgo(ms) {
+    const m = Math.max(1, Math.round((Date.now() - ms) / 60000))
+    if (m < 60) return m + 'm'
+    return Math.round(m / 60) + 'h'
+  }
+
+  function storyBubble({ label, ring, onClick, inner, badge, dot }) {
+    return h('button', { class: 'story', onClick },
+      h('div', { class: 'sring ' + ring }, h('div', { class: 'gap' }, inner), badge || null, dot ? h('span', { class: 'sdot' }) : null),
+      h('span', { class: 'ellipsis' }, label))
+  }
+
+  function storiesStrip(added) {
+    const stories = st.stories || { mine: [], friends: [] }
+    const withStories = new Set(stories.friends.map((f) => f.key))
+    const online = added.filter((c) => isOnline(c.keyHex) && !withStories.has(c.keyHex))
+    const items = []
+    const me = st.me
+    const mineAv = avatar(me.username, me.publicKey, 58)
+    items.push(storyBubble({
+      label: 'Your story',
+      ring: stories.mine.length ? 'mine' : 'none',
+      onClick: () => (stories.mine.length ? openViewer('me', 0) : openComposer()),
+      inner: mineAv,
+      badge: h('span', { class: 'splus', onClick: (e) => { e.stopPropagation(); openComposer() } }, icon('plus', 14))
+    }))
+    for (const f of stories.friends) {
+      const c = contact(f.key)
+      const name = c ? c.displayName : nameOf(f.key)
+      items.push(storyBubble({ label: name.split(' ')[0], ring: f.allSeen ? 'seen' : 'new', onClick: () => openViewer(f.key, 0), inner: avatar(name, f.key, 58), dot: isOnline(f.key) }))
+    }
+    for (const c of online) items.push(storyBubble({ label: c.displayName.split(' ')[0], ring: 'none', onClick: () => openChat(c.keyHex), inner: avatar(c.displayName, c.keyHex, 58), dot: true }))
+    if (!added.length) items.push(h('button', { class: 'story', onClick: () => showAddContact() }, h('div', { class: 'add' }, icon('userPlus', 24)), h('span', {}, 'Add friend')))
+    const live = online.length + stories.friends.filter((f) => isOnline(f.key)).length
+    return [
+      h('div', { class: 'section' }, 'Stories', live ? [h('span', { class: 'dimmer' }, '·'), h('span', { class: 'net-dot online', style: { width: '8px', height: '8px' } }), h('span', { style: { color: 'var(--online)' } }, live + ' active')] : null),
+      h('div', { class: 'stories' }, items)
+    ]
+  }
+
+  // -- Viewer --
+
+  let viewer = null // { owner, index, el, timer, paused, started, elapsed, urls }
+
+  function storyList(owner) {
+    if (owner === 'me') return st.stories.mine
+    const f = st.stories.friends.find((x) => x.key === owner)
+    return f ? f.items : []
+  }
+  function ownerOrder() {
+    return st.stories.friends.map((f) => f.key)
+  }
+
+  async function photoUrl(item) {
+    const k = item.conv + '|' + item.id
+    if (blobs.has(k)) return blobs.get(k).url
+    const r = await M.call('stories.photo', { conv: item.conv, id: item.id })
+    const bin = atob(r.data)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const blob = new Blob([bytes], { type: item.mime || 'image/jpeg' })
+    const entry = { url: URL.createObjectURL(blob), blob }
+    blobs.set(k, entry)
+    return entry.url
+  }
+
+  function openViewer(owner, index) {
+    closeViewer()
+    const root = h('div', { class: 'sv', tabindex: '-1' })
+    layer.appendChild(root)
+    viewer = { owner, index, el: root, timer: null, paused: false, started: 0, elapsed: 0 }
+    root.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return
+      if (e.key === 'ArrowRight') step(1)
+      if (e.key === 'ArrowLeft') step(-1)
+      if (e.key === 'Escape') closeViewer()
+      if (e.key === ' ') { e.preventDefault(); setPaused(!viewer.paused) }
+    })
+    showItem()
+    root.focus()
+  }
+
+  function closeViewer() {
+    if (!viewer) return
+    clearTimeout(viewer.timer)
+    const el = viewer.el
+    viewer = null
+    el.classList.add('out')
+    setTimeout(() => el.remove(), 220)
+  }
+
+  function refreshViewer() {
+    if (!viewer) return
+    const list = storyList(viewer.owner)
+    if (!list.length) return closeViewer()
+    if (viewer.index >= list.length) viewer.index = list.length - 1
+    // Re-render only things that may have changed (photo arrived, viewers).
+    const item = list[viewer.index]
+    const v = viewer.el.querySelector('.sv-viewers')
+    if (v && item.viewers) v.lastChild.textContent = item.viewers.length ? `Seen by ${item.viewers.length}` : 'No views yet'
+    if (item.hasPhoto && item.photoReady && viewer.el.querySelector('.sv-wait')) showItem(true)
+  }
+
+  function setPaused(p) {
+    if (!viewer) return
+    if (p === viewer.paused) return
+    viewer.paused = p
+    viewer.el.classList.toggle('paused', p)
+    if (p) {
+      clearTimeout(viewer.timer)
+      viewer.elapsed += Date.now() - viewer.started
+    } else {
+      viewer.started = Date.now()
+      viewer.timer = setTimeout(() => step(1), Math.max(200, viewer.duration - viewer.elapsed))
+    }
+  }
+
+  function step(dir) {
+    if (!viewer) return
+    const list = storyList(viewer.owner)
+    const next = viewer.index + dir
+    if (next >= 0 && next < list.length) {
+      viewer.index = next
+      return showItem()
+    }
+    if (viewer.owner === 'me') return dir > 0 ? closeViewer() : showItem()
+    const order = ownerOrder()
+    const at = order.indexOf(viewer.owner)
+    const other = order[at + dir]
+    if (!other) return dir > 0 ? closeViewer() : showItem()
+    viewer.owner = other
+    viewer.index = dir > 0 ? 0 : storyList(other).length - 1
+    viewer.el.classList.remove('swap')
+    void viewer.el.offsetWidth
+    viewer.el.classList.add('swap')
+    showItem()
+  }
+
+  function showItem(keepTime) {
+    if (!viewer) return
+    const { owner } = viewer
+    const list = storyList(owner)
+    const item = list[viewer.index]
+    if (!item) return closeViewer()
+    clearTimeout(viewer.timer)
+    const mine = owner === 'me'
+    const name = mine ? 'Your story' : nameOf(owner)
+    const seed = mine ? st.me.publicKey : owner
+    const bars = h('div', { class: 'sv-bars' }, list.map((_, i) => h('div', { class: 'sv-bar' + (i < viewer.index ? ' done' : '') }, h('i', i === viewer.index ? { class: 'run' } : {}))))
+    const head = h('div', { class: 'sv-head' },
+      avatar(mine ? st.me.username : name, seed, 36),
+      h('div', { class: 'sv-who' }, h('b', {}, name), h('span', {}, timeAgo(item.ts))),
+      h('button', { class: 'icon-btn sv-x', title: 'Pause', onClick: () => setPaused(!viewer.paused) }, icon(viewer.paused ? 'right' : 'pause', 20)),
+      mine ? h('button', { class: 'icon-btn sv-x', title: 'Delete', onClick: async () => {
+        setPaused(true)
+        if (await confirmBox('Delete this story?', 'It disappears for everyone who has the new version of Meshron.', 'Delete', true)) {
+          await M.call('stories.delete', { sid: item.sid })
+          toast('Story deleted')
+        } else setPaused(false)
+      } }, icon('trash', 20)) : null,
+      h('button', { class: 'icon-btn sv-x', title: 'Close', onClick: closeViewer }, icon('x', 22)))
+
+    let body
+    if (item.type === 'photo') {
+      if (!item.photoReady) {
+        body = h('div', { class: 'sv-media sv-wait', style: { background: STORY_BGS[4] } }, h('div', { class: 'spinner' }), h('p', {}, 'Downloading photo…'))
+      } else {
+        const img = h('img', { class: 'sv-photo', alt: '' })
+        const back = h('div', { class: 'sv-blur' })
+        photoUrl(item).then((url) => { img.src = url; back.style.backgroundImage = `url("${url}")` }).catch(() => {})
+        body = h('div', { class: 'sv-media' }, back, img, item.text ? h('div', { class: 'sv-caption' }, item.text) : null)
+      }
+    } else {
+      const len = item.text.length
+      body = h('div', { class: 'sv-media sv-text', style: { background: STORY_BGS[item.bg % STORY_BGS.length] } },
+        h('div', { class: 'sv-words', style: { fontSize: (len < 40 ? 34 : len < 120 ? 26 : 20) + 'px' } }, item.text))
+    }
+
+    let foot
+    if (mine) {
+      foot = h('div', { class: 'sv-foot' },
+        h('button', { class: 'sv-viewers', onClick: () => showViewers(item) }, icon('users', 18), h('span', {}, item.viewers && item.viewers.length ? `Seen by ${item.viewers.length}` : 'No views yet')),
+        h('button', { class: 'btn primary small', onClick: () => { closeViewer(); openComposer() } }, icon('plus', 16), 'Add'))
+    } else {
+      const input = h('input', { class: 'sv-reply', placeholder: `Reply to ${name.split(' ')[0]}…`, maxlength: 1000 })
+      input.addEventListener('focus', () => setPaused(true))
+      input.addEventListener('blur', () => { if (!input.value) setPaused(false) })
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { replyToStory(owner, item, input.value.trim()); input.value = ''; input.blur() } })
+      foot = h('div', { class: 'sv-foot' }, input,
+        h('div', { class: 'sv-reacts' }, REACTIONS.map((r) => h('button', { onClick: (e) => { burst(e.currentTarget, r); replyToStory(owner, item, r) } }, r))))
+    }
+
+    const tapPrev = h('div', { class: 'sv-tap left' })
+    const tapNext = h('div', { class: 'sv-tap right' })
+    const card = h('div', { class: 'sv-card' }, body, h('div', { class: 'sv-shade' }), bars, head, tapPrev, tapNext, foot)
+    // Tap left/right to move, hold anywhere to pause, swipe down to close.
+    for (const [el, dir] of [[tapPrev, -1], [tapNext, 1]]) {
+      let downAt = 0
+      let y0 = 0
+      el.addEventListener('pointerdown', (e) => { downAt = Date.now(); y0 = e.clientY; setTimeout(() => { if (downAt) setPaused(true) }, 220) })
+      el.addEventListener('pointerup', (e) => {
+        const held = Date.now() - downAt
+        downAt = 0
+        if (e.clientY - y0 > 90) return closeViewer()
+        if (held < 220) step(dir)
+        else setPaused(false)
+      })
+      el.addEventListener('pointerleave', () => { if (downAt) { downAt = 0; setPaused(false) } })
+    }
+    viewer.el.replaceChildren(h('div', { class: 'sv-back', onClick: closeViewer }), card)
+    viewer.el.classList.toggle('paused', viewer.paused)
+    if (!keepTime) viewer.elapsed = 0
+    viewer.duration = item.type === 'text' ? Math.min(12000, STORY_MS + item.text.length * 35) : STORY_MS
+    const run = bars.querySelector('.run')
+    if (run) {
+      run.style.animationDuration = viewer.duration + 'ms'
+      run.style.animationDelay = -viewer.elapsed + 'ms'
+    }
+    if (item.type === 'photo' && !item.photoReady) {
+      if (run) run.style.animationPlayState = 'paused'
+      return
+    }
+    if (!mine && !item.seen) {
+      item.seen = true
+      M.call('stories.seen', { key: owner, sid: item.sid }).catch(() => {})
+    }
+    if (!viewer.paused) {
+      viewer.started = Date.now()
+      viewer.timer = setTimeout(() => step(1), viewer.duration - viewer.elapsed)
+    }
+  }
+
+  function burst(el, emoji) {
+    const r = el.getBoundingClientRect()
+    for (let i = 0; i < 7; i++) {
+      const p = h('span', { class: 'burst', style: { left: r.left + r.width / 2 + 'px', top: r.top + 'px', '--dx': (Math.random() * 160 - 80) + 'px', '--d': (600 + Math.random() * 500) + 'ms' } }, emoji)
+      document.body.appendChild(p)
+      setTimeout(() => p.remove(), 1200)
+    }
+  }
+
+  async function replyToStory(owner, item, text) {
+    const quote = item.type === 'photo' ? (item.text ? `📷 ${item.text}` : '📷 Photo') : item.text
+    const body = `↪ Story: ${quote.replace(/\s+/g, ' ').slice(0, 60)}${quote.length > 60 ? '…' : ''}\n${text}`
+    try {
+      await M.call('chat.send', { conv: owner, text: body })
+      toast(text.length <= 4 ? `Sent ${text}` : 'Reply sent')
+    } catch (err) { oops(err) }
+  }
+
+  function showViewers(item) {
+    setPaused(true)
+    modal({
+      title: 'Seen by',
+      onClose: () => setPaused(false),
+      body: item.viewers && item.viewers.length
+        ? h('div', {}, item.viewers.map((k) => h('div', { class: 'pick', style: { cursor: 'default' } }, avatar(nameOf(k), k, 40), h('div', { class: 't-title' }, nameOf(k)))))
+        : h('p', { class: 'dim' }, "Nobody has seen it yet. Friends see it when they're online with a new version of Meshron.")
+    })
+  }
+
+  // -- Composer --
+
+  function openComposer() {
+    closeViewer()
+    let bg = Math.floor(Math.random() * STORY_BGS.length)
+    let photo = null // { blob, url }
+    const text = h('textarea', { class: 'sc-text', placeholder: 'Type something…', maxlength: 700, rows: 3 })
+    const caption = h('input', { class: 'sv-reply', placeholder: 'Add a caption…', maxlength: 300 })
+    const stage = h('div', { class: 'sc-stage' })
+    const swatches = h('div', { class: 'sc-swatches' })
+    const share = h('button', { class: 'btn primary', onClick: post }, 'Share to story')
+    const picker = h('input', { type: 'file', accept: 'image/*', hidden: true })
+    const root = h('div', { class: 'sv sc' })
+    const close = () => { root.classList.add('out'); setTimeout(() => root.remove(), 220); if (photo) URL.revokeObjectURL(photo.url) }
+
+    const draw = () => {
+      if (photo) {
+        stage.style.background = '#000'
+        stage.replaceChildren(h('div', { class: 'sv-blur', style: { backgroundImage: `url("${photo.url}")` } }), h('img', { class: 'sv-photo', src: photo.url }),
+          h('button', { class: 'icon-btn sc-remove', title: 'Remove photo', onClick: () => { URL.revokeObjectURL(photo.url); photo = null; draw() } }, icon('x', 20)))
+        swatches.replaceChildren(caption)
+      } else {
+        stage.style.background = STORY_BGS[bg]
+        stage.replaceChildren(text)
+        swatches.replaceChildren(...STORY_BGS.map((b, i) => h('button', { class: 'sc-swatch' + (i === bg ? ' on' : ''), style: { background: b }, onClick: () => { bg = i; draw() } })),
+          h('button', { class: 'sc-photo', onClick: () => picker.click() }, icon('clip', 18), 'Photo'))
+        const len = text.value.length
+        text.style.fontSize = (len < 40 ? 32 : len < 120 ? 24 : 19) + 'px'
+        setTimeout(() => text.focus(), 30)
+      }
+    }
+    text.addEventListener('input', () => { const len = text.value.length; text.style.fontSize = (len < 40 ? 32 : len < 120 ? 24 : 19) + 'px' })
+    picker.addEventListener('change', async () => {
+      const file = picker.files[0]
+      picker.value = ''
+      if (!file) return
+      try {
+        photo = await shrinkImage(file)
+        draw()
+      } catch { toast("Couldn't open that picture") }
+    })
+
+    async function post() {
+      share.disabled = true
+      share.replaceChildren(h('div', { class: 'spinner' }))
+      try {
+        if (photo) {
+          const id = await M.call('file.begin', { conv: 'story', name: 'story.jpg', mime: 'image/jpeg', size: photo.blob.size })
+          const bytes = new Uint8Array(await photo.blob.arrayBuffer())
+          const stepSize = 240 * 1024
+          for (let o = 0; o < bytes.length; o += stepSize) await M.call('file.chunk', { id, data: toBase64(bytes.subarray(o, o + stepSize)) })
+          await M.call('stories.post', { type: 'photo', text: caption.value, upload: id })
+        } else {
+          await M.call('stories.post', { type: 'text', text: text.value, bg })
+        }
+        close()
+        toast('Shared to your story')
+      } catch (err) {
+        oops(err)
+        share.disabled = false
+        share.replaceChildren('Share to story')
+      }
+    }
+
+    root.append(h('div', { class: 'sv-back', onClick: close }),
+      h('div', { class: 'sv-card' }, stage,
+        h('div', { class: 'sv-head' }, h('div', { class: 'sv-who' }, h('b', {}, 'New story'), h('span', {}, 'Your contacts can see it for 24 hours')), h('button', { class: 'icon-btn sv-x', onClick: close }, icon('x', 22))),
+        h('div', { class: 'sc-foot' }, swatches, share)),
+      picker)
+    layer.appendChild(root)
+    draw()
+  }
+
+  /** Photos are shrunk to 1440 px on the long side (JPEG) so stories stay quick to send. */
+  function shrinkImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, 1440 / Math.max(img.width, img.height))
+        const c = document.createElement('canvas')
+        c.width = Math.round(img.width * scale)
+        c.height = Math.round(img.height * scale)
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+        URL.revokeObjectURL(url)
+        c.toBlob((blob) => (blob ? resolve({ blob, url: URL.createObjectURL(blob) }) : reject(new Error('encode'))), 'image/jpeg', 0.85)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode')) }
+      img.src = url
+    })
+  }
+
+
+  // ---- Calls -------------------------------------------------------------------------
+  //
+  // Same protocol and media as the Android app (calls/CallManager.kt, VoiceEngine.kt, VideoEngine.kt):
+  //   signalling  { t: offer | answer | reject | end | video | vack | keyreq | unreachable, id, ... }
+  //   audio       [seq u16][count u8] + count × ([len u16][Opus frame])   16 kHz mono, 20 ms frames, 2 per packet
+  //   video       [seq u32][flags u8: 1 = key][rotation/90 u8][width u16][height u16] + H.264 Annex B
+  // Encoding and decoding use WebCodecs; capture and playback use the microphone/camera and an AudioWorklet.
+
+  const RING_MS = 45000
+  const AUDIO_RATE = 16000
+  const callSupported = () => typeof AudioEncoder !== 'undefined' && typeof AudioDecoder !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+  const videoSupported = () => typeof VideoEncoder !== 'undefined' && typeof VideoDecoder !== 'undefined'
+
+  let call = null // { phase, peer, id, video, remoteVideo, muted, startedAt, ... }
+
+  const b64 = (bytes) => toBase64(bytes)
+  const unb64 = (s) => { const bin = atob(s); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out }
+  const newCallId = () => { const b = new Uint8Array(16); crypto.getRandomValues(b); return [...b].map((x) => x.toString(16).padStart(2, '0')).join('') }
+  const signal = (peer, msg) => M.call('call.send', { key: peer, msg }).catch(() => {})
+
+  // ---- Tones (ring for incoming, ringback for outgoing) ----
+  let toneCtx = null
+  let toneTimer = null
+  function playTone(kind) {
+    stopTone()
+    try {
+      toneCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const beep = () => {
+        const t = toneCtx.currentTime
+        const pairs = kind === 'ring' ? [[880, 0], [1100, 0.18], [880, 0.5], [1100, 0.68]] : [[440, 0], [480, 0]]
+        for (const [f, at] of pairs) {
+          const o = toneCtx.createOscillator()
+          const g = toneCtx.createGain()
+          o.frequency.value = f
+          g.gain.setValueAtTime(0.0001, t + at)
+          g.gain.exponentialRampToValueAtTime(kind === 'ring' ? 0.14 : 0.06, t + at + 0.03)
+          g.gain.exponentialRampToValueAtTime(0.0001, t + at + (kind === 'ring' ? 0.16 : 1.2))
+          o.connect(g).connect(toneCtx.destination)
+          o.start(t + at)
+          o.stop(t + at + 1.3)
+        }
+      }
+      beep()
+      toneTimer = setInterval(beep, kind === 'ring' ? 2200 : 3000)
+    } catch {}
+  }
+  function stopTone() {
+    clearInterval(toneTimer)
+    toneTimer = null
+    if (toneCtx) { try { toneCtx.close() } catch {} toneCtx = null }
+  }
+
+  // ---- Audio engine ----
+
+  async function startAudio(c) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
+    c.ctx = ctx
+    await ctx.audioWorklet.addModule('audio-worklet.js')
+    c.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
+    const src = ctx.createMediaStreamSource(c.mic)
+    const micNode = new AudioWorkletNode(ctx, 'mesh-mic')
+    const speaker = new AudioWorkletNode(ctx, 'mesh-speaker', { outputChannelCount: [2] })
+    speaker.connect(ctx.destination)
+    src.connect(micNode)
+    c.speaker = speaker
+
+    // Encoder: 48 kHz capture -> 16 kHz mono -> Opus 20 ms frames, two per packet.
+    let seq = 0
+    let frames = []
+    const enc = new AudioEncoder({
+      output: (chunk) => {
+        const f = new Uint8Array(chunk.byteLength)
+        chunk.copyTo(f)
+        frames.push(f)
+        if (frames.length === 2) {
+          const size = 3 + frames.reduce((n, x) => n + 2 + x.length, 0)
+          const p = new Uint8Array(size)
+          const dv = new DataView(p.buffer)
+          dv.setUint16(0, seq++ & 0xffff)
+          p[2] = frames.length
+          let o = 3
+          for (const x of frames) { dv.setUint16(o, x.length); p.set(x, o + 2); o += 2 + x.length }
+          frames = []
+          M.call('call.audio', { key: c.peer, data: b64(p) }).catch(() => {})
+        }
+      },
+      error: (e) => console.warn('audio encoder', e)
+    })
+    enc.configure({ codec: 'opus', sampleRate: AUDIO_RATE, numberOfChannels: 1, bitrate: 24000, opus: { frameDuration: 20000, complexity: 5 } })
+    c.enc = enc
+    let pending = new Float32Array(0)
+    let ts = 0
+    const ratio = ctx.sampleRate / AUDIO_RATE
+    const FRAME = AUDIO_RATE / 50 // 320 samples = 20 ms
+    micNode.port.onmessage = (e) => {
+      if (c.muted || enc.state !== 'configured') return
+      const input = e.data
+      // Simple averaging downsampler (48k -> 16k).
+      const n = Math.floor(input.length / ratio)
+      const down = new Float32Array(n)
+      for (let i = 0; i < n; i++) {
+        let s = 0
+        for (let k = 0; k < ratio; k++) s += input[Math.floor(i * ratio + k)] || 0
+        down[i] = s / ratio
+      }
+      const merged = new Float32Array(pending.length + down.length)
+      merged.set(pending)
+      merged.set(down, pending.length)
+      let o = 0
+      while (merged.length - o >= FRAME) {
+        const data = merged.slice(o, o + FRAME)
+        o += FRAME
+        enc.encode(new AudioData({ format: 'f32', sampleRate: AUDIO_RATE, numberOfFrames: FRAME, numberOfChannels: 1, timestamp: ts, data }))
+        ts += 20000
+      }
+      pending = merged.slice(o)
+    }
+
+    // Decoder: Opus -> PCM -> speaker worklet (which plays at the context rate).
+    const dec = new AudioDecoder({
+      output: (ad) => {
+        const n = ad.numberOfFrames
+        const pcm = new Float32Array(n)
+        ad.copyTo(pcm, { planeIndex: 0, format: 'f32-planar' })
+        const rate = ad.sampleRate
+        ad.close()
+        // Resample to the context rate.
+        const outLen = Math.round(n * ctx.sampleRate / rate)
+        const out = new Float32Array(outLen)
+        for (let i = 0; i < outLen; i++) out[i] = pcm[Math.min(n - 1, Math.floor(i * rate / ctx.sampleRate))]
+        speaker.port.postMessage(out)
+      },
+      error: (e) => console.warn('audio decoder', e)
+    })
+    dec.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })
+    c.dec = dec
+    c.decTs = 0
+  }
+
+  function onAudioPacket(c, data) {
+    if (!c.dec || c.dec.state !== 'configured') return
+    const p = unb64(data)
+    if (p.length < 3) return
+    const dv = new DataView(p.buffer)
+    const count = p[2]
+    let o = 3
+    for (let i = 0; i < count; i++) {
+      if (o + 2 > p.length) return
+      const len = dv.getUint16(o)
+      if (!len || o + 2 + len > p.length) return
+      c.dec.decode(new EncodedAudioChunk({ type: 'key', timestamp: c.decTs, data: p.subarray(o + 2, o + 2 + len) }))
+      c.decTs += 20000
+      o += 2 + len
+    }
+  }
+
+  // ---- Video engine ----
+  async function startCamera(c) {
+    if (!videoSupported()) { toast("Video isn't supported on this device yet"); c.video = false; return }
+    try {
+      c.cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: c.front === false ? 'environment' : 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20 } } })
+    } catch {
+      toast("Couldn't open the camera")
+      c.video = false
+      return
+    }
+    const vid = document.createElement('video')
+    vid.muted = true
+    vid.playsInline = true
+    vid.srcObject = c.cam
+    await vid.play().catch(() => {})
+    c.localVideo = vid
+    renderCall()
+    const canvas = document.createElement('canvas')
+    const g = canvas.getContext('2d')
+    let seq = 0
+    let width = 0
+    let height = 0
+    c.bitrate = 450000
+    c.inflight = new Map() // seq -> sent at
+    c.forceKey = true
+    const makeEncoder = () => {
+      if (c.venc) try { c.venc.close() } catch {}
+      c.venc = new VideoEncoder({
+        output: (chunk) => {
+          const body = new Uint8Array(chunk.byteLength)
+          chunk.copyTo(body)
+          const p = new Uint8Array(10 + body.length)
+          const dv = new DataView(p.buffer)
+          const s = seq++
+          dv.setUint32(0, s)
+          p[4] = chunk.type === 'key' ? 1 : 0
+          p[5] = 0
+          dv.setUint16(6, width)
+          dv.setUint16(8, height)
+          p.set(body, 10)
+          c.inflight.set(s, Date.now())
+          M.call('call.video', { key: c.peer, data: b64(p) }).catch(() => {})
+        },
+        error: (e) => console.warn('video encoder', e)
+      })
+      c.venc.configure({ codec: 'avc1.42E01F', width, height, bitrate: c.bitrate, framerate: 20, latencyMode: 'realtime', avc: { format: 'annexb' } })
+    }
+    c.camTimer = setInterval(() => {
+      if (!c.video || vid.readyState < 2 || !vid.videoWidth) return
+      // Congestion control like Android: at most 6 frames waiting for an ack.
+      const now = Date.now()
+      for (const [s, t] of c.inflight) if (now - t > 3000) c.inflight.delete(s)
+      if (c.inflight.size >= 6) return
+      const w = vid.videoWidth & ~1
+      const hh = vid.videoHeight & ~1
+      if (w !== width || hh !== height || !c.venc) {
+        width = w
+        height = hh
+        canvas.width = w
+        canvas.height = hh
+        makeEncoder()
+        c.forceKey = true
+      }
+      g.drawImage(vid, 0, 0, w, hh)
+      const frame = new VideoFrame(canvas, { timestamp: now * 1000 })
+      c.venc.encode(frame, { keyFrame: c.forceKey })
+      c.forceKey = false
+      frame.close()
+    }, 50)
+    signal(c.peer, { t: 'video', id: c.id, on: true })
+  }
+
+  function stopCamera(c, tell = true) {
+    clearInterval(c.camTimer)
+    c.camTimer = null
+    if (c.venc) { try { c.venc.close() } catch {} c.venc = null }
+    if (c.cam) for (const t of c.cam.getTracks()) t.stop()
+    c.cam = null
+    c.localVideo = null
+    if (tell) signal(c.peer, { t: 'video', id: c.id, on: false })
+  }
+
+  function onVideoFrame(c, data) {
+    const p = unb64(data)
+    if (p.length < 11) return
+    const dv = new DataView(p.buffer)
+    const s = dv.getUint32(0)
+    const key = p[4] === 1
+    const rot = p[5]
+    signal(c.peer, { t: 'vack', id: c.id, seq: s })
+    if (!c.vdec || c.vdec.state === 'closed') {
+      if (!key) return
+      c.vdec = new VideoDecoder({
+        output: (frame) => {
+          const cv = c.remoteCanvas
+          if (cv) {
+            const swap = rot % 2 === 1
+            const w = swap ? frame.displayHeight : frame.displayWidth
+            const hgt = swap ? frame.displayWidth : frame.displayHeight
+            if (cv.width !== w || cv.height !== hgt) { cv.width = w; cv.height = hgt }
+            const g = cv.getContext('2d')
+            g.save()
+            g.translate(w / 2, hgt / 2)
+            g.rotate((rot * Math.PI) / 2)
+            g.drawImage(frame, -frame.displayWidth / 2, -frame.displayHeight / 2)
+            g.restore()
+            c.lastFrameAt = Date.now()
+          }
+          frame.close()
+        },
+        error: () => { c.vdec = null; signal(c.peer, { t: 'keyreq', id: c.id }) }
+      })
+      c.vdec.configure({ codec: 'avc1.42E01F', optimizeForLatency: true })
+    }
+    if (c.vdec.decodeQueueSize > 4 && !key) { signal(c.peer, { t: 'keyreq', id: c.id }); return }
+    try {
+      c.vdec.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: s * 50000, data: p.subarray(10) }))
+    } catch {
+      c.vdec = null
+      signal(c.peer, { t: 'keyreq', id: c.id })
+    }
+  }
+
+  // ---- Call flow ----
+  let wakeLock = null
+  async function keepAwake(on) {
+    try {
+      if (M.native.keepAwake) return await M.native.keepAwake(on)
+      if (on && !wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen')
+      else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null }
+    } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && call && !M.native.keepAwake) { wakeLock = null; keepAwake(true) } })
+
+  async function startCall(peer, video) {
+    if (call) return toast("You're already in a call")
+    if (!callSupported()) return toast(isIos ? 'Calls need a newer version of iOS. Update your iPhone in Settings.' : "Calls aren't supported on this device")
+    if (!isOnline(peer)) return toast(`${nameOf(peer)} isn't connected. Calls need you both online or nearby.`)
+    call = { phase: 'outgoing', peer, id: newCallId(), video: video && videoSupported(), remoteVideo: false, muted: false, front: true }
+    signal(peer, { t: 'offer', id: call.id, video: call.video })
+    keepAwake(true)
+    playTone('ringback')
+    renderCall()
+    const id = call.id
+    call.timeout = setTimeout(() => { if (call && call.id === id && call.phase === 'outgoing') { signal(peer, { t: 'end', id }); endCall('No answer') } }, RING_MS)
+  }
+
+  async function begin() {
+    const c = call
+    clearTimeout(c.timeout)
+    stopTone()
+    c.phase = 'active'
+    c.startedAt = Date.now()
+    keepAwake(true)
+    renderCall()
+    try {
+      await startAudio(c)
+    } catch (err) {
+      signal(c.peer, { t: 'end', id: c.id })
+      return endCall("Couldn't use the microphone")
+    }
+    if (c.video) await startCamera(c)
+    c.ticker = setInterval(() => {
+      const el = $('#call-time')
+      if (el && call) el.textContent = durationText(Date.now() - call.startedAt)
+      // Ends the call if the connection is gone for too long.
+      if (call && !isOnline(call.peer)) { call.lostSince = call.lostSince || Date.now(); if (Date.now() - call.lostSince > 20000) { endCall('Connection lost') } }
+      else if (call) call.lostSince = 0
+    }, 1000)
+  }
+
+  function endCall(message) {
+    const c = call
+    if (!c) return
+    call = null
+    keepAwake(false)
+    clearTimeout(c.timeout)
+    clearInterval(c.ticker)
+    stopTone()
+    stopCamera(c, false)
+    if (c.mic) for (const t of c.mic.getTracks()) t.stop()
+    for (const k of ['enc', 'dec', 'vdec']) if (c[k]) try { c[k].close() } catch {}
+    if (c.ctx) try { c.ctx.close() } catch {}
+    const root = $('#call')
+    if (root) {
+      root.querySelector('.call-status').textContent = message
+      root.classList.add('ending')
+      setTimeout(() => root.remove(), 1400)
+    }
+  }
+
+  const durationText = (ms) => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') }
+
+  function onCallSignal({ key, msg }) {
+    if (!msg) return
+    const c = call
+    const { t, id } = msg
+    if (t === 'vack') { if (c && c.id === id && c.inflight) c.inflight.delete(msg.seq); return }
+    if (t === 'keyreq') { if (c && c.id === id) c.forceKey = true; return }
+    if (t === 'offer') {
+      if (c) { if (c.id !== id) signal(key, { t: 'reject', id, reason: 'busy' }); return }
+      const ct = contact(key)
+      if (!ct || ct.status !== 'ADDED') return
+      call = { phase: 'incoming', peer: key, id, video: false, videoCall: !!msg.video, remoteVideo: !!msg.video, muted: false, front: true }
+      playTone('ring')
+      renderCall()
+      if (!M.native.focusState() && M.native.notify) M.native.notify({ title: nameOf(key), body: msg.video ? 'Incoming video call' : 'Incoming call', conv: key })
+      call.timeout = setTimeout(() => { if (call && call.id === id && call.phase === 'incoming') endCall('Missed call') }, RING_MS)
+      return
+    }
+    if (!c || c.id !== id || c.peer !== key) return
+    if (t === 'answer' && c.phase === 'outgoing') begin()
+    else if (t === 'reject' && c.phase === 'outgoing') endCall(msg.reason === 'busy' ? `${nameOf(key)} is on another call` : 'Declined')
+    else if (t === 'end') endCall(c.phase === 'incoming' ? 'Missed call' : 'Call ended')
+    else if (t === 'unreachable') endCall(`Couldn't reach ${nameOf(key)}`)
+    else if (t === 'video') { c.remoteVideo = !!msg.on; if (!msg.on) c.vdec = null; renderCall() }
+  }
+
+  function accept(video) {
+    const c = call
+    if (!c || c.phase !== 'incoming') return
+    if (!callSupported()) { signal(c.peer, { t: 'reject', id: c.id, reason: 'declined' }); return endCall(isIos ? 'Calls need a newer version of iOS' : "Calls aren't supported here") }
+    c.video = video && videoSupported()
+    signal(c.peer, { t: 'answer', id: c.id })
+    begin()
+  }
+  function hangUp() {
+    const c = call
+    if (!c) return
+    if (c.phase === 'incoming') { signal(c.peer, { t: 'reject', id: c.id, reason: 'declined' }); return endCall('Declined') }
+    signal(c.peer, { t: 'end', id: c.id })
+    endCall('Call ended')
+  }
+
+  function callButton(ic, label, onClick, cls = '') {
+    return h('div', { class: 'cbtn ' + cls }, h('button', { onClick, 'aria-label': label }, icon(ic, 26)), h('span', {}, label))
+  }
+
+  function minimizeCall(min) {
+    if (!call) return
+    call.min = min
+    renderCall()
+  }
+
+  /** Drag the minimised call anywhere. */
+  function makeDraggable(el) {
+    if (el.dataset.drag) return
+    el.dataset.drag = '1'
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, down = false
+    el.addEventListener('pointerdown', (e) => {
+      if (!el.classList.contains('mini') || e.target.closest('button')) return
+      down = true; moved = false
+      const r = el.getBoundingClientRect()
+      sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top
+      el.setPointerCapture(e.pointerId)
+    })
+    el.addEventListener('pointermove', (e) => {
+      if (!down) return
+      const dx = e.clientX - sx, dy = e.clientY - sy
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true
+      const r = el.getBoundingClientRect()
+      el.style.left = Math.max(6, Math.min(innerWidth - r.width - 6, ox + dx)) + 'px'
+      el.style.top = Math.max(6, Math.min(innerHeight - r.height - 6, oy + dy)) + 'px'
+      el.style.right = 'auto'; el.style.bottom = 'auto'
+    })
+    el.addEventListener('pointerup', () => { if (down && !moved && el.classList.contains('mini')) minimizeCall(false); down = false })
+  }
+
+  function renderCall() {
+    const c = call
+    let root = $('#call')
+    if (!c) { if (root) root.remove(); return }
+    if (!root) { root = h('div', { id: 'call', class: 'call' }); layer.appendChild(root) }
+    const name = nameOf(c.peer)
+    if (c.min && c.phase !== 'incoming') {
+      if (!c.remoteCanvas) c.remoteCanvas = h('canvas', { class: 'call-remote' })
+      root.className = 'call mini'
+      makeDraggable(root)
+      const video = c.phase === 'active' && c.remoteVideo
+      root.replaceChildren(...[
+        video ? c.remoteCanvas : null,
+        h('div', { class: 'mini-top' },
+          video ? null : avatar(name, c.peer, 56),
+          h('div', { class: 'call-name' }, name),
+          h('div', { class: 'call-status' }, c.phase === 'active' ? h('span', { id: 'call-time' }, durationText(Date.now() - (c.startedAt || Date.now()))) : 'Calling…')),
+        h('div', { class: 'mini-bar' },
+          h('button', { class: c.muted ? 'on' : '', title: c.muted ? 'Unmute' : 'Mute', onClick: () => { c.muted = !c.muted; renderCall() } }, icon(c.muted ? 'micOff' : 'mic', 18)),
+          h('button', { title: 'Back to the call', onClick: () => minimizeCall(false) }, icon('expand', 18)),
+          h('button', { class: 'red', title: 'Hang up', onClick: hangUp }, icon('hangup', 18)))].filter(Boolean))
+      return
+    }
+    root.className = 'call'
+    root.style.left = root.style.top = root.style.right = root.style.bottom = ''
+    const status = c.phase === 'incoming' ? (c.videoCall ? 'Incoming video call' : 'Incoming call') : c.phase === 'outgoing' ? 'Calling…' : ''
+    const showRemote = c.phase === 'active' && c.remoteVideo
+    if (!c.remoteCanvas) c.remoteCanvas = h('canvas', { class: 'call-remote' })
+    const kids = [h('div', { class: 'call-bg', style: { background: `radial-gradient(circle at 50% 30%, ${AVATARS[javaHash(c.peer) % AVATARS.length][0]}66, #0a0a0f 70%)` } })]
+    if (showRemote) kids.push(c.remoteCanvas)
+    kids.push(h('div', { class: 'call-top' + (showRemote ? ' over' : '') },
+      showRemote ? null : h('div', { class: 'call-av' + (c.phase !== 'active' ? ' pulse' : '') }, avatar(name, c.peer, 132)),
+      h('div', { class: 'call-name' }, name),
+      h('div', { class: 'call-status' }, c.phase === 'active' ? h('span', { id: 'call-time' }, durationText(Date.now() - (c.startedAt || Date.now()))) : status)))
+    if (c.localVideo && c.video) {
+      c.localVideo.className = 'call-self'
+      kids.push(c.localVideo)
+    }
+    let buttons
+    if (c.phase === 'incoming') {
+      buttons = [callButton('hangup', 'Decline', hangUp, 'red'), c.videoCall ? callButton('video', 'Video', () => accept(true), 'green') : null, callButton('phone', 'Accept', () => accept(false), 'green')]
+    } else {
+      buttons = [
+        callButton(c.muted ? 'micOff' : 'mic', c.muted ? 'Unmute' : 'Mute', () => { c.muted = !c.muted; renderCall() }, c.muted ? 'on' : ''),
+        callButton(c.video ? 'video' : 'videoOff', 'Camera', async () => { c.video = !c.video; if (c.phase === 'active') { if (c.video) await startCamera(c); else stopCamera(c) } renderCall() }, c.video ? 'on' : ''),
+        c.video ? callButton('flip', 'Flip', async () => { c.front = !c.front; stopCamera(c, false); await startCamera(c) }) : null,
+        callButton('chat', 'Chat', () => { const p = c.peer; minimizeCall(true); openChat(p) }),
+        callButton('hangup', 'End', hangUp, 'red')
+      ]
+      // Minimise: keep talking while using the rest of the app.
+      kids.push(h('button', { class: 'call-min-btn', title: 'Minimise', onClick: () => minimizeCall(true) }, icon('down', 26)))
+    }
+    kids.push(h('div', { class: 'call-buttons' }, buttons))
+    root.replaceChildren(...kids)
+  }
+
   // ---- Host events -------------------------------------------------------------------
 
   M.on('identity', (me) => {
@@ -1439,15 +2510,17 @@
     renderMsgs()
   })
   M.on('incoming', onIncoming)
+  M.on('typing', ({ key }) => {
+    st.typing[key] = Date.now() + 6000
+    if (st.open === key) { refreshHeader(); setTimeout(refreshHeader, 6100) }
+  })
+  M.on('stories', (v) => { st.stories = v; if (st.tab === 'chats') renderSideSoon(); refreshViewer() })
   M.on('request', ({ key }) => toast(`${nameOf(key)} wants to chat with you`))
   M.on('open-chat', ({ conv }) => openChat(conv))
   M.on('open-link', ({ text }) => { if (st.me) showAddContact(text) })
-  // Calls aren't in this version yet: answer politely so the caller isn't left ringing.
-  M.on('call-msg', ({ key, msg }) => {
-    if (!msg || msg.t !== 'offer') return
-    M.call('call.send', { key, msg: { t: 'reject', id: msg.id, reason: 'declined' } })
-    toast(`${nameOf(key)} tried to call you. Calls are coming to this version soon.`, 5000)
-  })
+  M.on('call-msg', onCallSignal)
+  M.on('call-audio', ({ key, data }) => { if (call && call.phase === 'active' && call.peer === key) onAudioPacket(call, data) })
+  M.on('call-video', ({ key, data }) => { if (call && call.phase === 'active' && call.peer === key && call.remoteVideo) onVideoFrame(call, data) })
 
   let sideTimer = null
   function renderSideSoon() {
@@ -1485,7 +2558,7 @@
   async function start() {
     try {
       const init = await M.call('init')
-      Object.assign(st, { me: init.identity, contacts: init.contacts, groups: init.groups, summaries: init.summaries, net: init.net, prefs: init.prefs, fileStatus: init.fileStatus || {}, limits: init.limits })
+      Object.assign(st, { stories: init.stories || { mine: [], friends: [] }, me: init.identity, contacts: init.contacts, groups: init.groups, summaries: init.summaries, net: init.net, prefs: init.prefs, fileStatus: init.fileStatus || {}, limits: init.limits })
       if (st.me) enterApp()
       else { ob.hidden = false; showWelcome() }
     } catch (err) {

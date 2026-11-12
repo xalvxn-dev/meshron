@@ -149,6 +149,10 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
     case "native.shareFile":
       if let p = args["path"] as? String { present([URL(fileURLWithPath: p)]) }
       done(true)
+    case "native.keepAwake":
+      // Calls: the screen stays on until the call ends.
+      UIApplication.shared.isIdleTimerDisabled = (args["on"] as? Bool) ?? false
+      done(true)
     case "native.badge":
       UNUserNotificationCenter.current().setBadgeCount(args["count"] as? Int ?? 0)
       done(true)
@@ -241,6 +245,17 @@ struct WebView: UIViewRepresentable {
         return
       }
       decisionHandler(.allow)
+    }
+
+    /// Calls: iOS already asked the user for the microphone/camera (Info.plist strings);
+    /// don't ask a second time for the page.
+    @available(iOS 15.0, *)
+    func webView(
+      _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+      initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+      decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+      decisionHandler(.grant)
     }
 
     func webView(

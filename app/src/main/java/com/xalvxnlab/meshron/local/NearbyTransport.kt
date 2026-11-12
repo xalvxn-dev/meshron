@@ -7,6 +7,8 @@ import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
 import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback
 import com.google.android.gms.nearby.connection.ConnectionResolution
+import com.google.android.gms.nearby.connection.ConnectionOptions
+import com.google.android.gms.nearby.connection.ConnectionType
 import com.google.android.gms.nearby.connection.ConnectionsClient
 import com.google.android.gms.nearby.connection.DiscoveredEndpointInfo
 import com.google.android.gms.nearby.connection.DiscoveryOptions
@@ -26,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
  * accept every Nearby connection and let Noise decide. Nearby's own encryption is a bonus.
  */
 class NearbyTransport(
-    context: Context,
+    private val context: Context,
     private val sessionId: String,
     private val network: NetworkService,
     private val onChange: () -> Unit,
@@ -47,11 +49,20 @@ class NearbyTransport(
         if (running) return
         running = true
         error = null
+        // Range: full-power Bluetooth / BLE for finding phones (never the low-power mode), and
+        // once connected, let Nearby move the link to Wi-Fi Direct / hotspot, which reaches
+        // further and is faster. That upgrade may briefly take over this phone's Wi-Fi, so it
+        // is only allowed when there's no internet to lose.
         val strategy = Strategy.P2P_CLUSTER
-        client.startAdvertising(sessionId, SERVICE_ID, lifecycle, AdvertisingOptions.Builder().setStrategy(strategy).build())
-            .addOnFailureListener { fail("advertising", it) }
-        client.startDiscovery(SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(strategy).build())
-            .addOnFailureListener { fail("discovery", it) }
+        val type = connectionType()
+        client.startAdvertising(
+            sessionId, SERVICE_ID, lifecycle,
+            AdvertisingOptions.Builder().setStrategy(strategy).setLowPower(false).setConnectionType(type).build(),
+        ).addOnFailureListener { fail("advertising", it) }
+        client.startDiscovery(
+            SERVICE_ID, discovery,
+            DiscoveryOptions.Builder().setStrategy(strategy).setLowPower(false).build(),
+        ).addOnFailureListener { fail("discovery", it) }
         Log.i(TAG, "Bluetooth / Wi-Fi Direct started as $sessionId")
     }
 
@@ -81,7 +92,8 @@ class NearbyTransport(
             Log.i(TAG, "Found phone ${info.endpointName} nearby")
             // The smaller session ID asks; the other side only accepts.
             if (sessionId < info.endpointName && requested.add(endpointId)) {
-                client.requestConnection(sessionId, endpointId, lifecycle).addOnFailureListener {
+                val options = ConnectionOptions.Builder().setLowPower(false).setConnectionType(connectionType()).build()
+                client.requestConnection(sessionId, endpointId, lifecycle, options).addOnFailureListener {
                     requested.remove(endpointId)
                     Log.w(TAG, "Connection request failed: ${it.message}")
                 }
@@ -126,6 +138,14 @@ class NearbyTransport(
             links[endpointId]?.closed()
             dropped(endpointId)
         }
+    }
+
+    /** Wi-Fi Direct / hotspot upgrades only when they can't cost this phone its internet. */
+    private fun connectionType(): Int {
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+        val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+        val online = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        return if (online) ConnectionType.BALANCED else ConnectionType.DISRUPTIVE
     }
 
     private fun dropped(endpointId: String) {

@@ -6,7 +6,7 @@
 // - Secrets (identity seed, storage key) are encrypted with Windows DPAPI via safeStorage.
 // - meshron://id/… links open the Add contact screen.
 
-const { app, BrowserWindow, ipcMain, safeStorage, shell, Notification, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, shell, Notification, Tray, Menu, nativeImage, powerSaveBlocker } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -67,7 +67,7 @@ function emit(ev, data) {
 }
 
 const { startNodeHost } = require(path.join(bundle, 'core', 'boot-node.js'))
-const host = startNodeHost({ dataDir, secrets, emit, platform: 'windows', workletPath: path.join(bundle, 'worklet', 'app.js') })
+const host = startNodeHost({ dataDir, secrets, emit, platform: 'windows', lan: true, workletPath: path.join(bundle, 'worklet', 'app.js') })
 
 ipcMain.handle('host-call', async (_e, method, args) => {
   try {
@@ -79,6 +79,7 @@ ipcMain.handle('host-call', async (_e, method, args) => {
   }
 })
 
+let awakeId = null
 ipcMain.handle('desk', async (_e, what, arg) => {
   if (what === 'openPath') {
     const err = await shell.openPath(String(arg))
@@ -87,6 +88,10 @@ ipcMain.handle('desk', async (_e, what, arg) => {
     shell.showItemInFolder(String(arg))
   } else if (what === 'badge') {
     if (win && !win.isDestroyed() && !win.isFocused() && Number(arg) > 0) win.flashFrame(true)
+  } else if (what === 'awake') {
+    // Calls: keep the display on (and the PC awake) until the call ends.
+    if (arg && awakeId == null) awakeId = powerSaveBlocker.start('prevent-display-sleep')
+    else if (!arg && awakeId != null) { powerSaveBlocker.stop(awakeId); awakeId = null }
   } else if (what === 'notify') {
     if (!Notification.isSupported()) return
     const n = new Notification({ title: String(arg.title || 'Meshron'), body: String(arg.body || '').slice(0, 200), icon: iconPath, silent: true })
@@ -205,5 +210,6 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   quitting = true
   try { host.flush() } catch {}
+  try { host.stopLan && host.stopLan() } catch {}
 })
 app.on('window-all-closed', () => {})

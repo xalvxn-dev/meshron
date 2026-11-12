@@ -24,6 +24,14 @@ const SENT = 1 // appended to my log; replicates when peers are online
 const DELIVERED = 2 // 1:1 only: peer stored it and acknowledged
 const RECEIVED = 3 // incoming
 const GROUP = 'g:'
+// Stories, view receipts, edits, unsends and reactions are log entries but not chat bubbles.
+const HIDDEN = new Set(['story', 'seen', 'edit', 'unsend', 'react'])
+const STORY_KINDS = new Set(['story', 'seen'])
+const UNSENDABLE = new Set(['text', 'file'])
+const REPLY = /^↩ (.*)\n([\s\S]+)$/
+const bodyText = (body) => { const m = REPLY.exec(body); return m ? m[2] : body }
+const STORY_TTL = 24 * 60 * 60 * 1000
+const visible = (r) => !HIDDEN.has(r.kind)
 
 const MAX_BODY = 4000
 const MAX_NAME = 32
@@ -33,7 +41,7 @@ const FILE_CHUNK = 48 * 1024
 
 const DEFAULT_SETTINGS = { useInternet: true, carry: true, notifications: true, sounds: true, enterSends: true, previews: true }
 
-function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform }) {
+function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, onLink }) {
   const hex = (buf) => b4a.toString(buf, 'hex')
   const randomHex = (n) => {
     const b = b4a.alloc(n)
@@ -84,11 +92,11 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
         box = makeBox(key)
         state = new JsonFile(fs, path.join(dataDir, 'state.bin'), () => ({
           v: 1, identity: null, contacts: [], groups: [], groupAcks: {}, groupLogs: {}, readMarks: {},
-          carried: [], settings: { ...DEFAULT_SETTINGS }, pinned: [], muted: [], drafts: {}
+          carried: [], settings: { ...DEFAULT_SETTINGS }, pinned: [], muted: [], drafts: {}, seenStories: []
         }), box)
         const s = state.value
         s.settings = { ...DEFAULT_SETTINGS, ...(s.settings || {}) }
-        for (const k of ['pinned', 'muted', 'carried', 'contacts', 'groups']) if (!Array.isArray(s[k])) s[k] = []
+        for (const k of ['pinned', 'muted', 'carried', 'contacts', 'groups', 'seenStories']) if (!Array.isArray(s[k])) s[k] = []
         for (const k of ['groupAcks', 'groupLogs', 'readMarks', 'drafts']) if (!s[k] || typeof s[k] !== 'object') s[k] = {}
         if (s.identity) myKey = s.identity.publicKey
         for (const name of fs.readdirSync(messagesDir)) {
@@ -127,15 +135,72 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
     if (c.rows.some((r) => r.id === row.id)) return false
     c.rows.push(row)
     c.rows.sort((a, b) => a.localTime - b.localTime)
+    const target = applyChange(c, row)
     c.file.save()
-    changed(row.peerKey, [row])
+    changed(row.peerKey, target ? [row, target] : [row])
     return true
+  }
+
+  /**
+   * edit / unsend change the author's own earlier message; react sets the sender's reaction
+   * on any message. Returns the changed row (so the screens redraw it).
+   */
+  function applyChange(c, row) {
+    if (row.kind !== 'edit' && row.kind !== 'unsend' && row.kind !== 'react') return null
+    let o
+    try { o = JSON.parse(row.body) } catch { return null }
+    if (!o || typeof o.id !== 'string' || !o.id || o.id.length > 100) return null
+    const author = row.outgoing ? myKey : (row.senderKey || row.peerKey)
+    if (row.kind === 'react') {
+      const target = c.rows.find((r) => r.id === o.id && visible(r))
+      if (!target || target.kind === 'deleted') return null
+      const e = typeof o.e === 'string' ? o.e.slice(0, 16) : ''
+      // Newest reaction per person wins (rows can arrive out of order across people).
+      const at = (target.reactedAt = target.reactedAt || {})
+      if ((at[author] || 0) > row.sentAt) return null
+      at[author] = row.sentAt
+      target.reactions = { ...(target.reactions || {}) }
+      if (e) target.reactions[author] = e
+      else delete target.reactions[author]
+      return target
+    }
+    // Group row IDs carry the author, so nobody can change someone else's message.
+    const targetId = isGroup(row.peerKey) ? groupRowId(author, o.id) : o.id
+    const target = c.rows.find((r) => r.id === targetId)
+    if (!target || target.outgoing !== row.outgoing || (target.senderKey || null) !== (row.senderKey || null)) return null
+    if (row.kind === 'edit') {
+      const text = typeof o.text === 'string' ? o.text.slice(0, MAX_BODY) : ''
+      if (target.kind !== 'text' || !text.trim()) return null
+      target.body = text
+      target.edited = true
+      return target
+    }
+    if (!UNSENDABLE.has(target.kind)) return null
+    if (target.localPath) try { fs.unlinkSync(target.localPath) } catch {}
+    target.kind = 'deleted'
+    target.body = ''
+    target.localPath = null
+    target.reactions = {}
+    return target
+  }
+
+  /** One short line that stands for a message in a reply (same as Android). */
+  function quoteOf(r) {
+    let text = r.body
+    if (r.kind === 'file') {
+      const info = parseFileInfo(r.body)
+      text = info ? (/^image\//.test(info.mime || '') ? '📷 Photo' : '📎 ' + info.name) : '📎 File'
+    } else text = bodyText(r.body)
+    const line = String(text).replace(/\s+/g, ' ').trim()
+    return line.length > 90 ? line.slice(0, 89) + '…' : line
   }
 
   // Tell the screens about changed rows; the chat list is recomputed (debounced).
   let summaryTimer = null
   function changed(conv, rows) {
-    if (rows && rows.length) emit('msgs', { conv, rows })
+    const shown = (rows || []).filter(visible)
+    if (shown.length) emit('msgs', { conv, rows: shown })
+    if (rows && rows.some((r) => STORY_KINDS.has(r.kind))) storiesChanged()
     if (!summaryTimer) {
       summaryTimer = setTimeout(() => {
         summaryTimer = null
@@ -149,8 +214,13 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
     for (const [conv, c] of chats) {
       if (!c.rows.length) continue
       let unread = 0
-      for (const r of c.rows) if (!r.outgoing && !r.read) unread++
-      out.push({ conv, last: c.rows[c.rows.length - 1], unread })
+      let last = null
+      for (const r of c.rows) {
+        if (!visible(r)) continue
+        last = r
+        if (!r.outgoing && !r.read) unread++
+      }
+      if (last) out.push({ conv, last, unread })
     }
     return out.sort((a, b) => b.last.localTime - a.last.localTime)
   }
@@ -428,6 +498,15 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
           saveState()
         }
         return
+      // Local links (same Wi-Fi, Bluetooth): bytes for the platform transport that owns the link.
+      case 'typing':
+        emit('typing', { key: e.key })
+        return
+      case 'link-data':
+      case 'link-close':
+        if (onLink) onLink(e)
+        else emit(e.ev, { id: e.id, data: e.data })
+        return
       case 'call-msg':
         return emit('call-msg', { key: e.key, msg: e.msg, via: e.via || null })
       case 'call-audio':
@@ -503,7 +582,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
     }
     const row = {
       peerKey: e.key, id: e.id, outgoing: false, body: e.body, sentAt: e.ts, localTime: now(), status: RECEIVED,
-      signature: e.sig, read: false, seq: e.seq, senderKey: null, kind: e.kind || 'text', localPath: null
+      signature: e.sig, read: HIDDEN.has(e.kind), seq: e.seq, senderKey: null, kind: e.kind || 'text', localPath: null
     }
     if (insertRow(row)) afterIncoming(row, contactView(contact).displayName)
     // Ack after the row is stored (duplicates are re-acked too).
@@ -515,7 +594,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
     if (!g || !g.members.includes(e.from)) return
     const row = {
       peerKey: GROUP + g.id, id: groupRowId(e.from, e.id), outgoing: false, body: e.body, sentAt: e.ts,
-      localTime: now(), status: RECEIVED, signature: e.sig, read: false, seq: e.seq, senderKey: e.from,
+      localTime: now(), status: RECEIVED, signature: e.sig, read: HIDDEN.has(e.kind), seq: e.seq, senderKey: e.from,
       kind: e.kind || 'text', localPath: null
     }
     if (insertRow(row)) afterIncoming(row, g.name)
@@ -523,6 +602,11 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
   }
 
   function afterIncoming(row, title) {
+    if (row.kind === 'story') {
+      if (fileInfoOf(row)) download(row)
+      return
+    }
+    if (HIDDEN.has(row.kind)) return
     if (row.kind === 'file') download(row)
     if (!S().muted.includes(row.peerKey)) emit('incoming', { conv: row.peerKey, row, title })
   }
@@ -587,7 +671,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
   function download(row) {
     if (row.localPath || net.status !== 'online') return
     for (const d of downloads.values()) if (fileKey(d.row) === fileKey(row)) return
-    const info = parseFileInfo(row.body)
+    const info = fileInfoOf(row)
+    if (row.kind === 'story' && storyExpired(row)) return
     if (!info) return setFileStatus(row, 'Invalid file')
     if (info.size > MAX_FILE) return setFileStatus(row, 'Too large')
     if (!mayDownload(row)) return setFileStatus(row, 'Accept this contact to download')
@@ -598,7 +683,10 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
   }
 
   function retryDownloads() {
-    for (const r of allRows()) if (r.kind === 'file' && !r.outgoing && !r.localPath) download(r)
+    for (const r of allRows()) {
+      if (r.outgoing || r.localPath) continue
+      if (r.kind === 'file' || (r.kind === 'story' && fileInfoOf(r) && !storyExpired(r))) download(r)
+    }
   }
 
   function failDownload(req, message) {
@@ -624,16 +712,13 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
       changed(row.peerKey, [row])
     }
     setFileStatus(d.row, null)
+    if (d.row.kind === 'story') storiesChanged()
   }
 
   /** Stores bytes in my blob log, then sends the file message. */
-  async function sendFile(conv, name, mime, data) {
-    if (net.status !== 'online') throw new Error('The network is still starting. Try again in a moment.')
-    if (data.byteLength > MAX_FILE) throw new Error('Files can be up to 25 MB')
-    if (!data.byteLength) throw new Error("That file is empty")
+  /** Stores bytes in my blob log for [conv]; returns the file description a message carries. */
+  async function uploadBlob(conv, name, mime, data, local) {
     const id = randomHex(16)
-    const local = path.join(sentDir, id + '-' + safeName(name))
-    fs.writeFileSync(local, data)
     try {
       const stored = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Storing the file took too long')), 120000)
@@ -647,15 +732,152 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
         }
         cmd({ cmd: 'file-end', xfer: id })
       })
-      const body = JSON.stringify({ name, mime: mime || 'application/octet-stream', size: data.byteLength, sha256: sha256(data), blobs: stored.blobs, blob: stored.blob })
-      sendRow(conv, body, 'file', local)
-    } catch (err) {
-      try { fs.unlinkSync(local) } catch {}
-      throw err
+      return { name, mime: mime || 'application/octet-stream', size: data.byteLength, sha256: sha256(data), blobs: stored.blobs, blob: stored.blob }
     } finally {
       uploads.delete(id)
     }
   }
+
+  async function sendFile(conv, name, mime, data) {
+    if (net.status !== 'online') throw new Error('The network is still starting. Try again in a moment.')
+    if (data.byteLength > MAX_FILE) throw new Error('Files can be up to 25 MB')
+    if (!data.byteLength) throw new Error("That file is empty")
+    const local = path.join(sentDir, randomHex(16) + '-' + safeName(name))
+    fs.writeFileSync(local, data)
+    try {
+      const info = await uploadBlob(conv, name, mime, data, local)
+      sendRow(conv, JSON.stringify(info), 'file', local)
+    } catch (err) {
+      try { fs.unlinkSync(local) } catch {}
+      throw err
+    }
+  }
+
+  // ---- Stories --------------------------------------------------------------------------
+  //
+  // A story is a 'story' entry fanned out to each added contact's 1:1 log, so it travels like
+  // any message (internet, relays, nearby, mesh) and stays end-to-end encrypted. Body:
+  //   { sid, type: 'text' | 'photo' | 'delete', text?, bg?, file?: { name, mime, size, sha256, blobs, blob }, exp }
+  // Viewers answer with a 'seen' entry { sid }. Photo files are deleted when the story expires.
+
+  function parseStory(row) {
+    try {
+      const o = JSON.parse(row.body)
+      if (!o || typeof o.sid !== 'string' || !/^[0-9a-f]{16,32}$/.test(o.sid)) return null
+      return o
+    } catch {
+      return null
+    }
+  }
+  function fileInfoOf(row) {
+    if (row.kind === 'file') return parseFileInfo(row.body)
+    if (row.kind !== 'story') return null
+    const o = parseStory(row)
+    return o && o.file ? parseFileInfo(JSON.stringify(o.file)) : null
+  }
+  const storyExpired = (row) => row.sentAt + STORY_TTL < now()
+
+  let storiesTimer = null
+  function storiesChanged() {
+    if (storiesTimer) return
+    storiesTimer = setTimeout(() => {
+      storiesTimer = null
+      emit('stories', storiesView())
+    }, 120)
+  }
+
+  function storiesView() {
+    const cutoff = now() - STORY_TTL
+    const deleted = new Set()
+    const mine = new Map() // sid -> story
+    const viewers = new Map() // sid -> Set(keys)
+    const friends = new Map() // key -> [stories]
+    for (const [conv, c] of chats) {
+      if (isGroup(conv)) continue
+      for (const r of c.rows) {
+        if (r.kind === 'seen') {
+          if (!r.outgoing) {
+            const o = parseStory(r)
+            if (o) {
+              if (!viewers.has(o.sid)) viewers.set(o.sid, new Set())
+              viewers.get(o.sid).add(conv)
+            }
+          }
+          continue
+        }
+        if (r.kind !== 'story') continue
+        const o = parseStory(r)
+        if (!o) continue
+        if (o.type === 'delete') { deleted.add((r.outgoing ? 'me' : conv) + '|' + o.sid); continue }
+        if (r.sentAt < cutoff) continue
+        const item = { sid: o.sid, type: o.type === 'photo' ? 'photo' : 'text', text: String(o.text || '').slice(0, 700), bg: o.bg | 0, ts: r.sentAt, conv, id: r.id, hasPhoto: !!o.file, photoReady: !!r.localPath, mime: o.file ? o.file.mime : null }
+        if (r.outgoing) {
+          if (!mine.has(o.sid) || (!mine.get(o.sid).photoReady && item.photoReady)) mine.set(o.sid, item)
+        } else {
+          const contact = S().contacts.find((x) => x.keyHex === conv)
+          if (!contact || contact.status !== 'ADDED') continue
+          item.seen = S().seenStories.includes(conv + '|' + o.sid)
+          if (!friends.has(conv)) friends.set(conv, [])
+          friends.get(conv).push(item)
+        }
+      }
+    }
+    const myList = [...mine.values()].filter((x) => !deleted.has('me|' + x.sid)).sort((a, b) => a.ts - b.ts)
+    for (const x of myList) x.viewers = [...(viewers.get(x.sid) || [])]
+    const friendList = []
+    for (const [key, items] of friends) {
+      const list = items.filter((x) => !deleted.has(key + '|' + x.sid)).sort((a, b) => a.ts - b.ts)
+      if (list.length) friendList.push({ key, items: list, allSeen: list.every((x) => x.seen), latest: list[list.length - 1].ts })
+    }
+    friendList.sort((a, b) => (a.allSeen === b.allSeen ? b.latest - a.latest : a.allSeen ? 1 : -1))
+    return { mine: myList, friends: friendList }
+  }
+
+  /** Expired story photos are removed from this device. */
+  function sweepStories() {
+    for (const c of chats.values()) {
+      let dirty = false
+      for (const r of c.rows) {
+        if (r.kind === 'story' && r.localPath && storyExpired(r)) {
+          try { fs.unlinkSync(r.localPath) } catch {}
+          r.localPath = null
+          dirty = true
+        }
+      }
+      if (dirty) c.file.save()
+    }
+    const live = new Set()
+    for (const r of allRows()) if (r.kind === 'story' && !storyExpired(r)) { const o = parseStory(r); if (o) live.add((r.outgoing ? 'me' : r.peerKey) + '|' + o.sid) }
+    const before = S().seenStories.length
+    S().seenStories = S().seenStories.filter((k) => live.has(k))
+    if (S().seenStories.length !== before) saveState()
+  }
+  setInterval(() => { if (state) { sweepStories(); storiesChanged() } }, 10 * 60 * 1000)
+
+  /** A newly added contact gets my stories that are still live (like following someone). */
+  async function shareLiveStoriesWith(key) {
+    const sentTo = new Set()
+    let source = new Map() // sid -> a row of mine holding it
+    for (const r of chat(key).rows) if (r.outgoing && r.kind === 'story') { const o = parseStory(r); if (o) sentTo.add(o.sid) }
+    for (const [conv, c] of chats) {
+      if (isGroup(conv)) continue
+      for (const r of c.rows) {
+        if (!r.outgoing || r.kind !== 'story' || storyExpired(r)) continue
+        const o = parseStory(r)
+        if (o && o.type !== 'delete' && !sentTo.has(o.sid) && !source.has(o.sid)) source.set(o.sid, r)
+      }
+    }
+    for (const [, r] of source) {
+      const o = parseStory(r)
+      if (o.type === 'photo') {
+        if (!r.localPath || !fs.existsSync(r.localPath)) continue
+        o.file = await uploadBlob(key, 'story.jpg', (o.file && o.file.mime) || 'image/jpeg', fs.readFileSync(r.localPath), r.localPath)
+      }
+      sendRow(key, JSON.stringify(o), 'story', r.localPath || null)
+    }
+  }
+
+  const storyAudience = () => S().contacts.filter((c) => c.status === 'ADDED').map((c) => c.keyHex)
 
   // ---- Sending ------------------------------------------------------------------------
 
@@ -742,7 +964,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
       startNetwork()
       return {
         platform, identity: identityView(), contacts: contactsView(), groups: groupsView(), summaries: summaries(),
-        net, prefs: prefsView(), fileStatus, limits: { MAX_BODY, MAX_NAME, MAX_FILE }
+        net, prefs: prefsView(), fileStatus, limits: { MAX_BODY, MAX_NAME, MAX_FILE }, stories: storiesView()
       }
     },
 
@@ -810,6 +1032,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
       else list.push({ keyHex: key, name: n, status: 'ADDED', addedAt: now(), handle: '', verified: false })
       contactsChanged()
       retryDownloads() // accepting a request unlocks files they already sent
+      shareLiveStoriesWith(key).catch(() => {})
     },
     async 'contacts.remove'({ key }) {
       S().contacts = S().contacts.filter((c) => c.keyHex !== key)
@@ -831,8 +1054,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
       return safetyCode(key)
     },
 
-    async 'chat.open'({ conv }) {
-      return chat(conv).rows
+    async 'chat.open'({ conv, all }) {
+      return all ? chat(conv).rows.slice() : chat(conv).rows.filter(visible)
     },
     /** Text messages containing [q], newest first, across every chat. */
     async 'chat.search'({ q, limit = 40 }) {
@@ -842,10 +1065,84 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
       for (const r of allRows()) if (r.kind === 'text' && r.body.toLowerCase().includes(needle)) hits.push(r)
       return hits.sort((a, b) => b.localTime - a.localTime).slice(0, limit)
     },
-    async 'chat.send'({ conv, text }) {
-      const body = String(text || '').trim().slice(0, MAX_BODY)
-      if (!body) return
+    async 'chat.send'({ conv, text, replyTo }) {
+      const clean = String(text || '').trim()
+      if (!clean) return
+      const quoted = replyTo && chat(conv).rows.find((r) => r.id === replyTo && visible(r) && r.kind !== 'deleted')
+      const body = (quoted ? '↩ ' + quoteOf(quoted) + '\n' + clean : clean).slice(0, MAX_BODY)
       sendRow(conv, body, 'text')
+    },
+    /** Changes the text of my own message on every device that has it. */
+    async 'chat.edit'({ conv, id, text }) {
+      const m = chat(conv).rows.find((r) => r.id === id)
+      const clean = String(text || '').trim().slice(0, MAX_BODY)
+      if (!m || !m.outgoing || m.kind !== 'text' || !clean || clean === bodyText(m.body)) return
+      const q = REPLY.exec(m.body)
+      const body = (q ? '↩ ' + q[1] + '\n' + clean : clean).slice(0, MAX_BODY)
+      sendRow(conv, JSON.stringify({ id: wireId(m), text: body }), 'edit')
+    },
+    /** Deletes my own message for everyone. */
+    async 'chat.unsend'({ conv, id }) {
+      const m = chat(conv).rows.find((r) => r.id === id)
+      if (!m || !m.outgoing || !UNSENDABLE.has(m.kind)) return
+      sendRow(conv, JSON.stringify({ id: wireId(m) }), 'unsend')
+    },
+    /** Sets (or with e = '', removes) my reaction to a message. */
+    async 'chat.react'({ conv, id, e }) {
+      const m = chat(conv).rows.find((r) => r.id === id)
+      if (!m || m.kind === 'deleted') return
+      sendRow(conv, JSON.stringify({ id: m.id, e: String(e || '').slice(0, 16) }), 'react')
+    },
+    /** "typing…" for the other person in a 1:1 chat (live only). */
+    async 'chat.typing'({ conv }) {
+      if (net.status === 'online' && HEX64.test(conv)) cmd({ cmd: 'typing', key: conv })
+    },
+    async 'stories.list'() {
+      sweepStories()
+      return storiesView()
+    },
+    /** Posts a text or photo story to every added contact. Photos arrive as base64 pieces via file.begin/chunk. */
+    async 'stories.post'({ type, text, bg, upload }) {
+      if (net.status !== 'online') throw new Error('The network is still starting. Try again in a moment.')
+      const audience = storyAudience()
+      if (!audience.length) throw new Error('Add a contact first. Stories are shown to your contacts.')
+      const sid = randomHex(16)
+      const exp = now() + STORY_TTL
+      const clean = String(text || '').trim().slice(0, 700)
+      if (type === 'photo') {
+        const f = incoming.get(upload)
+        if (!f) throw new Error('The photo did not arrive')
+        incoming.delete(upload)
+        const data = b4a.concat(f.chunks)
+        const local = path.join(sentDir, sid + '-' + safeName(f.name))
+        fs.writeFileSync(local, data)
+        for (const key of audience) {
+          const info = await uploadBlob(key, f.name, f.mime, data, local)
+          sendRow(key, JSON.stringify({ sid, type: 'photo', text: clean, file: info, exp }), 'story', local)
+        }
+      } else {
+        if (!clean) throw new Error('Write something first')
+        for (const key of audience) sendRow(key, JSON.stringify({ sid, type: 'text', text: clean, bg: bg | 0, exp }), 'story')
+      }
+      storiesChanged()
+      return sid
+    },
+    async 'stories.seen'({ key, sid }) {
+      const k = key + '|' + sid
+      if (S().seenStories.includes(k)) return
+      S().seenStories.push(k)
+      saveState()
+      sendRow(key, JSON.stringify({ sid }), 'seen')
+      storiesChanged()
+    },
+    async 'stories.delete'({ sid }) {
+      for (const key of storyAudience()) sendRow(key, JSON.stringify({ sid, type: 'delete' }), 'story')
+      storiesChanged()
+    },
+    async 'stories.photo'({ conv, id }) {
+      const row = chat(conv).rows.find((r) => r.id === id)
+      if (!row || !row.localPath) throw new Error('Not downloaded yet')
+      return { data: b4a.toString(fs.readFileSync(row.localPath), 'base64') }
     },
     async 'chat.markRead'({ conv }) {
       const c = chat(conv)
@@ -968,6 +1265,20 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform })
       cmd({ cmd: 'call-video', key, data })
     },
 
+    // Local links: a platform transport (same Wi-Fi / Bluetooth) carries raw bytes; the worklet
+    // runs the same Noise handshake over them as over the internet, so identity is proven inside.
+    async 'link.open'({ via, initiator }) {
+      if (!ipc) throw new Error('Not online yet')
+      const id = randomHex(8)
+      cmd({ cmd: 'link-open', id, via: via === 'nearby' ? 'nearby' : 'lan', initiator: !!initiator })
+      return id
+    },
+    async 'link.data'({ id, data }) {
+      cmd({ cmd: 'link-data', id, data })
+    },
+    async 'link.close'({ id }) {
+      cmd({ cmd: 'link-close', id })
+    },
     async 'net.changed'() {
       if (net.status === 'online') cmd({ cmd: 'network-change' })
     }

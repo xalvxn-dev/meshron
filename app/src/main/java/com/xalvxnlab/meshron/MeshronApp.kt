@@ -36,7 +36,11 @@ class MeshronApp : Application() {
         MessagingService(database.messages(), networkService, contactsRepository, identityRepository)
     }
     val fileService by lazy { FileService(this, database.messages(), networkService, messagingService, contactsRepository) }
+    val storyService by lazy { com.xalvxnlab.meshron.messaging.StoryService(database.messages(), messagingService, fileService, contactsRepository, identityRepository, networkService) }
     val settings by lazy { AppSettings(this) }
+
+    /** Asks the home screen to open a chat (e.g. "Chat" during a call). */
+    val openChatRequests = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
     val notifier by lazy { Notifier(this) }
     val calls by lazy { CallManager(this, networkService, contactsRepository, notifier) { inForeground } }
 
@@ -113,7 +117,7 @@ class MeshronApp : Application() {
         val text = when (m.kind) {
             MessageEntity.KIND_FILE -> FileInfo.parse(m.body)?.let { if (it.isImage) "Photo" else "File: ${it.name}" } ?: "File"
             MessageEntity.KIND_INVITE -> "Added you to a group"
-            MessageEntity.KIND_TEXT -> m.body.take(200)
+            MessageEntity.KIND_TEXT -> com.xalvxnlab.meshron.messaging.MessagingService.bodyText(m.body).take(200)
             else -> return // e.g. group member updates
         }
         notifier.newMessage(m.peerKey, title, text)

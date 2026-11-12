@@ -114,6 +114,40 @@ class FileService(
     private suspend fun mayDownload(row: MessageEntity): Boolean =
         row.isGroup || contacts.contacts.first().any { it.keyHex == row.peerKey && it.status == Contact.Status.ADDED }
 
+    /** Stores an existing local file in my blob log for [conversation]; returns what a message carries. */
+    suspend fun uploadLocal(conversation: String, local: File, name: String, mime: String): Result<FileInfo> = runCatching {
+        if (!network.isOnline) error("The network is still starting. Try again in a moment.")
+        val digest = MessageDigest.getInstance("SHA-256")
+        withContext(Dispatchers.IO) { local.inputStream().use { i -> val b = ByteArray(64 * 1024); while (true) { val n = i.read(b); if (n < 0) break; digest.update(b, 0, n) } } }
+        val id = ByteArray(16).also(random::nextBytes).toHex()
+        val done = CompletableDeferred<PeerEvent.FileStored>()
+        uploads[id] = done
+        try {
+            withContext(Dispatchers.IO) { local.inputStream().use { network.fileUpload(id, wireConversation(conversation), it) } }
+            val stored = withTimeout(120_000) { done.await() }
+            FileInfo(name, mime, local.length(), digest.digest().toHex(), stored.blobs, JSONObject(stored.blob))
+        } finally {
+            uploads.remove(id)
+        }
+    }
+
+    /** Decodes a picked picture, shrinks it to 1440 px on the long side and saves it as JPEG. */
+    suspend fun prepareStoryPhoto(uri: Uri, sid: String): File = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1440) sample *= 2
+        val bitmap = resolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: error("Can't read that picture")
+        val scale = minOf(1f, 1440f / maxOf(bitmap.width, bitmap.height))
+        val scaled = if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true) else bitmap
+        val out = File(sentDir, "$sid-story.jpg")
+        out.outputStream().use { scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+        out
+    }
+
     /** Copies the picked file, stores it in my blob log and sends the file message. */
     suspend fun send(messaging: MessagingService, conversation: String, uri: Uri): Result<Unit> = runCatching {
         if (!network.isOnline) error("The network is still starting. Try again in a moment.")
@@ -168,7 +202,8 @@ class FileService(
     private suspend fun download(row: MessageEntity) {
         val key = keyOf(row)
         if (downloads.values.any { keyOf(it.row) == key } || row.localPath != null) return
-        val info = FileInfo.parse(row.body) ?: return setStatus(key, "Invalid file")
+        val info = (if (row.kind == MessageEntity.KIND_STORY) com.xalvxnlab.meshron.messaging.StoryBody.parse(row.body)?.file
+            else FileInfo.parse(row.body)) ?: return if (row.kind == MessageEntity.KIND_STORY) Unit else setStatus(key, "Invalid file")
         if (info.size > MAX_FILE) return setStatus(key, "Too large")
         if (!mayDownload(row)) return setStatus(key, "Accept this contact to download")
         val req = ByteArray(8).also(random::nextBytes).toHex()
@@ -180,6 +215,7 @@ class FileService(
 
     private suspend fun retryPending() {
         for (row in dao.filesToDownload()) download(row)
+        for (row in dao.storyPhotosToDownload(System.currentTimeMillis() - com.xalvxnlab.meshron.messaging.StoryService.TTL)) download(row)
     }
 
     private suspend fun handle(e: PeerEvent) {

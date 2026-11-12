@@ -24,6 +24,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.xalvxnlab.meshron.identity.Identity
 import com.xalvxnlab.meshron.ui.call.CallScreen
+import com.xalvxnlab.meshron.ui.call.CallMini
+import androidx.compose.runtime.setValue
 import com.xalvxnlab.meshron.ui.home.HomeScreen
 import com.xalvxnlab.meshron.ui.onboarding.OnboardingFlow
 import kotlinx.coroutines.flow.map
@@ -65,13 +67,30 @@ fun AppRoot(app: MeshronApp) {
                     app.applyBackgroundSetting()
                 }
                 HomeScreen(s.identity, repo, app.contactsRepository, app.networkService, app.messagingService, app.fileService)
-                // The call screen fades and slides in over everything.
+                // The call screen fades and slides in over everything. It can be minimised to a
+                // floating window, so chats stay usable during a call.
                 val callState by app.calls.state.collectAsState()
+                var minimized by remember(callState.id) { androidx.compose.runtime.mutableStateOf(false) }
+                val inCall = callState.phase != CallState.Phase.IDLE
+                // Keep the screen awake for the whole call (video or voice), minimised or not.
+                val view = androidx.compose.ui.platform.LocalView.current
+                androidx.compose.runtime.DisposableEffect(inCall) {
+                    view.keepScreenOn = inCall
+                    onDispose { view.keepScreenOn = false }
+                }
+                val full = inCall && (!minimized || callState.phase == CallState.Phase.INCOMING)
                 AnimatedVisibility(
-                    visible = callState.phase != CallState.Phase.IDLE,
+                    visible = full,
                     enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { it / 6 },
                     exit = fadeOut(tween(250)),
-                ) { CallScreen(app.calls, app.networkService) }
+                ) {
+                    CallScreen(
+                        app.calls, app.networkService,
+                        onMinimize = { minimized = true },
+                        onChat = { key -> minimized = true; app.openChatRequests.tryEmit(key) },
+                    )
+                }
+                if (inCall && !full) CallMini(app.calls, onExpand = { minimized = false })
             }
         }
     }

@@ -1,5 +1,19 @@
 package com.xalvxnlab.meshron.ui.chat
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.border
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.systemBarsPadding
+
+import androidx.compose.ui.draw.drawBehind
+
 import androidx.compose.ui.draw.shadow
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -112,6 +126,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.clip
@@ -159,14 +175,10 @@ fun ChatScreen(
     val context = LocalContext.current
     val fileStatus by files.status.collectAsState()
     var sendingFile by remember { mutableStateOf(false) }
+    // Picked files are shown first (photo preview, name, size, caption) and sent on "Send".
+    var pendingFile by remember { mutableStateOf<android.net.Uri?>(null) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch {
-            sendingFile = true
-            files.send(messaging, target.conversation, uri).onFailure {
-                Toast.makeText(context, it.message ?: "Couldn't send the file", Toast.LENGTH_LONG).show()
-            }
-            sendingFile = false
-        }
+        if (uri != null) pendingFile = uri
     }
     val app = context.applicationContext as MeshronApp
     val haptics = LocalHapticFeedback.current
@@ -191,6 +203,15 @@ fun ChatScreen(
     }.collectAsState(initial = emptyList())
     val net by network.state.collectAsState()
     var draft by rememberSaveable(conversation) { mutableStateOf("") }
+    val mods by remember(conversation) { messaging.modifiers(conversation) }.collectAsState(initial = emptyList())
+    val extras = remember(mods, myKey) { summarize(mods, myKey) }
+    var replyTo by remember(conversation) { mutableStateOf<MessageEntity?>(null) }
+    var editing by remember(conversation) { mutableStateOf<MessageEntity?>(null) }
+    var flash by remember { mutableStateOf<String?>(null) }
+    var lastTyping by remember { mutableStateOf(0L) }
+    val typingNow by network.typing.collectAsState()
+    val theyAreTyping = target is ChatTarget.Direct && typingNow.containsKey(target.contact.keyHex)
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     var showMembers by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var showSafety by rememberSaveable { mutableStateOf(false) }
@@ -210,6 +231,7 @@ fun ChatScreen(
             val peer = net.peers[target.contact.keyHex]
             target.contact.displayName to when {
                 target.contact.status == Contact.Status.REQUEST -> "Not in your contacts yet"
+                theyAreTyping -> "typing…"
                 peer?.state == PeerInfo.State.CONNECTED -> (if (target.contact.verified) "Verified · " else "") + "Online · ${peer.viaLabel}"
                 else -> "Offline · they'll get messages later"
             }
@@ -244,7 +266,7 @@ fun ChatScreen(
                             Text(
                                 subtitle,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (theyAreTyping) MeshColors.GradMid else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -349,6 +371,11 @@ fun ChatScreen(
                                 .padding(top = if (first) 8.dp else 2.dp),
                         ) {
                             if (newDay) DaySeparator(dayLabel(m.localTime))
+                            val quote = remember(m.body) { MessagingService.REPLY.find(m.body)?.groupValues?.get(1) }
+                            // Who wrote the quoted message: the newest earlier message it matches.
+                            val quoted = remember(quote, ordered.size) {
+                                quote?.let { q -> ordered.drop(i + 1).firstOrNull { MessagingService.quoteOf(it) == q } }
+                            }
                             Bubble(
                                 m = m,
                                 first = first,
@@ -356,6 +383,12 @@ fun ChatScreen(
                                 sender = if (target is ChatTarget.Group && !m.outgoing && first) m.senderKey?.let(nameOf) else null,
                                 status = status,
                                 fileStatus = fileStatus[FileService.keyOf(m)],
+                                reactions = extras.reactions[m.id].orEmpty(),
+                                myKey = myKey,
+                                edited = m.id in extras.edited,
+                                quoteAuthor = quoted?.let { q -> if (q.outgoing) "You" else if (target is ChatTarget.Group) q.senderKey?.let(nameOf) else title },
+                                highlighted = flash == m.id,
+                                canEdit = m.outgoing && m.kind == MessageEntity.KIND_TEXT && System.currentTimeMillis() - m.sentAt < EDIT_WINDOW_MS,
                                 onOpenFile = { openFile(context, m) },
                                 onCopy = {
                                     context.getSystemService(android.content.ClipboardManager::class.java)
@@ -363,6 +396,28 @@ fun ChatScreen(
                                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                                 },
                                 onDelete = { scope.launch { messaging.deleteMessage(m) } },
+                                onUnsend = { scope.launch { messaging.unsend(m) } },
+                                onReply = {
+                                    editing = null
+                                    replyTo = m
+                                    runCatching { focus.requestFocus() }
+                                },
+                                onEdit = {
+                                    replyTo = null
+                                    editing = m
+                                    draft = MessagingService.bodyText(m.body)
+                                    runCatching { focus.requestFocus() }
+                                },
+                                onReact = { e -> scope.launch { messaging.react(m, e) } },
+                                onQuoteTap = {
+                                    val idx = quoted?.let { q -> ordered.indexOfFirst { it.id == q.id } } ?: -1
+                                    if (idx >= 0) scope.launch {
+                                        listState.animateScrollToItem(idx)
+                                        flash = quoted!!.id
+                                        kotlinx.coroutines.delay(1400)
+                                        flash = null
+                                    }
+                                },
                             )
                         }
                     }
@@ -394,6 +449,36 @@ fun ChatScreen(
             } else {
                 Column(Modifier.fillMaxWidth().background(MeshColors.Bg)) {
                     Box(Modifier.fillMaxWidth().height(0.5.dp).background(MeshColors.Hairline))
+                    val bar = editing ?: replyTo
+                    AnimatedVisibility(visible = bar != null) {
+                        val m = bar ?: return@AnimatedVisibility
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.width(3.dp).height(36.dp).clip(RoundedCornerShape(2.dp)).background(MeshColors.Gradient))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (editing != null) "Editing message" else "Replying to " + when {
+                                        m.outgoing -> "yourself"
+                                        target is ChatTarget.Group -> m.senderKey?.let(nameOf) ?: "them"
+                                        else -> title
+                                    },
+                                    style = MaterialTheme.typography.labelLarge, color = MeshColors.GradMid,
+                                )
+                                Text(
+                                    MessagingService.quoteOf(m), style = MaterialTheme.typography.bodyMedium,
+                                    color = MeshColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(onClick = {
+                                if (editing != null) draft = ""
+                                editing = null
+                                replyTo = null
+                            }) { Icon(Icons.Filled.Close, "Cancel", tint = MeshColors.TextSecondary) }
+                        }
+                    }
                     Row(
                         Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).navigationBarsPadding(),
                         verticalAlignment = Alignment.Bottom,
@@ -404,7 +489,15 @@ fun ChatScreen(
                         }
                         TextField(
                             value = draft,
-                            onValueChange = { if (it.length <= MessagingService.MAX_BODY) draft = it },
+                            onValueChange = {
+                                if (it.length <= MessagingService.MAX_BODY) draft = it
+                                // "typing…" for the other person, at most every 4 seconds.
+                                val now = System.currentTimeMillis()
+                                if (target is ChatTarget.Direct && it.isNotBlank() && now - lastTyping > 4000) {
+                                    lastTyping = now
+                                    network.typing(target.contact.keyHex)
+                                }
+                            },
                             placeholder = { Text("Message", color = MeshColors.TextTertiary) },
                             maxLines = 6,
                             textStyle = MaterialTheme.typography.bodyLarge,
@@ -416,7 +509,7 @@ fun ChatScreen(
                                 focusedIndicatorColor = Color.Transparent,
                                 unfocusedIndicatorColor = Color.Transparent,
                             ),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).focusRequester(focus),
                         )
                         // The send button appears only when there's something to send.
                         AnimatedVisibility(
@@ -434,12 +527,21 @@ fun ChatScreen(
                                         .clickable {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             val text = draft
+                                            val edit = editing
+                                            val reply = replyTo
                                             draft = ""
-                                            scope.launch { messaging.send(conversation, text) }
+                                            editing = null
+                                            replyTo = null
+                                            lastTyping = 0L
+                                            scope.launch {
+                                                if (edit != null) messaging.edit(edit, text)
+                                                else messaging.send(conversation, text, reply)
+                                            }
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Icon(Icons.AutoMirrored.Rounded.Send, "Send", Modifier.size(22.dp), tint = Color.White)
+                                    if (editing != null) Icon(Icons.Filled.Done, "Save", Modifier.size(24.dp), tint = Color.White)
+                                    else Icon(Icons.AutoMirrored.Rounded.Send, "Send", Modifier.size(22.dp), tint = Color.White)
                                 }
                             }
                         }
@@ -447,6 +549,23 @@ fun ChatScreen(
                 }
             }
         }
+    }
+
+    pendingFile?.let { uri ->
+        FilePreviewDialog(
+            uri = uri,
+            onCancel = { pendingFile = null },
+            onSend = { caption ->
+                pendingFile = null
+                scope.launch {
+                    sendingFile = true
+                    files.send(messaging, conversation, uri)
+                        .onSuccess { if (caption.isNotBlank()) messaging.send(conversation, caption) }
+                        .onFailure { Toast.makeText(context, it.message ?: "Couldn't send the file", Toast.LENGTH_LONG).show() }
+                    sendingFile = false
+                }
+            },
+        )
     }
 
     if (showSafety && target is ChatTarget.Direct) {
@@ -523,6 +642,34 @@ private fun DaySeparator(label: String) {
     }
 }
 
+/** Reactions offered on long-press (any emoji works on the wire). */
+private val QUICK_REACTIONS = listOf("❤️", "😂", "😮", "😢", "🙏", "👍")
+
+/** Own text messages can be edited for this long after sending. */
+const val EDIT_WINDOW_MS = 15 * 60_000L
+
+/** Reactions (row ID -> [(who, emoji)]) and which rows were edited, from a chat's modifier rows. */
+class ChatExtras(val reactions: Map<String, List<Pair<String, String>>>, val edited: Set<String>)
+
+fun summarize(mods: List<MessageEntity>, myKey: String): ChatExtras {
+    val latest = LinkedHashMap<Pair<String, String>, String>() // (row ID, who) -> emoji; newest wins
+    val edited = HashSet<String>()
+    for (r in mods) {
+        val o = runCatching { org.json.JSONObject(r.body) }.getOrNull() ?: continue
+        val id = o.optString("id").takeIf { it.isNotEmpty() } ?: continue
+        val who = if (r.outgoing) myKey else (r.senderKey ?: r.peerKey)
+        when (r.kind) {
+            MessageEntity.KIND_EDIT -> edited += if (r.isGroup) MessageEntity.groupRowId(who, id) else id
+            MessageEntity.KIND_REACT -> {
+                latest.remove(id to who)
+                val e = o.optString("e")
+                if (e.isNotEmpty()) latest[id to who] = e
+            }
+        }
+    }
+    return ChatExtras(latest.entries.groupBy({ it.key.first }, { it.key.second to it.value }), edited)
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Bubble(
@@ -532,76 +679,337 @@ private fun Bubble(
     sender: String?,
     status: String,
     fileStatus: String?,
+    reactions: List<Pair<String, String>>,
+    myKey: String,
+    edited: Boolean,
+    quoteAuthor: String?,
+    highlighted: Boolean,
+    canEdit: Boolean,
     onOpenFile: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
+    onUnsend: () -> Unit,
+    onReply: () -> Unit,
+    onEdit: () -> Unit,
+    onReact: (String) -> Unit,
+    onQuoteTap: () -> Unit,
 ) {
     val mine = m.outgoing
+    val deleted = m.kind == MessageEntity.KIND_DELETED
     var menu by remember { mutableStateOf(false) }
+    var confirmUnsend by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    val textColor = if (mine) Color.White else MeshColors.TextPrimary
-    val metaColor = if (mine) Color.White.copy(alpha = 0.7f) else MeshColors.TextTertiary
+    val scope = rememberCoroutineScope()
+    val trigger = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+    val drag = remember { androidx.compose.animation.core.Animatable(0f) }
+    var armed by remember { mutableStateOf(false) }
+    val myReaction = reactions.firstOrNull { it.first == myKey }?.second
+    val gradient = mine && !deleted
+    val textColor = if (gradient) Color.White else MeshColors.TextPrimary
+    val metaColor = if (gradient) Color.White.copy(alpha = 0.7f) else MeshColors.TextTertiary
+    val glow by androidx.compose.animation.animateColorAsState(
+        if (highlighted) MeshColors.GradMid.copy(alpha = 0.18f) else Color.Transparent, tween(300), label = "flash",
+    )
     // Rounded all round, except the author's side tightens where the group continues.
     val big = 18.dp
     val small = 4.dp
     val shape = if (mine) RoundedCornerShape(topStart = big, bottomStart = big, topEnd = if (first) big else small, bottomEnd = if (last) big else small)
     else RoundedCornerShape(topEnd = big, bottomEnd = big, topStart = if (first) big else small, bottomStart = if (last) big else small)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+
+    Box(
+        Modifier.fillMaxWidth().background(glow, RoundedCornerShape(12.dp))
+            // Swipe a message sideways (either way) to reply to it.
+            .pointerInput(m.id, deleted) {
+                if (deleted) return@pointerInput
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (armed) onReply()
+                        armed = false
+                        scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.6f, stiffness = 500f)) }
+                    },
+                    onDragCancel = {
+                        armed = false
+                        scope.launch { drag.animateTo(0f) }
+                    },
+                ) { change, amount ->
+                    change.consume()
+                    val next = (drag.value + amount * 0.6f).coerceIn(-trigger * 1.4f, trigger * 1.4f)
+                    scope.launch { drag.snapTo(next) }
+                    val now = kotlin.math.abs(next) >= trigger
+                    if (now && !armed) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    armed = now
+                }
+            },
+    ) {
+        val p = (kotlin.math.abs(drag.value) / trigger).coerceIn(0f, 1f)
+        if (p > 0.05f) {
+            Box(
+                Modifier.align(if (drag.value > 0) Alignment.CenterStart else Alignment.CenterEnd).padding(horizontal = 10.dp)
+                    .androidx_graphics(p).size(32.dp).clip(CircleShape).background(MeshColors.Surface2),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(18.dp), tint = MeshColors.GradMid) }
+        }
         Column(
-            Modifier
-                .widthIn(max = 300.dp)
-                .clip(shape)
-                .then(if (mine) Modifier.background(MeshColors.BubbleGradient) else Modifier.background(MeshColors.Surface2))
-                .combinedClickable(
-                    onClick = { if (m.kind == MessageEntity.KIND_FILE) onOpenFile() },
-                    onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
-                )
-                .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 6.dp),
+            Modifier.fillMaxWidth().graphicsLayer { translationX = drag.value },
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         ) {
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                if (m.kind != MessageEntity.KIND_FILE) {
-                    DropdownMenuItem(text = { Text("Copy") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = { menu = false; onCopy() })
+            Column(
+                Modifier
+                    .widthIn(max = 300.dp)
+                    .clip(shape)
+                    .then(if (gradient) Modifier.background(MeshColors.BubbleGradient) else Modifier.background(MeshColors.Surface2))
+                    .combinedClickable(
+                        onClick = { if (m.kind == MessageEntity.KIND_FILE) onOpenFile() },
+                        // Double-tap: quick heart.
+                        onDoubleClick = if (deleted) null else ({
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onReact(if (myReaction == "❤️") "" else "❤️")
+                        }),
+                        onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
+                    )
+                    .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 6.dp),
+                horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
+            ) {
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (!deleted) {
+                        Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                            QUICK_REACTIONS.forEach { e ->
+                                Box(
+                                    Modifier.size(42.dp).clip(CircleShape)
+                                        .background(if (e == myReaction) MeshColors.GradMid.copy(alpha = 0.3f) else Color.Transparent)
+                                        .clickable { menu = false; onReact(if (e == myReaction) "" else e) },
+                                    contentAlignment = Alignment.Center,
+                                ) { Text(e, fontSize = 22.sp) }
+                            }
+                        }
+                        Box(Modifier.fillMaxWidth().height(0.5.dp).background(MeshColors.Hairline))
+                        DropdownMenuItem(text = { Text("Reply") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, null) }, onClick = { menu = false; onReply() })
+                        if (m.kind != MessageEntity.KIND_FILE) {
+                            DropdownMenuItem(text = { Text("Copy") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = { menu = false; onCopy() })
+                        }
+                        if (canEdit) {
+                            DropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { menu = false; onEdit() })
+                        }
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Delete for me") },
+                        leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
+                        onClick = { menu = false; onDelete() },
+                    )
+                    if (mine && (m.kind == MessageEntity.KIND_TEXT || m.kind == MessageEntity.KIND_FILE)) {
+                        DropdownMenuItem(
+                            text = { Text("Delete for everyone", color = MeshColors.Danger) },
+                            leadingIcon = { Icon(Icons.Filled.DeleteForever, null, tint = MeshColors.Danger) },
+                            onClick = { menu = false; confirmUnsend = true },
+                        )
+                    }
                 }
-                DropdownMenuItem(
-                    text = { Text("Delete for me") },
-                    leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
-                    onClick = { menu = false; onDelete() },
-                )
+                if (sender != null) {
+                    Text(
+                        sender,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MeshColors.avatar(m.senderKey ?: sender),
+                    )
+                }
+                when {
+                    deleted -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Block, null, Modifier.size(15.dp), tint = metaColor)
+                        Spacer(Modifier.width(6.dp))
+                        Text(displayBody(m), color = textColor.copy(alpha = 0.7f), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            style = MaterialTheme.typography.bodyLarge)
+                    }
+                    m.kind == MessageEntity.KIND_FILE -> FileContent(m, fileStatus)
+                    else -> {
+                        val story = STORY_REPLY.find(m.body)
+                        val reply = MessagingService.REPLY.find(m.body)
+                        if (m.kind == MessageEntity.KIND_TEXT && story != null) {
+                            QuoteBlock(
+                                if (mine) "Their story" else "Your story", story.groupValues[1], textColor, onClick = null,
+                            )
+                            Text(story.groupValues[2], color = textColor, style = MaterialTheme.typography.bodyLarge)
+                        } else if (m.kind == MessageEntity.KIND_TEXT && reply != null) {
+                            QuoteBlock(quoteAuthor ?: "Reply", reply.groupValues[1], textColor, onClick = onQuoteTap)
+                            Text(reply.groupValues[2], color = textColor, style = MaterialTheme.typography.bodyLarge)
+                        } else {
+                            Text(displayBody(m), color = textColor, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(1.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (edited && !deleted) {
+                        Text("edited · ", style = MaterialTheme.typography.labelSmall, color = metaColor)
+                    }
+                    Text(
+                        DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.sentAt)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = metaColor,
+                    )
+                    if (mine && !deleted) {
+                        Spacer(Modifier.width(4.dp))
+                        when (status) {
+                            "Sending" -> Icon(Icons.Filled.Schedule, "Sending", Modifier.size(14.dp), tint = metaColor)
+                            "Sent" -> Icon(Icons.Filled.Done, "Sent", Modifier.size(14.dp), tint = metaColor)
+                            "Delivered" -> Icon(Icons.Filled.DoneAll, "Delivered", Modifier.size(14.dp), tint = Color.White)
+                            else -> Text(status, style = MaterialTheme.typography.labelSmall, color = metaColor)
+                        }
+                    }
+                }
             }
-            if (sender != null) {
-                Text(
-                    sender,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MeshColors.avatar(m.senderKey ?: sender),
-                )
-            }
-            if (m.kind == MessageEntity.KIND_FILE) {
-                FileContent(m, fileStatus)
-            } else {
-                Text(displayBody(m), color = textColor, style = MaterialTheme.typography.bodyLarge)
-            }
-            Spacer(Modifier.height(1.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.sentAt)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = metaColor,
-                )
-                if (mine) {
-                    Spacer(Modifier.width(4.dp))
-                    when (status) {
-                        "Sending" -> Icon(Icons.Filled.Schedule, "Sending", Modifier.size(14.dp), tint = metaColor)
-                        "Sent" -> Icon(Icons.Filled.Done, "Sent", Modifier.size(14.dp), tint = metaColor)
-                        "Delivered" -> Icon(Icons.Filled.DoneAll, "Delivered", Modifier.size(14.dp), tint = Color.White)
-                        else -> Text(status, style = MaterialTheme.typography.labelSmall, color = metaColor)
+            // Reactions sit on the bubble's lower edge; they pop in.
+            AnimatedVisibility(
+                visible = reactions.isNotEmpty() && !deleted,
+                enter = scaleIn(spring(dampingRatio = 0.45f, stiffness = 500f)) + fadeIn(tween(120)),
+                exit = scaleOut(tween(120)) + fadeOut(tween(120)),
+            ) {
+                val grouped = reactions.groupBy({ it.second }, { it.first }).entries.sortedByDescending { it.value.size }
+                Row(
+                    Modifier.padding(horizontal = 10.dp).offset(y = (-4).dp)
+                        .shadow(4.dp, RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MeshColors.Surface1)
+                        .border(1.5.dp, MeshColors.Bg, RoundedCornerShape(14.dp))
+                        .clickable { if (myReaction != null) onReact("") else menu = true }
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    grouped.take(4).forEach { (e, _) -> Text(e, fontSize = 15.sp) }
+                    if (reactions.size > 1) {
+                        Spacer(Modifier.width(4.dp))
+                        Text("${reactions.size}", style = MaterialTheme.typography.labelMedium, color = MeshColors.TextSecondary)
                     }
                 }
             }
         }
     }
+
+    if (confirmUnsend) AlertDialog(
+        onDismissRequest = { confirmUnsend = false },
+        title = { Text("Delete for everyone?") },
+        text = { Text("It's removed from this chat on every device that has it, including theirs. Anyone who already read it may remember it.") },
+        confirmButton = {
+            TextButton(onClick = { confirmUnsend = false; onUnsend() }) { Text("Delete", color = MeshColors.Danger) }
+        },
+        dismissButton = { TextButton(onClick = { confirmUnsend = false }) { Text("Cancel") } },
+    )
 }
+
+/** Fades and grows the reply hint as the swipe gets closer to replying. */
+private fun Modifier.androidx_graphics(p: Float) = graphicsLayer { alpha = p; scaleX = 0.6f + 0.4f * p; scaleY = 0.6f + 0.4f * p }
+
+/** The quoted message above a reply (or the story it answers). Tap to jump to it. */
+@Composable
+private fun QuoteBlock(author: String, text: String, textColor: Color, onClick: (() -> Unit)?) {
+    Column(
+        Modifier.padding(bottom = 4.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.18f))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .drawBehind { drawRect(MeshColors.GradEnd, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+            .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 5.dp),
+    ) {
+        Text(author, color = if (textColor == Color.White) Color.White else MeshColors.GradMid,
+            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(text, color = textColor.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+            overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** A picked file before it's sent: full preview for photos, name and size for the rest, plus a caption. */
+@Composable
+private fun FilePreviewDialog(uri: android.net.Uri, onCancel: () -> Unit, onSend: (String) -> Unit) {
+    val context = LocalContext.current
+    val meta by produceState<Triple<String, Long, String>?>(null, uri) {
+        value = withContext(Dispatchers.IO) { fileMeta(context, uri) }
+    }
+    val image by produceState<ImageBitmap?>(null, uri) {
+        value = withContext(Dispatchers.IO) { loadUriPreview(context, uri) }
+    }
+    var caption by remember { mutableStateOf("") }
+    val tooBig = (meta?.second ?: 0L) > 25L * 1024 * 1024
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onCancel,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Column(Modifier.fillMaxSize().background(Color.Black).systemBarsPadding().imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, "Cancel", tint = Color.White) }
+                Column(Modifier.weight(1f)) {
+                    Text(meta?.first ?: "File", color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    meta?.let { Text(humanSize(it.second), color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                val img = image
+                if (img != null) {
+                    Image(img, contentDescription = meta?.first, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(96.dp).clip(RoundedCornerShape(24.dp)).background(MeshColors.Gradient), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.AttachFile, null, Modifier.size(44.dp), tint = Color.White)
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text(meta?.first ?: "", color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                        Text(meta?.third ?: "", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            if (tooBig) {
+                Text("This file is over 25 MB, the most Meshron can send.", color = MeshColors.Danger,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            }
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextField(
+                    value = caption,
+                    onValueChange = { if (it.length <= 1000) caption = it },
+                    placeholder = { Text("Add a caption…", color = MeshColors.TextTertiary) },
+                    maxLines = 4,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MeshColors.Surface2, unfocusedContainerColor = MeshColors.Surface2,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = MeshColors.GradMid,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier.size(52.dp).clip(CircleShape).then(if (tooBig || meta == null) Modifier.background(MeshColors.Surface2) else Modifier.background(MeshColors.Gradient))
+                        .clickable(enabled = !tooBig && meta != null) { onSend(caption.trim()) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.AutoMirrored.Rounded.Send, "Send", Modifier.size(24.dp), tint = Color.White) }
+            }
+        }
+    }
+}
+
+private fun fileMeta(context: Context, uri: android.net.Uri): Triple<String, Long, String> {
+    var name = "File"
+    var size = 0L
+    runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                c.getString(0)?.let { name = it }
+                if (!c.isNull(1)) size = c.getLong(1)
+            }
+        }
+    }
+    val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+    return Triple(name, size, mime)
+}
+
+private fun loadUriPreview(context: Context, uri: android.net.Uri): ImageBitmap? = runCatching {
+    val mime = context.contentResolver.getType(uri) ?: return null
+    if (!mime.startsWith("image/")) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+    context.contentResolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+    }?.asImageBitmap()
+}.getOrNull()
 
 @Composable
 private fun FileContent(m: MessageEntity, fileStatus: String?) {
@@ -663,6 +1071,8 @@ private fun openFile(context: Context, m: MessageEntity) {
 
 /** Invites are stored as JSON; show them as a sentence. */
 fun displayBody(m: MessageEntity): String = when (m.kind) {
+    MessageEntity.KIND_DELETED -> if (m.outgoing) "You deleted this message" else "This message was deleted"
+    MessageEntity.KIND_TEXT -> MessagingService.bodyText(m.body)
     MessageEntity.KIND_FILE -> FileInfo.parse(m.body)?.let { (if (it.isImage) "Photo: " else "File: ") + it.name } ?: "File"
     MessageEntity.KIND_INVITE -> {
         val name = MessagingService.parseInvite(m.body)?.name ?: "a group"
@@ -674,3 +1084,6 @@ fun displayBody(m: MessageEntity): String = when (m.kind) {
 /** Same author, sent within 3 minutes: shown as one tight group of bubbles. */
 private fun sameGroup(a: MessageEntity, b: MessageEntity): Boolean =
     a.outgoing == b.outgoing && a.senderKey == b.senderKey && kotlin.math.abs(b.localTime - a.localTime) < 3 * 60_000
+
+/** A story reply: "↪ Story: <quote>", a newline, then the reply (same format on every platform). */
+private val STORY_REPLY = Regex("^↪ Story: (.*)\\n([\\s\\S]+)$")

@@ -33,6 +33,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.shadow
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Lock
@@ -73,14 +79,20 @@ import com.xalvxnlab.meshron.ui.components.Avatar
 import com.xalvxnlab.meshron.ui.theme.MeshColors
 import kotlinx.coroutines.delay
 
-/** Full-screen call view, shown on top of everything while a call is ringing or running. */
+/**
+ * Full-screen call view, shown on top of everything while a call is ringing or running.
+ * [onMinimize] shrinks it to a floating window so the app (and chats) can be used during
+ * the call; [onChat] does the same and opens the chat with the other person.
+ */
 @Composable
-fun CallScreen(calls: CallManager, network: NetworkService) {
+fun CallScreen(calls: CallManager, network: NetworkService, onMinimize: () -> Unit = {}, onChat: (String) -> Unit = {}) {
     val s by calls.state.collectAsState()
     if (s.phase == CallState.Phase.IDLE) return
     val net by network.state.collectAsState()
     val engine by calls.videoEngineFlow.collectAsState()
-    BackHandler { /* stay on the call screen; use the buttons */ }
+    val canLeave = s.phase == CallState.Phase.ACTIVE || s.phase == CallState.Phase.OUTGOING
+    // Back leaves the call running in the floating window, like other messengers.
+    BackHandler { if (canLeave) onMinimize() }
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(s.phase) {
@@ -239,6 +251,7 @@ fun CallScreen(calls: CallManager, network: NetworkService) {
                                     Icons.AutoMirrored.Filled.VolumeUp, "Speaker",
                                     if (s.speaker) on else off, if (s.speaker) MaterialTheme.colorScheme.surface else on, onVideo, 60.dp,
                                 ) { calls.toggleSpeaker() }
+                                RoundButton(Icons.AutoMirrored.Filled.Chat, "Chat", off, on, onVideo, 60.dp) { onChat(s.peer) }
                             }
                             Spacer(Modifier.height(28.dp))
                         }
@@ -247,6 +260,16 @@ fun CallScreen(calls: CallManager, network: NetworkService) {
                     else -> Unit
                 }
                 Spacer(Modifier.height(24.dp))
+            }
+
+            // ---- Minimise: keep talking while using the app ----
+            if (canLeave) {
+                Box(
+                    Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(12.dp).size(44.dp).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = if (showRemote) 0.45f else 0.25f))
+                        .clickable(onClick = onMinimize),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Filled.KeyboardArrowDown, "Minimise call", Modifier.size(28.dp), tint = Color.White) }
             }
 
             // ---- My camera, small in the corner ----
@@ -261,6 +284,76 @@ fun CallScreen(calls: CallManager, network: NetworkService) {
                         .clickable { calls.switchCamera() },
                 ) {
                     VideoView(format = localFormat, crop = true, onTexture = { e.setPreview(it) }, modifier = Modifier.fillMaxSize())
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The call while it's minimised: a small floating window (their video, or their avatar and
+ * the timer) that can be dragged anywhere. Tap to go back to the call; the red button hangs up.
+ */
+@Composable
+fun CallMini(calls: CallManager, onExpand: () -> Unit) {
+    val s by calls.state.collectAsState()
+    val engine by calls.videoEngineFlow.collectAsState()
+    if (s.phase == CallState.Phase.IDLE) return
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(s.phase) {
+        while (true) { now = System.currentTimeMillis(); delay(1000) }
+    }
+    // The full screen fades out over ~250 ms and releases the video surface as it goes;
+    // take it over only after that, or the picture would be dropped.
+    var videoReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(400); videoReady = true }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val video = s.phase == CallState.Phase.ACTIVE && s.remoteVideo && engine != null
+    val status = when (s.phase) {
+        CallState.Phase.OUTGOING -> "Calling…"
+        CallState.Phase.ACTIVE -> if (s.reconnecting) "Reconnecting…" else formatTime((now - s.startedAt).coerceAtLeast(0))
+        CallState.Phase.ENDED -> s.message ?: "Call ended"
+        else -> ""
+    }
+    Box(Modifier.fillMaxSize().safeDrawingPadding().padding(top = 72.dp, end = 12.dp), contentAlignment = Alignment.TopEnd) {
+        Column(
+            Modifier
+                .graphicsLayer { translationX = offset.x; translationY = offset.y }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, drag -> change.consume(); offset += drag }
+                }
+                .shadow(16.dp, RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(listOf(MeshColors.GradStart, MeshColors.GradEnd)))
+                .clickable(onClick = onExpand)
+                .width(if (video) 124.dp else 112.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (video && videoReady) {
+                val e = engine!!
+                val format = e.remote.collectAsState().value
+                Box(Modifier.fillMaxWidth().height(168.dp).background(Color.Black)) {
+                    VideoView(format = format, crop = true, onTexture = { st -> e.setRemoteSurface(st?.let { Surface(it) }) }, modifier = Modifier.fillMaxSize())
+                }
+            } else {
+                Spacer(Modifier.height(12.dp))
+                Avatar(s.name, s.peer, 52.dp)
+                Spacer(Modifier.height(6.dp))
+                Text(s.name, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 8.dp))
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(status, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                    modifier = Modifier.weight(1f))
+                if (s.phase != CallState.Phase.ENDED) {
+                    Box(
+                        Modifier.size(32.dp).clip(CircleShape).background(MeshColors.Danger).clickable { calls.hangUp() },
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Filled.CallEnd, "Hang up", Modifier.size(18.dp), tint = Color.White) }
                 }
             }
         }

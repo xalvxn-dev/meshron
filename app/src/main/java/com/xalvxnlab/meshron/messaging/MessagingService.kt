@@ -56,6 +56,7 @@ class MessagingService(
     val summaries = dao.summaries()
     val groups = dao.groups()
     fun conversation(key: String) = dao.conversation(key)
+    fun modifiers(key: String) = dao.modifiers(key)
     fun groupAcks(groupId: String) = dao.groupAcks(groupId)
 
     /** Subscribes to network events, then starts the network. Idempotent. */
@@ -76,9 +77,13 @@ class MessagingService(
     private suspend fun myKey(): String = identity.identity.filterNotNull().first().publicKey.toHex()
     private fun newId() = ByteArray(16).also(random::nextBytes).toHex()
 
-    /** Sends text to a 1:1 chat (hex key) or a group ("g:<id>"). */
-    suspend fun send(conversation: String, text: String) {
-        val body = text.trim().take(MAX_BODY)
+    /**
+     * Sends text to a 1:1 chat (hex key) or a group ("g:<id>"). A reply starts with
+     * "↩ <quote>" on its own line (same format on every platform).
+     */
+    suspend fun send(conversation: String, text: String, replyTo: MessageEntity? = null) {
+        val clean = text.trim()
+        val body = (if (replyTo != null && clean.isNotEmpty()) "↩ " + quoteOf(replyTo) + "\n" + clean else clean).take(MAX_BODY)
         if (body.isEmpty()) return
         val now = System.currentTimeMillis()
         val wireId = newId()
@@ -133,7 +138,11 @@ class MessagingService(
     }
 
     /** Sends a file message whose blob is already stored (see FileService). */
-    suspend fun sendFile(conversation: String, body: String, localPath: String) {
+    suspend fun sendFile(conversation: String, body: String, localPath: String) =
+        sendKind(conversation, body, MessageEntity.KIND_FILE, localPath)
+
+    /** Appends an entry of any kind (file, story, seen) to a chat's log. */
+    suspend fun sendKind(conversation: String, body: String, kind: String, localPath: String? = null) {
         val now = System.currentTimeMillis()
         val wireId = newId()
         val me = myKey()
@@ -143,13 +152,56 @@ class MessagingService(
             id = if (group) MessageEntity.groupRowId(me, wireId) else wireId,
             outgoing = true, body = body, sentAt = now, localTime = now,
             status = MessageEntity.PENDING, signature = null, read = true,
-            senderKey = if (group) me else null, kind = MessageEntity.KIND_FILE, localPath = localPath,
+            senderKey = if (group) me else null, kind = kind, localPath = localPath,
         )
         dao.insert(msg)
         if (network.isOnline) appendLock.withLock { appendRow(msg) }
     }
 
     suspend fun markRead(conversation: String) = dao.markRead(conversation)
+
+    /** Changes the text of my own message, on every device that has it. */
+    suspend fun edit(m: MessageEntity, text: String) {
+        val clean = text.trim().take(MAX_BODY)
+        if (!m.outgoing || m.kind != MessageEntity.KIND_TEXT || clean.isEmpty() || clean == bodyText(m.body)) return
+        // Keep the quote of a reply; only the reply text changes.
+        val quote = REPLY.find(m.body)?.groupValues?.get(1)
+        val body = (if (quote != null) "↩ $quote\n$clean" else clean).take(MAX_BODY)
+        sendKind(m.peerKey, JSONObject().put("id", m.wireId).put("text", body).toString(), MessageEntity.KIND_EDIT)
+        dao.updateBody(m.peerKey, m.id, body)
+    }
+
+    /** Deletes my own message for everyone: their copies lose the content too. */
+    suspend fun unsend(m: MessageEntity) {
+        if (!m.outgoing || m.kind !in UNSENDABLE) return
+        sendKind(m.peerKey, JSONObject().put("id", m.wireId).toString(), MessageEntity.KIND_UNSEND)
+        m.localPath?.let { runCatching { java.io.File(it).delete() } }
+        dao.markUnsent(m.peerKey, m.id)
+    }
+
+    /** Sets (or with an empty [emoji], removes) my reaction to any message in the chat. */
+    suspend fun react(m: MessageEntity, emoji: String) {
+        if (m.kind == MessageEntity.KIND_DELETED) return
+        sendKind(m.peerKey, JSONObject().put("id", m.id).put("e", emoji.take(16)).toString(), MessageEntity.KIND_REACT)
+    }
+
+    /** Applies an incoming edit or unsend to the author's own earlier message. */
+    private suspend fun applyChange(row: MessageEntity) {
+        if (row.kind != MessageEntity.KIND_EDIT && row.kind != MessageEntity.KIND_UNSEND) return
+        val o = runCatching { JSONObject(row.body) }.getOrNull() ?: return
+        val wire = o.optString("id").takeIf { it.isNotEmpty() && it.length <= 64 } ?: return
+        // Group row IDs carry the author, so nobody can change someone else's message.
+        val targetId = if (row.isGroup) MessageEntity.groupRowId(row.senderKey ?: return, wire) else wire
+        val target = dao.find(row.peerKey, targetId) ?: return
+        if (target.outgoing != row.outgoing || target.senderKey != row.senderKey) return
+        if (row.kind == MessageEntity.KIND_EDIT) {
+            val text = o.optString("text").take(MAX_BODY)
+            if (target.kind == MessageEntity.KIND_TEXT && text.isNotBlank()) dao.updateBody(row.peerKey, targetId, text)
+        } else if (target.kind in UNSENDABLE) {
+            target.localPath?.let { runCatching { java.io.File(it).delete() } }
+            dao.markUnsent(row.peerKey, targetId)
+        }
+    }
 
     /** Remembers how far [conversation] was read, so deleting rows doesn't make them come back. */
     private suspend fun keepReadPosition(conversation: String) {
@@ -219,14 +271,17 @@ class MessagingService(
                 return
             }
         }
+        // Stories, receipts, edits and reactions aren't chat messages: no unread count, no notification.
+        val hidden = e.kind in MessageEntity.HIDDEN_KINDS
         val row = MessageEntity(
             peerKey = e.key, id = e.id, outgoing = false, body = e.body, sentAt = e.sentAt,
             localTime = System.currentTimeMillis(), status = MessageEntity.RECEIVED,
-            signature = e.signature, read = false, seq = e.seq, kind = e.kind,
+            signature = e.signature, read = hidden, seq = e.seq, kind = e.kind,
         )
         if (dao.insert(row) != -1L) {
-            if (row.kind == MessageEntity.KIND_FILE) onFileMessage?.invoke(row)
-            runCatching { onIncoming?.invoke(row) }
+            applyChange(row)
+            if (row.kind == MessageEntity.KIND_FILE || row.kind == MessageEntity.KIND_STORY) onFileMessage?.invoke(row)
+            if (!hidden) runCatching { onIncoming?.invoke(row) }
         }
         // Ack after the row is on disk (duplicates are re-acked too).
         network.ack(e.key, e.seq)
@@ -242,15 +297,17 @@ class MessagingService(
     private suspend fun onGroupMessage(e: PeerEvent.GroupMessage) {
         val group = dao.allGroups().find { it.id == e.group } ?: return
         if (e.from !in group.memberList) return
+        val hidden = e.kind in MessageEntity.HIDDEN_KINDS
         val row = MessageEntity(
             peerKey = group.conversationKey, id = MessageEntity.groupRowId(e.from, e.id), outgoing = false,
             body = e.body, sentAt = e.sentAt, localTime = System.currentTimeMillis(),
-            status = MessageEntity.RECEIVED, signature = e.signature, read = false, seq = e.seq,
+            status = MessageEntity.RECEIVED, signature = e.signature, read = hidden, seq = e.seq,
             senderKey = e.from, kind = e.kind,
         )
         if (dao.insert(row) != -1L) {
+            applyChange(row)
             if (row.kind == MessageEntity.KIND_FILE) onFileMessage?.invoke(row)
-            runCatching { onIncoming?.invoke(row) }
+            if (!hidden) runCatching { onIncoming?.invoke(row) }
         }
         network.groupAck(e.group, e.from, e.seq)
     }
@@ -260,6 +317,24 @@ class MessagingService(
         private const val TAG = "Messaging"
 
         private val HEX32 = Regex("^[0-9a-f]{32}$")
+        private val UNSENDABLE = setOf(MessageEntity.KIND_TEXT, MessageEntity.KIND_FILE)
+
+        /** "↩ <quote>" line, newline, reply (same on every platform). */
+        val REPLY = Regex("^↩ (.*)\\n([\\s\\S]+)$")
+
+        /** A reply's own text, without the quote line. */
+        fun bodyText(body: String): String = REPLY.find(body)?.groupValues?.get(2) ?: body
+
+        /** One short line that stands for [m] in a reply. */
+        fun quoteOf(m: MessageEntity): String {
+            val text = when (m.kind) {
+                MessageEntity.KIND_FILE -> com.xalvxnlab.meshron.files.FileInfo.parse(m.body)
+                    ?.let { if (it.isImage) "📷 Photo" else "📎 " + it.name } ?: "📎 File"
+                else -> bodyText(m.body)
+            }
+            val line = text.replace(Regex("\\s+"), " ").trim()
+            return if (line.length > 90) line.take(89) + "…" else line
+        }
         private val HEX64 = Regex("^[0-9a-f]{64}$")
 
         fun parseInvite(json: String): GroupEntity? = runCatching {

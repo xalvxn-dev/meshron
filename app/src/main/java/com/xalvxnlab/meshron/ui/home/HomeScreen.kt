@@ -140,6 +140,8 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openChat by rememberSaveable { mutableStateOf<String?>(null) }
+    val appCtx = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.xalvxnlab.meshron.MeshronApp
+    LaunchedEffect(Unit) { appCtx.openChatRequests.collect { openChat = it } }
     var addingContact by rememberSaveable { mutableStateOf(false) }
     var creatingGroup by rememberSaveable { mutableStateOf(false) }
     val current = Tab.entries[tab]

@@ -66,6 +66,7 @@
         saveFile: async ({ blob, name }) => downloadBlob(blob, name),
         badge: (count) => n.setBadge(count),
         notify: ({ title, body, conv }) => n.notify({ title, body, conv }),
+        keepAwake: (on) => n.keepAwake(on),
         focusState: () => document.hasFocus()
       }
     }
@@ -97,6 +98,7 @@
         showFile: null,
         saveFile: async ({ path }) => call('native.shareFile', { path }),
         badge: (count) => call('native.badge', { count }),
+        keepAwake: (on) => call('native.keepAwake', { on }),
         notify: null,
         focusState: () => !document.hidden
       }

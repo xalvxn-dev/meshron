@@ -180,14 +180,9 @@ fun ChatsTab(
         } else {
             val listState = rememberLazyListState()
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
-                if (query.isBlank() && added.isNotEmpty()) {
-                    item(key = "active") {
-                        ActiveNow(
-                            people = added.sortedByDescending { online(it.keyHex) },
-                            online = online,
-                            onOpen = onOpen,
-                            onAdd = onAddContact,
-                        )
+                if (query.isBlank()) {
+                    item(key = "stories") {
+                        com.xalvxnlab.meshron.ui.stories.StoriesStrip(identity, added, online, nameOf, onOpen, onAddContact)
                     }
                 }
                 itemsIndexed(rows, key = { _, r -> r.conversation }) { _, r ->

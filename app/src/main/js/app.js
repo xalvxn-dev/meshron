@@ -32,6 +32,7 @@
 //                       'call-msg' | 'call-audio' | 'call-video' | 'log' | 'error', ... }
 // Peer <-> peer: Protomux channel 'meshron/dm/1' (JSON messages) alongside Hypercore replication:
 //   { t: 'hello', v, name, handle, outbox }   { t: 'ack', length }   { t: 'mesh', recs: [[core, tag]] }
+//   { t: 'typing' } (live only)
 //   { t: 'ghello', group, anns: { member: { outbox, sig } } }   { t: 'gack', group, length }
 // Voice calls: Protomux channel 'meshron/call/1' on the same stream, only with added contacts:
 //   message 0 (JSON): { t: 'offer' | 'answer' | 'reject' | 'end', id, reason?, video? }
@@ -50,14 +51,18 @@ const b4a = require('b4a')
 const IPC = (typeof global !== 'undefined' && global.MESHRON_IPC) || Bare.IPC
 const PROTOCOL_VERSION = 3
 const MAX_BODY = 4000
-const DM_KINDS = ['text', 'invite', 'file']
-const GROUP_KINDS = ['text', 'members', 'file']
+// story: a 24-hour post fanned out to each contact's 1:1 log; seen: a view receipt for one.
+// edit {id, text} / unsend {id} change the author's own earlier message; react {id, e} sets
+// (or with e = '' clears) the sender's reaction to any message. Replies are plain text that
+// starts with '↩ <quote>' on its own line, so older versions still show them.
+const DM_KINDS = ['text', 'invite', 'file', 'story', 'seen', 'edit', 'unsend', 'react']
+const GROUP_KINDS = ['text', 'members', 'file', 'edit', 'unsend', 'react']
 const MAX_FILE = 25 * 1024 * 1024
 const HEX64 = /^[0-9a-f]{64}$/
 
 // Mesh limits: records per gossip message, logs carried for others, entries per carried log.
 const MESH_SEND_MAX = 300
-const CARRY_MAX = 100
+const CARRY_MAX = 200 // other people's sealed logs this phone carries on (store-and-forward hops)
 const CARRY_MAX_BLOCKS = 5000
 
 let swarm = null // only while internet is on
@@ -182,6 +187,10 @@ async function handle(cmd) {
       }
       return
     }
+    case 'typing':
+      // Live only: 'is typing…' for a contact who's connected right now. Never stored.
+      if (trusted.has(cmd.key)) sendToPeer(cmd.key, { t: 'typing' })
+      return
     case 'call-send':
       return callSend(cmd)
     case 'call-audio':
@@ -1100,6 +1109,8 @@ async function onpeermessage(peerHex, msg) {
     else pendingHellos.set(peerHex, msg)
   } else if (msg.t === 'ack' && Number.isInteger(msg.length) && msg.length >= 0) {
     send({ ev: 'delivered', key: peerHex, length: msg.length })
+  } else if (msg.t === 'typing') {
+    send({ ev: 'typing', key: peerHex })
   } else if (msg.t === 'mesh') {
     await onMesh(msg.recs)
   } else if (msg.t === 'ghello') {

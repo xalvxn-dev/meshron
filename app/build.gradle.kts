@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -17,13 +17,13 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "com.meshron.myapp"
         minSdk = 29 // required by bare-kit-kotlin
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 4
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Native libraries (Bare, RocksDB, SQLCipher…) ship with debug symbols; Gradle strips
+    // Native libraries (Bare, RocksDB, SQLCipherâ€¦) ship with debug symbols; Gradle strips
     // them only if it has an NDK. Set meshron.ndkPath in local.properties (any NDK r27+).
     val localProps = Properties().apply {
         rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
@@ -82,7 +82,7 @@ android {
 }
 
 // The Hyperswarm worklet (src/main/js) is bundled with bare-pack, and its native
-// addons (udx-native, sodium-native…) are linked into jniLibs with bare-link.
+// addons (udx-native, sodium-nativeâ€¦) are linked into jniLibs with bare-link.
 // Both need Node.js + `npm install` in the project root.
 val npx = if (System.getProperty("os.name").startsWith("Windows")) "npx.cmd" else "npx"
 val rootDirFile = rootProject.projectDir

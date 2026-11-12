@@ -6,7 +6,7 @@ const fs = require('fs')
 const path = require('path')
 const { createHost } = require('./host')
 
-function startNodeHost({ dataDir, secrets, emit, workletPath, platform }) {
+function startNodeHost({ dataDir, secrets, emit, workletPath, platform, lan }) {
   if (!global.Bare) {
     global.Bare = {
       on: (ev, fn) => process.on(ev, fn),
@@ -15,10 +15,22 @@ function startNodeHost({ dataDir, secrets, emit, workletPath, platform }) {
       version: process.version
     }
   }
-  return createHost({
+  let local = null
+  const host = createHost({
     fs, path, dataDir, secrets, emit, platform,
-    loadWorklet: () => require(workletPath)
+    loadWorklet: () => require(workletPath),
+    onLink: (e) => { if (local) local.onLink(e) }
   })
+  // Same Wi-Fi / hotspot: find nearby Meshron devices without the internet.
+  if (lan) {
+    try {
+      local = require('./lan-node').startLan({ call: (m, a) => host.call(m, a), log: (m) => console.log(m) })
+      host.stopLan = () => local && local.stop()
+    } catch (e) {
+      console.error('Same Wi-Fi links unavailable:', e.message)
+    }
+  }
+  return host
 }
 
 module.exports = { startNodeHost }

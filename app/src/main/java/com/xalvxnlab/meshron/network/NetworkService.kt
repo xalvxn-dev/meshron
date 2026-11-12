@@ -123,6 +123,13 @@ class NetworkService(
         )
     }
 
+    /** Contacts typing to me right now: key -> when I last heard (ms). Live only. */
+    private val _typing = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Long>>(emptyMap())
+    val typing: kotlinx.coroutines.flow.StateFlow<Map<String, Long>> = _typing
+
+    /** Tells a connected contact I'm typing (at most every few seconds; never stored). */
+    fun typing(keyHex: String) = scope.launch { if (isOnline) send(cmd("typing").put("key", keyHex).toString()) }
+
     /** Android switched networks; the worklet rebinds its sockets. */
     fun networkChanged() = scope.launch { if (isOnline) send(cmd("network-change").toString()) }
 
@@ -347,6 +354,15 @@ class NetworkService(
                 android.util.Base64.decode(e.getString("data"), android.util.Base64.DEFAULT)
             )
             "link-close" -> links.remove(e.getString("id"))?.sink?.close()
+            "typing" -> {
+                val key = e.getString("key")
+                val at = System.currentTimeMillis()
+                _typing.update { it + (key to at) }
+                scope.launch {
+                    kotlinx.coroutines.delay(TYPING_MS)
+                    _typing.update { if (it[key] == at) it - key else it }
+                }
+            }
             "call-msg" -> {
                 onCallSignal?.invoke(e.getString("key"), e.getJSONObject("msg"))
             }
@@ -549,6 +565,7 @@ class NetworkService(
     }
 
     private companion object {
+        const val TYPING_MS = 6000L
         const val TAG = "NetworkService"
         const val MAX_REQUESTS = 30
         val TIME = ThreadLocal.withInitial { SimpleDateFormat("HH:mm:ss", Locale.US) }

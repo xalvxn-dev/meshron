@@ -47,3 +47,4 @@ cross-dev-data
 relay.seed
 dev-secrets.json
 store/*.mp4
+cross/ios/out/

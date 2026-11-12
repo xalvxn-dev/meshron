@@ -31,7 +31,7 @@ const emit = (ev, data) => {
 }
 
 const host = startNodeHost({
-  dataDir, secrets, emit, platform: 'web',
+  dataDir, secrets, emit, platform: 'web', lan: process.argv.includes('--lan'),
   workletPath: path.join(__dirname, '..', '..', 'app', 'src', 'main', 'js', 'app.js')
 })
 
