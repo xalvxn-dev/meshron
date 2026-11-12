@@ -212,16 +212,11 @@ fun HomeScreen(
     if (open != null) {
         ChatScreen(open, myKey, nameOf, messaging, network, files, onBack = { openChat = null })
     } else {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    // Each tab starts with its big title showing.
-    LaunchedEffect(tab) {
-        scrollBehavior.state.heightOffset = 0f
-        scrollBehavior.state.contentOffset = 0f
-    }
+    // (The header is fixed, like the iPhone app's. No collapsing-toolbar scroll hook: without a
+    // collapsing bar attached it swallowed every scroll and the lists couldn't move.)
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
             containerColor = Color.Transparent,
-            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             topBar = {
                 // Same header as the iPhone app: big title, SOS, status, quick actions on one
                 // line, and the search bar always there underneath.

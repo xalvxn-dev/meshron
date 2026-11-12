@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -17,8 +17,8 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "com.meshron.myapp"
         minSdk = 29 // required by bare-kit-kotlin
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.5.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

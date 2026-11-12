@@ -21,16 +21,40 @@ object DatabaseEncryption {
     private val cipher = KeystoreCipher("meshron.db.wrap.v1")
     private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 
+    /** Moves an unreadable database (and its key) out of the way, keeping it on disk. */
+    private fun setAside(context: Context) {
+        val stamp = System.currentTimeMillis()
+        val db = context.getDatabasePath("meshron.db")
+        for (f in listOf(db, File(db.path + "-wal"), File(db.path + "-shm"), File(db.path + "-journal"))) {
+            if (f.exists()) f.renameTo(File(f.path + ".unreadable-" + stamp))
+        }
+        File(context.filesDir, KEY_FILE).delete()
+    }
+
     /** The SQLCipher passphrase (hex text of the random key), created on first use. */
     @Synchronized
     fun passphrase(context: Context): ByteArray {
         val file = File(context.filesDir, KEY_FILE)
-        val raw = if (file.exists()) {
-            cipher.decrypt(file.readBytes())
-        } else {
+        val stored = if (file.exists()) {
+            runCatching { cipher.decrypt(file.readBytes()) }.getOrElse {
+                // The key file is damaged (e.g. the phone lost power while it was first being
+                // written) or this device's Keystore key is gone. The database can't be opened
+                // with it, so set it aside and start a new one instead of crashing on every
+                // launch. Incoming messages are fetched again from contacts' logs.
+                Log.e(TAG, "Database key unreadable; starting a fresh database", it)
+                setAside(context)
+                null
+            }
+        } else null
+        val raw = stored ?: run {
             val fresh = ByteArray(32).also(SecureRandom()::nextBytes)
             val tmp = File(context.filesDir, "$KEY_FILE.tmp")
-            tmp.writeBytes(cipher.encrypt(fresh))
+            // Written and synced to disk before it replaces anything, so a power cut can't
+            // leave a half-written key behind.
+            java.io.FileOutputStream(tmp).use { out ->
+                out.write(cipher.encrypt(fresh))
+                out.fd.sync()
+            }
             check(tmp.renameTo(file)) { "Could not save the database key" }
             fresh
         }
