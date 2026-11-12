@@ -229,8 +229,37 @@ class MessagingService(
         if (m.isGroup) {
             network.groupAppend(m.peerKey.removePrefix(MessageEntity.GROUP_PREFIX), m.wireId, m.body, m.sentAt, m.kind)
         } else {
-            network.append(m.peerKey, m.id, m.body, m.sentAt, m.kind)
+            network.append(m.peerKey, m.id, m.body, m.sentAt, m.kind, urgent = urgentIds.remove(m.id))
         }
+    }
+
+    /** Messages sent "urgently" that may still be waiting to go into the log. */
+    private val urgentIds = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    /**
+     * Sends text that every Meshron phone nearby passes on (even with "pass messages" off),
+     * hop by hop, until it reaches them or a phone with internet delivers it. 1:1 chats only.
+     */
+    suspend fun sendUrgent(conversation: String, text: String, replyTo: MessageEntity? = null) {
+        if (conversation.startsWith(MessageEntity.GROUP_PREFIX)) return send(conversation, text, replyTo)
+        val clean = text.trim()
+        val body = (if (replyTo != null && clean.isNotEmpty()) "↩ " + quoteOf(replyTo) + "\n" + clean else clean).take(MAX_BODY)
+        if (body.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val msg = MessageEntity(
+            peerKey = conversation, id = newId(), outgoing = true, body = body, sentAt = now, localTime = now,
+            status = MessageEntity.PENDING, signature = null, read = true,
+        )
+        urgentIds.add(msg.id)
+        dao.insert(msg)
+        if (network.isOnline) appendLock.withLock { appendRow(msg) }
+    }
+
+    /** SOS: an urgent message to every added contact. Returns how many it went to. */
+    suspend fun sendSos(text: String): Int {
+        val to = contacts.contacts.first().filter { it.status == Contact.Status.ADDED }
+        for (c in to) sendUrgent(c.keyHex, text)
+        return to.size
     }
 
     private suspend fun openGroup(g: GroupEntity) {

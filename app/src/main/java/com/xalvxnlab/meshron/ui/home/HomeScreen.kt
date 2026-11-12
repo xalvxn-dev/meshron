@@ -140,6 +140,8 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openChat by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSos by rememberSaveable { mutableStateOf(false) }
+    if (showSos) com.xalvxnlab.meshron.ui.sos.SosScreen(onClose = { showSos = false })
     val appCtx = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.xalvxnlab.meshron.MeshronApp
     LaunchedEffect(Unit) { appCtx.openChatRequests.collect { openChat = it } }
     var addingContact by rememberSaveable { mutableStateOf(false) }
@@ -248,6 +250,11 @@ fun HomeScreen(
                         MediumTopAppBar(
                             title = { Text(current.title, fontWeight = FontWeight.ExtraBold) },
                             actions = {
+                                // Emergency SOS, always one tap away.
+                                Box(
+                                    Modifier.padding(end = 6.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE5243B))
+                                        .clickable { showSos = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                ) { Text("SOS", color = Color.White, fontWeight = FontWeight.Black) }
                                 StatusPill(net) { tab = Tab.Profile.ordinal }
                                 if (current != Tab.Profile) {
                                     IconButton(onClick = { searching = true }) { Icon(Icons.Rounded.Search, "Search") }

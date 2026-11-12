@@ -110,3 +110,16 @@
 @media (prefers-reduced-motion: reduce) {
   .sring.new { animation: none; }
 }
+
+/* Close buttons: big enough to hit, and kept below the iPhone status bar / notch. */
+.sc-head { padding: calc(12px + var(--safe-t)) 10px 0 16px; }
+.sv-x { width: 46px; height: 46px; background: rgba(0, 0, 0, .3); flex: none; }
+.sv-x svg { width: 24px; height: 24px; }
+.sc-remove { top: calc(78px + var(--safe-t)); }
+.sc-swatches { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; }
+.sc-swatches::-webkit-scrollbar { display: none; }
+.sc-swatch, .sc-photo { flex: none; }
+.sc-photo { white-space: nowrap; }
+.sc-head .sv-who { flex: 1; min-width: 0; }
+.sc-head .sc-photo { margin-left: 0; height: 40px; }
+.sc-photo[hidden] { display: none; }

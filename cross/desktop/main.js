@@ -88,6 +88,8 @@ ipcMain.handle('desk', async (_e, what, arg) => {
     shell.showItemInFolder(String(arg))
   } else if (what === 'badge') {
     if (win && !win.isDestroyed() && !win.isFocused() && Number(arg) > 0) win.flashFrame(true)
+  } else if (what === 'wifi') {
+    shell.openExternal('ms-settings:network-wifi')
   } else if (what === 'awake') {
     // Calls: keep the display on (and the PC awake) until the call ends.
     if (arg && awakeId == null) awakeId = powerSaveBlocker.start('prevent-display-sleep')
@@ -143,13 +145,13 @@ function createWindow() {
   })
   // Links in messages open in the real browser; the app itself never navigates away.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) shell.openExternal(url)
+    if (/^(https?:\/\/|tel:|sms:)/.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith('file://')) {
       e.preventDefault()
-      if (/^https?:\/\//.test(url)) shell.openExternal(url)
+      if (/^(https?:\/\/|tel:|sms:)/.test(url)) shell.openExternal(url)
     }
   })
   win.on('focus', () => win.flashFrame(false))

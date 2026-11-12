@@ -239,7 +239,8 @@ struct WebView: UIViewRepresentable {
       _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
       decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-      if let url = action.request.url, url.scheme == "http" || url.scheme == "https" {
+      // Web links, and SOS call / text links, open in Safari / Phone / Messages.
+      if let url = action.request.url, ["http", "https", "tel", "sms"].contains(url.scheme ?? "") {
         UIApplication.shared.open(url)
         decisionHandler(.cancel)
         return

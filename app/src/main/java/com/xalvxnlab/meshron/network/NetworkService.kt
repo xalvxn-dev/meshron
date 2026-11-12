@@ -70,10 +70,11 @@ class NetworkService(
     var isGroupMember: (suspend (String) -> Boolean)? = null
 
     /** Appends a message to our outbox log for [keyHex]. Works offline; replicates later. */
-    suspend fun append(keyHex: String, id: String, body: String, sentAt: Long, kind: String = "text") {
+    /** [urgent]: every Meshron phone that meets this log passes it on (see app.js). */
+    suspend fun append(keyHex: String, id: String, body: String, sentAt: Long, kind: String = "text", urgent: Boolean = false) {
         send(
             cmd("append").put("key", keyHex).put("id", id).put("body", body).put("ts", sentAt).put("kind", kind)
-                .toString()
+                .put("urgent", urgent).toString()
         )
     }
 
@@ -378,7 +379,7 @@ class NetworkService(
                     HandleResult(List(arr.length()) { arr.getString(it) }, e.optString("error").ifEmpty { null })
                 )
             }
-            "carry" -> carried.add(e.getString("k"), e.getString("t"))
+            "carry" -> carried.add(e.getString("k"), e.getString("t"), e.optLong("u"))
             "peer" -> onPeer(e)
             "hello" -> {
                 val key = e.getString("key")
@@ -476,7 +477,8 @@ class NetworkService(
                 // Unknown phones met nearby are just mesh neighbours (they carry messages).
                 val list = contacts.contacts.first()
                 val known = list.any { it.keyHex == key } || isGroupMember?.invoke(key) == true
-                if (!known && via == "internet") {
+                // Carriers handing over someone's urgent message aren't requests either.
+                if (!known && via == "internet" && !e.optBoolean("carrier")) {
                     // Strangers can make endless new IDs, so cap how many requests we keep.
                     if (list.count { it.status == Contact.Status.REQUEST } >= MAX_REQUESTS) {
                         log("Too many pending requests, dropped $short…")

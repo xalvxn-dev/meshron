@@ -391,7 +391,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     if (isGroup(row.peerKey)) {
       cmd({ cmd: 'group-append', group: row.peerKey.slice(GROUP.length), id: wireId(row), body: row.body, ts: row.sentAt, kind: row.kind })
     } else {
-      cmd({ cmd: 'append', key: row.peerKey, id: row.id, body: row.body, ts: row.sentAt, kind: row.kind })
+      cmd({ cmd: 'append', key: row.peerKey, id: row.id, body: row.body, ts: row.sentAt, kind: row.kind, urgent: !!row.urgent })
     }
   }
 
@@ -493,8 +493,12 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
         return
       }
       case 'carry':
-        if (!S().carried.some((r) => r.k === e.k)) {
-          S().carried.push({ k: e.k, t: e.t })
+        {
+          const known = S().carried.find((r) => r.k === e.k)
+          const u = Number(e.u) || 0
+          if (!known) S().carried.push({ k: e.k, t: e.t, u })
+          else if (u > (known.u || 0)) known.u = u
+          else return
           saveState()
         }
         return
@@ -541,7 +545,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       const list = S().contacts
       const known = list.some((c) => c.keyHex === key) || S().groups.some((g) => g.members.includes(key))
       // Someone we don't know dialled our ID: keep it as a request for the user.
-      if (!known && via === 'internet') {
+      // (Carriers handing over someone's urgent message aren't requests.)
+      if (!known && via === 'internet' && !e.carrier) {
         // Strangers can make endless new IDs, so cap how many requests we keep.
         if (list.filter((c) => c.status === 'REQUEST').length >= MAX_REQUESTS) {
           log('Too many pending requests, dropped ' + short + '…')
@@ -881,7 +886,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
 
   // ---- Sending ------------------------------------------------------------------------
 
-  function sendRow(conv, body, kind, localPath) {
+  /** [urgent]: every Meshron phone that meets it passes it on (1:1 chats). */
+  function sendRow(conv, body, kind, localPath, urgent) {
     const t = now()
     const wid = randomHex(16)
     const group = isGroup(conv)
@@ -889,6 +895,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       peerKey: conv, id: group ? groupRowId(myKey, wid) : wid, outgoing: true, body, sentAt: t, localTime: t,
       status: PENDING, signature: null, read: true, seq: null, senderKey: group ? myKey : null, kind, localPath: localPath || null
     }
+    if (urgent && !group) row.urgent = true
     insertRow(row)
     if (net.status === 'online') appendRow(row)
     return row
@@ -1065,12 +1072,20 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       for (const r of allRows()) if (r.kind === 'text' && r.body.toLowerCase().includes(needle)) hits.push(r)
       return hits.sort((a, b) => b.localTime - a.localTime).slice(0, limit)
     },
-    async 'chat.send'({ conv, text, replyTo }) {
+    async 'chat.send'({ conv, text, replyTo, urgent }) {
       const clean = String(text || '').trim()
       if (!clean) return
       const quoted = replyTo && chat(conv).rows.find((r) => r.id === replyTo && visible(r) && r.kind !== 'deleted')
       const body = (quoted ? '↩ ' + quoteOf(quoted) + '\n' + clean : clean).slice(0, MAX_BODY)
-      sendRow(conv, body, 'text')
+      sendRow(conv, body, 'text', null, !!urgent)
+    },
+    /** SOS: an urgent message to every added contact. Returns how many. */
+    async 'sos.send'({ text }) {
+      const body = String(text || '').trim().slice(0, MAX_BODY)
+      if (!body) return 0
+      const to = S().contacts.filter((c) => c.status === 'ADDED')
+      for (const c of to) sendRow(c.keyHex, body, 'text', null, true)
+      return to.length
     },
     /** Changes the text of my own message on every device that has it. */
     async 'chat.edit'({ conv, id, text }) {
@@ -1278,6 +1293,10 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     },
     async 'link.close'({ id }) {
       cmd({ cmd: 'link-close', id })
+    },
+    /** How many other people's sealed logs this device carries on (shown in Connection). */
+    async 'net.carried'() {
+      return S().carried.length
     },
     async 'net.changed'() {
       if (net.status === 'online') cmd({ cmd: 'network-change' })

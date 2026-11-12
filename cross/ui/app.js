@@ -4,7 +4,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.3.0'
+  const VERSION = '1.4.0'
   const DOWNLOAD_URL = 'https://github.com/xalvxn-dev/meshron/releases/latest'
   const PRIVACY_URL = 'https://xalvxn-dev.github.io/meshron/PRIVACY'
   const GROUP = 'g:'
@@ -435,6 +435,7 @@
     const title = TABS.find((t) => t[0] === st.tab)[1]
     const head = h('div', { class: 'side-head' },
       h('h1', { class: 't-h1' }, title),
+      h('button', { class: 'sos-pill', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
       h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
       st.tab === 'chats' ? h('button', { class: 'icon-btn', title: 'New group', onClick: showNewGroup }, icon('users')) : null,
       st.tab !== 'me' ? h('button', { class: 'icon-btn', title: 'Add contact', onClick: () => showAddContact() }, icon('userPlus')) : null)
@@ -1041,7 +1042,11 @@
     const msgs = h('div', { class: 'msgs', id: 'msgs' })
     const toBottom = h('button', { class: 'to-bottom hide', onClick: () => scrollBottom(true) }, icon('down', 22))
     const input = h('textarea', { rows: 1, placeholder: 'Message', maxlength: st.limits.MAX_BODY })
-    const send = h('button', { class: 'send-btn hide', title: 'Send', onClick: () => sendText() }, icon('send', 20))
+    const send = h('button', { class: 'send-btn hide', title: 'Send (right-click or hold: send urgently)', onClick: () => sendText() }, icon('send', 20))
+    if (!isGroup(conv)) onContext(send, (x, y) => {
+      if (st.editing || !input.value.trim()) return
+      menu(x - 220, y - 70, [{ icon: 'zap', label: 'Send urgently — every Meshron phone nearby passes it on', onClick: () => sendText(true) }])
+    })
     const counter = h('div', { class: 'counter', hidden: true })
     const emojiBtn = isIos ? null : h('button', { class: 'icon-btn', title: 'Emoji', onClick: () => toggleEmoji() }, icon('smile', 24))
     const banner = h('div', { class: 'banner', hidden: true },
@@ -1155,6 +1160,50 @@
   async function unsend(row) {
     if (!(await confirmBox('Delete for everyone?', "It's removed from this chat on every device that has it, including theirs. Anyone who already read it may remember it.", 'Delete', true))) return
     M.call('chat.unsend', { conv: row.peerKey, id: row.id }).catch(oops)
+  }
+
+  const SOS_PREFIX = '🆘 SOS'
+  function sosBody(text, pos) {
+    let out = SOS_PREFIX + ': ' + (String(text || '').trim() || 'I need help.')
+    if (pos) out += '\n📍 https://maps.google.com/?q=' + pos.latitude.toFixed(6) + ',' + pos.longitude.toFixed(6) + ' (±' + Math.round(pos.accuracy) + ' m)'
+    return out + '\n🕒 ' + new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+  }
+
+  /** Emergency SOS: message + location to every contact as urgent, plus call / SMS / Wi-Fi routes. */
+  function showSos() {
+    let pos = null
+    const msg = h('textarea', { class: 'input', rows: 2, maxlength: 500 })
+    msg.value = 'I need help.'
+    const where = h('div', { class: 'sos-where' }, 'Finding your location…')
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (p) => { pos = p.coords; where.textContent = '📍 Location added (±' + Math.round(p.coords.accuracy) + ' m)'; where.classList.add('ok') },
+        () => { where.textContent = 'Location unavailable — the SOS goes without it' },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 })
+    } else where.textContent = 'Location unavailable — the SOS goes without it'
+    const note = h('p', { class: 'sos-note' }, 'Sends your message and location to all your contacts. Any Meshron phone nearby passes it on, even with no signal.')
+    const big = h('button', { class: 'sos-big', onClick: async () => {
+      big.disabled = true
+      try {
+        const n = await M.call('sos.send', { text: sosBody(msg.value, pos) })
+        note.textContent = n ? `Sent to ${n} ${n === 1 ? 'contact' : 'contacts'}. Every Meshron phone that comes near passes it on, and the first one with internet delivers it.` : 'You have no contacts yet. Use the call or SMS buttons below.'
+        big.querySelector('small').textContent = 'Send again'
+      } catch (err) { oops(err) }
+      big.disabled = false
+    } }, h('b', {}, 'SOS'), h('small', {}, 'Tap to send'))
+    const route = (ic, title, sub, onClick) => h('button', { class: 'sos-route', onClick }, h('span', { class: 'ic' }, icon(ic, 20)), h('span', {}, h('b', {}, title), h('small', {}, sub)))
+    const box = h('div', { class: 'sos' },
+      h('div', { class: 'sos-head' }, h('div', {}, h('div', { class: 'sos-title' }, 'Emergency SOS'), h('div', { class: 'sos-sub' }, 'Works without internet')),
+        h('button', { class: 'icon-btn sos-x', 'aria-label': 'Close', onClick: () => box.remove() }, icon('x', 24))),
+      h('div', { class: 'sos-body' }, msg, where, h('div', { class: 'sos-ring' }, big), note,
+        h('div', { class: 'sos-label' }, 'Other ways to get help'),
+        route('phone', 'Call emergency services', 'Works on any network, even without credit or a SIM', () => { location.href = 'tel:112' }),
+        route('chat', 'Send as a text (SMS)', 'Needs a little phone signal, not data', () => { location.href = 'sms:?&body=' + encodeURIComponent(sosBody(msg.value, pos)) }),
+        route('globe', 'Join an open Wi-Fi', isIos ? 'Open Settings → Wi-Fi and pick a network without a lock' : 'Open your Wi-Fi settings and pick an open network', () => {
+          if (M.native.openWifi) M.native.openWifi()
+          else toast(isIos ? 'Open Settings → Wi-Fi and pick a network without a lock' : 'Open Wi-Fi settings and pick an open network', 5000)
+        })))
+    layer.appendChild(box)
   }
 
   function chatHeadMenu(conv, x, y) {
@@ -1331,6 +1380,7 @@
   function bubbleFor(row, first) {
     const groupChat = isGroup(row.peerKey)
     const kids = []
+    let sos = false
     let media = false
     if (groupChat && !row.outgoing && first && row.senderKey) {
       const [a] = AVATARS[javaHash(row.senderKey) % AVATARS.length]
@@ -1354,6 +1404,11 @@
       kids.push(h('div', { class: 'invite-card' }, icon('users', 20), h('span', {}, displayBody(row))))
     } else if (row.kind === 'deleted') {
       kids.push(h('div', { class: 'text deleted' }, icon('block', 14), displayBody(row)))
+    } else if (row.kind === 'text' && row.body.startsWith(SOS_PREFIX)) {
+      sos = true
+      kids.push(h('div', { class: 'text' }, richText(row.body)))
+      const link = /https:\/\/maps\.google\.com\/\?q=[-0-9.,]+/.exec(row.body)
+      if (link) kids.push(h('a', { class: 'sos-map', href: link[0], target: '_blank', rel: 'noopener noreferrer' }, 'Open map'))
     } else if (REPLY_RE.test(row.body)) {
       const [, q, text] = REPLY_RE.exec(row.body)
       const i = st.rows.findIndex((r) => r.id === row.id)
@@ -1374,7 +1429,7 @@
       } else kids.push(h('div', { class: 'text' + (big ? ' big' : '') }, richText(row.body, hl)))
     }
     kids.push(h('div', { class: 'meta' }, row.edited && row.kind === 'text' ? h('span', { class: 'edited' }, 'edited ·') : null, clock(row.sentAt), row.outgoing && row.kind !== 'deleted' ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
-    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') }, kids)
+    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos' : '') }, kids)
     onContext(b, (x, y) => messageMenu(row, x, y))
     if (row.kind === 'deleted') return b
     // Double-click / double-tap: quick heart.
@@ -1446,7 +1501,7 @@
 
   // ---- Sending ---------------------------------------------------------------------
 
-  async function sendText() {
+  async function sendText(urgent = false) {
     if (!chatEls || !st.open) return
     const text = chatEls.input.value.trim()
     if (!text) return
@@ -1464,7 +1519,8 @@
     try {
       if (edit) await M.call('chat.edit', { conv: st.open, id: edit.id, text })
       else {
-        await M.call('chat.send', { conv: st.open, text, replyTo: reply ? reply.id : null })
+        await M.call('chat.send', { conv: st.open, text, replyTo: reply ? reply.id : null, urgent: !!urgent })
+        if (urgent) toast('Sent urgently: every Meshron phone nearby will pass it on')
         scrollBottom(false)
       }
     } catch (err) { oops(err) }
@@ -1908,12 +1964,14 @@
     const caption = h('input', { class: 'sv-reply', placeholder: 'Add a caption…', maxlength: 300 })
     const stage = h('div', { class: 'sc-stage' })
     const swatches = h('div', { class: 'sc-swatches' })
+    const photoBtn = h('button', { class: 'sc-photo', onClick: () => picker.click() }, icon('clip', 18), 'Photo')
     const share = h('button', { class: 'btn primary', onClick: post }, 'Share to story')
     const picker = h('input', { type: 'file', accept: 'image/*', hidden: true })
     const root = h('div', { class: 'sv sc' })
     const close = () => { root.classList.add('out'); setTimeout(() => root.remove(), 220); if (photo) URL.revokeObjectURL(photo.url) }
 
     const draw = () => {
+      photoBtn.hidden = !!photo
       if (photo) {
         stage.style.background = '#000'
         stage.replaceChildren(h('div', { class: 'sv-blur', style: { backgroundImage: `url("${photo.url}")` } }), h('img', { class: 'sv-photo', src: photo.url }),
@@ -1922,8 +1980,7 @@
       } else {
         stage.style.background = STORY_BGS[bg]
         stage.replaceChildren(text)
-        swatches.replaceChildren(...STORY_BGS.map((b, i) => h('button', { class: 'sc-swatch' + (i === bg ? ' on' : ''), style: { background: b }, onClick: () => { bg = i; draw() } })),
-          h('button', { class: 'sc-photo', onClick: () => picker.click() }, icon('clip', 18), 'Photo'))
+        swatches.replaceChildren(...STORY_BGS.map((b, i) => h('button', { class: 'sc-swatch' + (i === bg ? ' on' : ''), style: { background: b }, onClick: () => { bg = i; draw() } })))
         const len = text.value.length
         text.style.fontSize = (len < 40 ? 32 : len < 120 ? 24 : 19) + 'px'
         setTimeout(() => text.focus(), 30)
@@ -1964,7 +2021,7 @@
 
     root.append(h('div', { class: 'sv-back', onClick: close }),
       h('div', { class: 'sv-card' }, stage,
-        h('div', { class: 'sv-head' }, h('div', { class: 'sv-who' }, h('b', {}, 'New story'), h('span', {}, 'Your contacts can see it for 24 hours')), h('button', { class: 'icon-btn sv-x', onClick: close }, icon('x', 22))),
+        h('div', { class: 'sv-head sc-head' }, h('div', { class: 'sv-who' }, h('b', {}, 'New story'), h('span', {}, 'Your contacts see it for 24 hours')), photoBtn, h('button', { class: 'icon-btn sv-x', onClick: close }, icon('x', 22))),
         h('div', { class: 'sc-foot' }, swatches, share)),
       picker)
     layer.appendChild(root)

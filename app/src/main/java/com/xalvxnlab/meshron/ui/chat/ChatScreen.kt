@@ -1,5 +1,9 @@
 package com.xalvxnlab.meshron.ui.chat
 
+import androidx.compose.material.icons.filled.LocationOn
+
+import androidx.compose.material.icons.filled.Bolt
+
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 
 import androidx.compose.ui.input.pointer.pointerInput
@@ -159,7 +163,7 @@ sealed interface ChatTarget {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     target: ChatTarget,
@@ -209,6 +213,24 @@ fun ChatScreen(
     var editing by remember(conversation) { mutableStateOf<MessageEntity?>(null) }
     var flash by remember { mutableStateOf<String?>(null) }
     var lastTyping by remember { mutableStateOf(0L) }
+    var urgentMenu by remember { mutableStateOf(false) }
+    fun sendNow(urgent: Boolean) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val text = draft
+        val edit = editing
+        val reply = replyTo
+        draft = ""
+        editing = null
+        replyTo = null
+        lastTyping = 0L
+        scope.launch {
+            when {
+                edit != null -> messaging.edit(edit, text)
+                urgent -> messaging.sendUrgent(conversation, text, reply)
+                else -> messaging.send(conversation, text, reply)
+            }
+        }
+    }
     val typingNow by network.typing.collectAsState()
     val theyAreTyping = target is ChatTarget.Direct && typingNow.containsKey(target.contact.keyHex)
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -524,24 +546,33 @@ fun ChatScreen(
                                         .shadow(10.dp, CircleShape, ambientColor = MeshColors.GradMid, spotColor = MeshColors.GradMid)
                                         .clip(CircleShape)
                                         .background(MeshColors.Gradient)
-                                        .clickable {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            val text = draft
-                                            val edit = editing
-                                            val reply = replyTo
-                                            draft = ""
-                                            editing = null
-                                            replyTo = null
-                                            lastTyping = 0L
-                                            scope.launch {
-                                                if (edit != null) messaging.edit(edit, text)
-                                                else messaging.send(conversation, text, reply)
-                                            }
-                                        },
+                                        .combinedClickable(
+                                            onClick = { sendNow(false) },
+                                            // Hold Send: urgent (1:1 chats).
+                                            onLongClick = {
+                                                if (editing == null && target is ChatTarget.Direct) {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    urgentMenu = true
+                                                }
+                                            },
+                                        ),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     if (editing != null) Icon(Icons.Filled.Done, "Save", Modifier.size(24.dp), tint = Color.White)
                                     else Icon(Icons.AutoMirrored.Rounded.Send, "Send", Modifier.size(22.dp), tint = Color.White)
+                                    DropdownMenu(expanded = urgentMenu, onDismissRequest = { urgentMenu = false }) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text("Send urgently", fontWeight = FontWeight.SemiBold)
+                                                    Text("Every Meshron phone nearby passes it on", style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            },
+                                            leadingIcon = { Icon(Icons.Filled.Bolt, null, tint = Color(0xFFFFB020)) },
+                                            onClick = { urgentMenu = false; sendNow(true) },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -704,9 +735,10 @@ private fun Bubble(
     val drag = remember { androidx.compose.animation.core.Animatable(0f) }
     var armed by remember { mutableStateOf(false) }
     val myReaction = reactions.firstOrNull { it.first == myKey }?.second
-    val gradient = mine && !deleted
-    val textColor = if (gradient) Color.White else MeshColors.TextPrimary
-    val metaColor = if (gradient) Color.White.copy(alpha = 0.7f) else MeshColors.TextTertiary
+    val sos = m.kind == MessageEntity.KIND_TEXT && m.body.startsWith(com.xalvxnlab.meshron.ui.sos.SOS_PREFIX)
+    val gradient = mine && !deleted && !sos
+    val textColor = if (gradient || sos) Color.White else MeshColors.TextPrimary
+    val metaColor = if (gradient || sos) Color.White.copy(alpha = 0.75f) else MeshColors.TextTertiary
     val glow by androidx.compose.animation.animateColorAsState(
         if (highlighted) MeshColors.GradMid.copy(alpha = 0.18f) else Color.Transparent, tween(300), label = "flash",
     )
@@ -757,7 +789,7 @@ private fun Bubble(
                 Modifier
                     .widthIn(max = 300.dp)
                     .clip(shape)
-                    .then(if (gradient) Modifier.background(MeshColors.BubbleGradient) else Modifier.background(MeshColors.Surface2))
+                    .then(if (sos) Modifier.background(Color(0xFFE5243B)) else if (gradient) Modifier.background(MeshColors.BubbleGradient) else Modifier.background(MeshColors.Surface2))
                     .combinedClickable(
                         onClick = { if (m.kind == MessageEntity.KIND_FILE) onOpenFile() },
                         // Double-tap: quick heart.
@@ -832,7 +864,30 @@ private fun Bubble(
                             QuoteBlock(quoteAuthor ?: "Reply", reply.groupValues[1], textColor, onClick = onQuoteTap)
                             Text(reply.groupValues[2], color = textColor, style = MaterialTheme.typography.bodyLarge)
                         } else {
-                            Text(displayBody(m), color = textColor, style = MaterialTheme.typography.bodyLarge)
+                            Text(displayBody(m), color = textColor, style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (sos) FontWeight.SemiBold else null)
+                            if (sos) {
+                                // Open the shared location in any maps app.
+                                val link = remember(m.body) { Regex("https://maps\\.google\\.com/\\?q=[-0-9.,]+").find(m.body)?.value }
+                                val ctx = LocalContext.current
+                                if (link != null) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable {
+                                            val q = link.substringAfter("q=")
+                                            val geo = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:$q?q=$q"))
+                                            runCatching { ctx.startActivity(geo) }.onFailure {
+                                                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link))) }
+                                            }
+                                        }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Filled.LocationOn, null, tint = Color(0xFFE5243B), modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Open map", color = Color(0xFFE5243B), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
+                            }
                         }
                     }
                 }

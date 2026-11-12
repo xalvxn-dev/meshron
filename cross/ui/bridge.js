@@ -67,6 +67,7 @@
         badge: (count) => n.setBadge(count),
         notify: ({ title, body, conv }) => n.notify({ title, body, conv }),
         keepAwake: (on) => n.keepAwake(on),
+        openWifi: () => n.openWifi(),
         focusState: () => document.hasFocus()
       }
     }

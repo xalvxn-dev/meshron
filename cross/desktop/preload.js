@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('meshronNative', {
   showInFolder: (path) => ipcRenderer.invoke('desk', 'showInFolder', path),
   setBadge: (count) => ipcRenderer.invoke('desk', 'badge', count),
   notify: (n) => ipcRenderer.invoke('desk', 'notify', n),
-  keepAwake: (on) => ipcRenderer.invoke('desk', 'awake', !!on)
+  keepAwake: (on) => ipcRenderer.invoke('desk', 'awake', !!on),
+  openWifi: () => ipcRenderer.invoke('desk', 'wifi')
 })

@@ -14,18 +14,32 @@ class CarriedLogs(private val file: File) {
     @Synchronized
     fun load(): JSONArray = runCatching { JSONArray(file.readText()) }.getOrDefault(JSONArray())
 
+    /** [urgentUntil]: someone's urgent message, carried even past [MAX] until then (ms). */
     @Synchronized
-    fun add(core: String, tag: String) {
+    fun add(core: String, tag: String, urgentUntil: Long = 0) {
         val list = load()
-        for (i in 0 until list.length()) if (list.getJSONObject(i).optString("k") == core) return
-        if (list.length() >= MAX) return
-        list.put(JSONObject().put("k", core).put("t", tag))
+        for (i in 0 until list.length()) {
+            val o = list.getJSONObject(i)
+            if (o.optString("k") != core) continue
+            if (urgentUntil > o.optLong("u")) {
+                o.put("u", urgentUntil)
+                save(list)
+            }
+            return
+        }
+        if (list.length() >= MAX + URGENT_EXTRA || (list.length() >= MAX && urgentUntil == 0L)) return
+        list.put(JSONObject().put("k", core).put("t", tag).put("u", urgentUntil))
+        save(list)
+    }
+
+    private fun save(list: JSONArray) {
         val tmp = File(file.path + ".tmp")
         tmp.writeText(list.toString())
         tmp.renameTo(file)
     }
 
     private companion object {
-        const val MAX = 100
+        const val MAX = 200
+        const val URGENT_EXTRA = 100
     }
 }

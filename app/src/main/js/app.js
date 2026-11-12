@@ -64,6 +64,10 @@ const HEX64 = /^[0-9a-f]{64}$/
 const MESH_SEND_MAX = 300
 const CARRY_MAX = 200 // other people's sealed logs this phone carries on (store-and-forward hops)
 const CARRY_MAX_BLOCKS = 5000
+// Urgent messages (and SOS): every phone that meets them carries them on, even with
+// "pass messages" off and past the usual limit, for this long.
+const URGENT_MS = 48 * 60 * 60 * 1000
+const URGENT_MAX = 100
 
 let swarm = null // only while internet is on
 let store = null
@@ -284,7 +288,7 @@ async function start({ seed, name, handle, storage, cursors: initial, internet, 
   await store.ready()
   log('Opened local log storage')
   for (const r of Array.isArray(carried) ? carried : []) {
-    if (r && HEX64.test(r.k) && HEX64.test(r.t)) await carryLog(r.k, r.t, false)
+    if (r && HEX64.test(r.k) && HEX64.test(r.t)) await carryLog(r.k, r.t, false, (Number(r.u) || 0) > Date.now())
   }
 
   // Ready before going online: nearby links and local sending work without internet.
@@ -326,7 +330,14 @@ async function setInternet(on) {
           : connect(pk, { ...o, localConnection: false, fastOpen: false, holepunch: () => false })
     }
     swarm = s
-    s.on('connection', (conn) => onconnection(conn, 'internet'))
+    s.on('connection', (conn, info) => {
+      // A carrier that found the recipient through an urgent log's topic (we dialled them).
+      conn.carrierLink = !!(info && info.topics && info.topics.some((t) => urgentTopics.has(hex(t))))
+      if (conn.carrierLink) log('Found the recipient of an urgent message I carry; handing it over')
+      onconnection(conn, 'internet')
+    })
+    for (const k of urgentTopics.keys()) s.join(b4a.from(k, 'hex'), { server: false, client: true })
+    listenForUrgent(s)
     for (const k of dialled) s.joinPeer(b4a.from(k, 'hex'))
     for (const g of groups.values()) s.join(g.topic, { server: true, client: true })
     if (myHandle) s.join(handleTopic(myHandle), { server: true, client: false })
@@ -525,7 +536,7 @@ function outbox(peerHex) {
   return p
 }
 
-async function append({ key: peerHex, id, ts, body, kind }) {
+async function append({ key: peerHex, id, ts, body, kind, urgent }) {
   body = String(body).slice(0, MAX_BODY)
   ts = Number(ts) || Date.now()
   kind = DM_KINDS.includes(kind) ? kind : 'text'
@@ -535,7 +546,17 @@ async function append({ key: peerHex, id, ts, body, kind }) {
   if (kind !== 'text') entry.kind = kind
   const { length } = await core.append(b4a.from(JSON.stringify(entry)))
   send({ ev: 'appended', key: peerHex, id, seq: length - 1 })
+  if (urgent) markUrgent(hex(core.key))
 }
+
+// Urgent: gossip this log with a flag so every phone that meets it carries it on.
+function markUrgent(k) {
+  const r = records.get(k)
+  if (!r) return
+  r.urgentUntil = Date.now() + URGENT_MS
+  meshChanged()
+}
+const isUrgent = (r) => (r.urgentUntil || 0) > Date.now()
 
 // ---- Files ------------------------------------------------------------------
 //
@@ -683,6 +704,23 @@ function recomputeTags() {
   for (const g of groups.values()) {
     for (const m of g.members) if (m !== me()) myTags.set(hex(groupTag(g, m)), { group: g.id, member: m })
   }
+  if (swarm) listenForUrgent(swarm)
+}
+
+// Urgent hand-over over the internet: a stranger carrying a contact's urgent message for me
+// looks up a topic made from that chat's tag (only the two of us and carriers know the tag,
+// and carriers can't tell who it belongs to). I listen on one topic per contact.
+function urgentTopic(tagHex) {
+  return crypto.hash([b4a.from('meshron/urgent/v1'), b4a.from(tagHex, 'hex')])
+}
+const urgentListening = new Set()
+function listenForUrgent(s) {
+  if (s.__urgent !== urgentListening) { urgentListening.clear(); s.__urgent = urgentListening }
+  for (const [tag, v] of myTags) {
+    if (!v.dm || urgentListening.has(tag)) continue
+    urgentListening.add(tag)
+    s.join(urgentTopic(tag), { server: true, client: false })
+  }
 }
 
 // A log I hold as part of my own chats. `gossip`: offer it to others (my outboxes, group logs).
@@ -706,11 +744,15 @@ function meshChanged() {
 function sendMesh(conn) {
   if (!conn.chan || conn.chan.channel.closed) return
   const recs = []
-  // My own logs first, then the ones I carry for others.
+  // Urgent logs first (mine or carried), then my own, then the ones I carry for others.
+  for (const r of records.values()) {
+    if (recs.length >= MESH_SEND_MAX) break
+    if ((r.gossip || r.carried) && isUrgent(r)) recs.push([r.k, r.t, 1])
+  }
   for (const pass of [false, true]) {
     for (const r of records.values()) {
       if (recs.length >= MESH_SEND_MAX) break
-      if ((r.gossip || r.carried) && r.carried === pass) recs.push([r.k, r.t])
+      if ((r.gossip || r.carried) && r.carried === pass && !isUrgent(r)) recs.push([r.k, r.t])
     }
   }
   if (recs.length) conn.chan.message.send({ t: 'mesh', recs })
@@ -721,7 +763,19 @@ async function onMesh(recs) {
   for (const r of recs.slice(0, MESH_SEND_MAX)) {
     if (!Array.isArray(r) || !HEX64.test(r[0]) || !HEX64.test(r[1])) continue
     const [k, t] = r
-    if (records.has(k)) continue
+    const urgent = r[2] === 1
+    if (records.has(k)) {
+      // Already known: an urgent flag still spreads, so it keeps hopping.
+      const known = records.get(k)
+      if (urgent && known.carried && !isUrgent(known)) {
+        known.urgentUntil = Date.now() + URGENT_MS
+        log('Carrying an urgent message for someone else')
+        seekRecipient(t, URGENT_MS)
+        send({ ev: 'carry', k, t, u: known.urgentUntil })
+        meshChanged()
+      }
+      continue
+    }
     const mine = myTags.get(t)
     if (mine && mine.dm) {
       // A contact's log for me, brought by whoever we're connected to.
@@ -732,19 +786,45 @@ async function onMesh(recs) {
         await openMemberLog(g, mine.member, k)
         send({ ev: 'gann', group: g.id, member: mine.member, outbox: k, sig: '' })
       }
+    } else if (urgent) {
+      // Someone's urgent message: carry it even if "pass messages" is off.
+      await carryLog(k, t, true, true)
     } else if (carryEnabled) {
       await carryLog(k, t, true)
     }
   }
 }
 
+// With internet, look for the recipient of an urgent log right away instead of waiting to
+// meet them. The recipient listens on a topic made from the chat's private tag (urgentTopic).
+let urgentCount = 0
+const urgentTopics = new Map() // topic hex -> until (urgent logs I carry)
+function seekRecipient(t, ms) {
+  const topicBuf = urgentTopic(t)
+  const topic = hex(topicBuf)
+  if (urgentTopics.has(topic)) return
+  urgentTopics.set(topic, Date.now() + ms)
+  if (swarm) swarm.join(topicBuf, { server: false, client: true })
+  const timer = setTimeout(() => {
+    urgentTopics.delete(topic)
+    if (swarm) swarm.leave(topicBuf).catch(() => {})
+  }, ms)
+  if (timer.unref) timer.unref()
+}
+
 // Stores someone else's (encrypted) log so it can be handed on. We can't read it.
-async function carryLog(k, t, persist) {
-  if (records.has(k) || carriedCount >= CARRY_MAX) return
-  records.set(k, { k, t, gossip: false, carried: true })
-  carriedCount++
+async function carryLog(k, t, persist, urgent = false) {
+  if (records.has(k)) return
+  if (urgent ? urgentCount >= URGENT_MAX : carriedCount >= CARRY_MAX) return
+  records.set(k, { k, t, gossip: false, carried: true, urgentUntil: urgent ? Date.now() + URGENT_MS : 0 })
+  if (urgent) urgentCount++
+  else carriedCount++
   const core = store.get({ key: b4a.from(k, 'hex') })
   await core.ready()
+  if (urgent) {
+    log('Carrying an urgent message for someone else')
+    seekRecipient(t, URGENT_MS)
+  }
   const fetch = () => {
     const end = Math.min(core.length, CARRY_MAX_BLOCKS)
     if (end > 0) core.download({ start: 0, end })
@@ -752,7 +832,7 @@ async function carryLog(k, t, persist) {
   core.on('append', fetch)
   core.update({ wait: true }).then(fetch, () => {})
   fetch()
-  if (persist) send({ ev: 'carry', k, t })
+  if (persist) send({ ev: 'carry', k, t, u: urgent ? Date.now() + URGENT_MS : 0 })
   meshChanged()
 }
 
@@ -789,10 +869,15 @@ function onconnection(conn, via) {
   p.conns.add(conn)
   p.current = conn
   conn.via = via
-  announcePeer(key, conn)
+  // A stranger over the internet: wait for their hello to learn whether they're a carrier
+  // (then they're not shown as a contact request).
+  const known = trusted.has(key) || requested.has(key)
+  if (via !== 'internet' || known || conn.carrierLink) announcePeer(key, conn)
+  else conn.pendingAnnounce = setTimeout(() => { conn.pendingAnnounce = null; announcePeer(key, conn) }, 4000)
 
   conn.on('error', () => {})
   conn.on('close', () => {
+    if (conn.pendingAnnounce) clearTimeout(conn.pendingAnnounce)
     p.conns.delete(conn)
     if (p.current !== conn) return
     // Still connected another way (e.g. internet and Bluetooth at once)?
@@ -913,7 +998,7 @@ function callVideo({ key, data }) {
   if (buf.byteLength <= MAX_VIDEO) conn.call.video.send(buf)
 }
 
-function announcePeer(key, conn) {
+function announcePeer(key, conn, carrier = false) {
   const raw = conn.rawStream
   const internet = conn.via === 'internet'
   send({
@@ -924,6 +1009,7 @@ function announcePeer(key, conn) {
     host: (internet && raw && raw.remoteHost) || null,
     port: (internet && raw && raw.remotePort) || 0,
     initiator: !!conn.isInitiator,
+    carrier: carrier || !!conn.carrierLink,
     // Internet links are direct (hole-punched) or go through a blind relay; from here the
     // two look the same, so the app just says "internet".
     relayed: false
@@ -1095,12 +1181,21 @@ async function groupPump(g, member, entry) {
 
 async function sendHello(peerHex) {
   const core = await outbox(peerHex)
-  sendToPeer(peerHex, { t: 'hello', v: PROTOCOL_VERSION, name: myName, handle: myHandle, outbox: hex(core.key) })
+  const p = peers.get(peerHex)
+  const carrier = !!(p && p.current && p.current.carrierLink)
+  sendToPeer(peerHex, { t: 'hello', v: PROTOCOL_VERSION, name: myName, handle: myHandle, outbox: hex(core.key), carrier })
 }
 
 async function onpeermessage(peerHex, msg) {
   if (!msg || typeof msg !== 'object') return
   if (msg.t === 'hello') {
+    const p = peers.get(peerHex)
+    const c = p && p.current
+    if (c && c.pendingAnnounce) {
+      clearTimeout(c.pendingAnnounce)
+      c.pendingAnnounce = null
+      announcePeer(peerHex, c, msg.carrier === true)
+    }
     if (typeof msg.name === 'string') {
       const handle = typeof msg.handle === 'string' && HANDLE_RE.test(msg.handle) ? msg.handle : ''
       send({ ev: 'hello', key: peerHex, name: msg.name.slice(0, 64), handle, v: msg.v | 0 })

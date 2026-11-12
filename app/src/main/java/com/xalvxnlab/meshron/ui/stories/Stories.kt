@@ -1,5 +1,9 @@
 package com.xalvxnlab.meshron.ui.stories
 
+import androidx.compose.foundation.rememberScrollState
+
+import androidx.compose.foundation.horizontalScroll
+
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -415,39 +419,56 @@ private fun StoryComposer(onClose: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        // Layout: header, then the story (fills what's left), then the controls; the whole
+        // column moves up with the keyboard so nothing hides behind it on small phones.
         Box(Modifier.fillMaxSize().background(if (photo == null) STORY_BGS[bg] else Brush.linearGradient(listOf(Color.Black, Color.Black)))) {
             if (photo != null) {
                 preview?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-            } else {
-                val len = text.length
-                TextField(
-                    value = text, onValueChange = { text = it.take(700) },
-                    placeholder = { Text("Type something…", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold) },
-                    textStyle = MaterialTheme.typography.headlineMedium.copy(color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.ExtraBold,
-                        fontSize = (if (len < 40) 32 else if (len < 120) 24 else 19).sp),
-                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = Color.White),
-                    modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(24.dp),
-                )
             }
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("New story", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Your contacts can see it for 24 hours", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                    Text("New story", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Your contacts see it for 24 hours", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, maxLines = 1)
                 }
-                IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Color.White) }
-            }
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 34.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (photo == null) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Photo lives up here, so it never gets squeezed by the colours.
+                    Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.3f)).clickable {
+                        pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Image, null, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text("Photo", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                // Big, easy-to-hit close button.
+                Box(Modifier.size(48.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.3f)).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Close, "Close", tint = Color.White, modifier = Modifier.size(26.dp))
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (photo == null) {
+                    val len = text.length
+                    TextField(
+                        value = text, onValueChange = { text = it.take(700) },
+                        placeholder = { Text("Type something…", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold) },
+                        textStyle = MaterialTheme.typography.headlineMedium.copy(color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.ExtraBold,
+                            fontSize = (if (len < 40) 32 else if (len < 120) 24 else 19).sp),
+                        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = Color.White),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    )
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (photo == null) {
+                    // Colours scroll sideways if the screen is narrow.
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         STORY_BGS.forEachIndexed { i, b ->
-                            Box(Modifier.size(if (i == bg) 34.dp else 28.dp).clip(CircleShape).background(b).border(2.dp, if (i == bg) Color.White else Color.White.copy(alpha = 0.6f), CircleShape).clickable { bg = i })
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.4f)).clickable {
-                            pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Image, null, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Photo", color = Color.White, fontWeight = FontWeight.Bold)
+                            Box(Modifier.size(if (i == bg) 36.dp else 30.dp).clip(CircleShape).background(b).border(2.dp, if (i == bg) Color.White else Color.White.copy(alpha = 0.6f), CircleShape).clickable { bg = i })
                         }
                     }
                 } else {
@@ -474,6 +495,7 @@ private fun StoryComposer(onClose: () -> Unit) {
                     else Text("Share to story", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
+          }
         }
     }
 }
