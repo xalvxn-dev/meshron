@@ -81,7 +81,9 @@ class VideoEngine(
     @Volatile private var lastAckAt = 0L
     @Volatile private var lastDropAt = 0L
     @Volatile private var bitrate = if (lowBandwidth) 250_000 else 800_000
-    private val maxBitrate = if (lowBandwidth) 400_000 else 1_500_000
+    private var maxBitrate = if (lowBandwidth) 400_000 else 1_500_000
+    @Volatile private var fps = FPS
+    @Volatile private var screen = false
     private val _poor = MutableStateFlow(false)
     val poor: StateFlow<Boolean> = _poor.asStateFlow()
 
@@ -133,6 +135,54 @@ class VideoEngine(
         stopCameraNow()
         front = next
         runCatching { openCamera() }.onFailure { Log.e(TAG, "camera", it); stopCameraNow() }
+    }
+
+    private var projection: android.media.projection.MediaProjection? = null
+    private var screenDisplay: android.hardware.display.VirtualDisplay? = null
+
+    /** Streams the screen (games, apps) instead of the camera, scaled to 720p at most. */
+    fun startScreen(p: android.media.projection.MediaProjection, width: Int, height: Int, dpi: Int) = camHandler.post {
+        if (sending) stopCameraNow()
+        val scale = minOf(1f, 720f / minOf(width, height), 1280f / maxOf(width, height)) // 720p: games look sharp
+        size = Size(((width * scale).toInt() / 16) * 16, ((height * scale).toInt() / 16) * 16)
+        sensorRotation = 0
+        front = false
+        screen = true
+        fps = SCREEN_FPS
+        maxBitrate = 3_500_000
+        bitrate = 2_000_000
+        sending = true
+        startEncoder()
+        projection = p
+        p.registerCallback(object : android.media.projection.MediaProjection.Callback() {
+            override fun onStop() { camHandler.post { stopCameraNow() } }
+        }, camHandler)
+        screenDisplay = p.createVirtualDisplay("meshron-live", size.width, size.height, dpi,
+            android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, encoderSurface, null, camHandler)
+        _local.value = VideoFormat(size.width, size.height, 0)
+        Log.i(TAG, "Screen on: ${size.width}x${size.height}")
+    }
+
+    /** The screen turned (a game went landscape): re-shape the stream instead of letterboxing it. */
+    fun resizeScreen(width: Int, height: Int, dpi: Int) = camHandler.post {
+        val d = screenDisplay ?: return@post
+        val scale = minOf(1f, 720f / minOf(width, height), 1280f / maxOf(width, height))
+        val next = Size(((width * scale).toInt() / 16) * 16, ((height * scale).toInt() / 16) * 16)
+        if (next == size) return@post
+        // New encoder for the new shape; the virtual display keeps running.
+        sending = false
+        drainThread?.join(500)
+        drainThread = null
+        encoder?.let { runCatching { it.stop() }; it.release() }
+        encoder = null
+        encoderSurface?.release()
+        size = next
+        sending = true
+        startEncoder()
+        d.resize(size.width, size.height, dpi)
+        d.surface = encoderSurface
+        _local.value = VideoFormat(size.width, size.height, 0)
+        Log.i(TAG, "Screen turned: ${size.width}x${size.height}")
     }
 
     /** The local preview (or null when its view goes away). */
@@ -229,7 +279,13 @@ class VideoEngine(
         val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, size.width, size.height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, FPS)
+            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+            if (screen) {
+                // A still screen makes no new frames: repeat the last one so viewers keep up.
+                setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / 10)
+                setInteger(MediaFormat.KEY_PRIORITY, 0) // real time
+                setInteger(MediaFormat.KEY_OPERATING_RATE, fps)
+            }
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
         }
@@ -248,6 +304,9 @@ class VideoEngine(
 
     private fun stopCameraNow() {
         sending = false
+        runCatching { screenDisplay?.release() }
+        screenDisplay = null
+        projection?.let { p -> projection = null; runCatching { p.stop() } }
         runCatching { session?.close() }
         session = null
         runCatching { camera?.close() }
@@ -502,6 +561,7 @@ class VideoEngine(
     companion object {
         private const val TAG = "VideoEngine"
         const val FPS = 20
+        const val SCREEN_FPS = 30
         private const val HEADER = 10
         private const val MAX_IN_FLIGHT = 6 // frames (~300 ms) not yet acknowledged
         private const val MIN_BITRATE = 120_000

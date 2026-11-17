@@ -30,7 +30,7 @@ class MeshronApp : Application() {
     val identityRepository by lazy { IdentityRepository(this) }
     val contactsRepository by lazy { ContactsRepository(this) }
     val database by lazy { AppDatabase.create(this) }
-    val networkService by lazy { NetworkService(this, identityRepository, contactsRepository, settings) }
+    val networkService by lazy { NetworkService(this, identityRepository, contactsRepository, settings, profiles) }
     val localTransports by lazy { LocalTransports(this, networkService, settings) }
     val messagingService by lazy {
         MessagingService(database.messages(), networkService, contactsRepository, identityRepository)
@@ -38,9 +38,33 @@ class MeshronApp : Application() {
     val fileService by lazy { FileService(this, database.messages(), networkService, messagingService, contactsRepository) }
     val storyService by lazy { com.xalvxnlab.meshron.messaging.StoryService(database.messages(), messagingService, fileService, contactsRepository, identityRepository, networkService) }
     val settings by lazy { AppSettings(this) }
+    /** People you may know (opt-in, rough area only). */
+    val suggestions by lazy { com.xalvxnlab.meshron.reels.Suggestions(this, networkService, reels, contactsRepository) }
+    /** Per-chat settings (disappearing timers). */
+    val chatPrefs by lazy { com.xalvxnlab.meshron.settings.ChatPrefs(this) }
+    /** Public accounts: @username + password, email codes, 2-step. */
+    val accounts by lazy { com.xalvxnlab.meshron.account.AccountService(this, identityRepository) }
+    /** Meshron AI (through the account server). */
+    val ai by lazy { com.xalvxnlab.meshron.account.AiService(accounts, this) }
+    /** Reels: short public videos (not in anonymous mode). */
+    val reels by lazy { com.xalvxnlab.meshron.reels.ReelsService(this, networkService, identityRepository, profiles) }
+    val moderation by lazy { com.xalvxnlab.meshron.moderation.ModerationService(this, accounts, identityRepository) }
+
+    /** Sends saved reports in the background (they wait on the phone while offline). */
+    fun sendReports() { appScope.launch { runCatching { moderation.uploadPending() } } }
+
+    val live by lazy { com.xalvxnlab.meshron.reels.LiveService(this, networkService, reels) }
+    /** My bio/photo and the ones contacts share. */
+    val profiles by lazy { com.xalvxnlab.meshron.profile.ProfileStore(this, com.xalvxnlab.meshron.identity.Mode.name("profiles")) }
 
     /** Asks the home screen to open a chat (e.g. "Chat" during a call). */
     val openChatRequests = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
+    /** Asks the app to open a reel (meshron://reel/<channel>/<id>), e.g. from a chat. */
+    val openReelRequests = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 2)
+    /** Open someone's page (their Meshron ID), e.g. tapping a name in a group chat. */
+    val openProfileRequests = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 2)
+    /** Asks the Moments strip to open its composer (from the create button). */
+    val openMomentComposer = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val notifier by lazy { Notifier(this) }
     val calls by lazy { CallManager(this, networkService, contactsRepository, notifier) { inForeground } }
 
@@ -48,6 +72,9 @@ class MeshronApp : Application() {
 
     /** True while any screen of the app is visible; notifications are only shown when not. */
     @Volatile var inForeground = false
+    /** App lock (when a PIN is set): locked at start and after a minute away. */
+    val locked = kotlinx.coroutines.flow.MutableStateFlow(true)
+    @Volatile private var leftAt = 0L
         private set
     private var started = 0
 
@@ -55,6 +82,9 @@ class MeshronApp : Application() {
     fun startMessaging() {
         fileService // subscribe to file events before the network starts
         messagingService.onIncoming = { notifyIncoming(it) }
+        messagingService.retentionHours = settings.disappearHours
+        messagingService.chatTimers = { chatPrefs.allTimers() }
+        if (!com.xalvxnlab.meshron.identity.Mode.anon) { reels; suggestions } // listen before the network is ready
         calls.start()
         messagingService.start()
         localTransports.start()
@@ -67,17 +97,33 @@ class MeshronApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Public or anonymous: decides which identity's stores everything below opens.
+        com.xalvxnlab.meshron.identity.Mode.load(this)
         appScope.launch { runCatching { contactsRepository.encryptLegacy() }.onFailure { Log.e(TAG, "contacts", it) } }
+        // Moderation: hide what moderators removed, send reports made while offline, and turn a
+        // reel's "Report" into a report for the AI moderator and the human moderators.
+        reels.hiddenKeys = { keys -> moderation.hiddenAmong(keys) }
+        reels.onReport = { r, reason ->
+            com.xalvxnlab.meshron.moderation.Reports.submit(this, com.xalvxnlab.meshron.moderation.Reports.Report(
+                "reel", r.key, r.author.label, reason, "", "Discover reel by ${r.author.label}", r.author.id, "Caption: " + r.cap,
+            ), null)
+            sendReports()
+        appScope.launch { runCatching { moderation.checkRole() } }
+        }
+        sendReports()
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) {
                 started++
                 inForeground = true
+                // App lock: back after more than a minute away locks again.
+                if (started == 1 && leftAt > 0 && System.currentTimeMillis() - leftAt > 60_000) locked.value = true
                 notifier.clearMessages()
             }
             override fun onActivityStopped(activity: Activity) {
                 started--
                 inForeground = started > 0
+                if (started == 0) leftAt = System.currentTimeMillis()
             }
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
             override fun onActivityResumed(activity: Activity) = Unit
@@ -106,6 +152,8 @@ class MeshronApp : Application() {
 
     private suspend fun notifyIncoming(m: MessageEntity) {
         if (inForeground) return
+        // Anonymous: the notification never shows who or what.
+        if (com.xalvxnlab.meshron.identity.Mode.anon) return notifier.newMessage(m.peerKey, "Meshron", "New message")
         val sender = m.senderKey ?: m.peerKey
         val contact = contactsRepository.contacts.first().find { it.keyHex == sender }
         val name = contact?.displayName ?: networkService.state.value.peers[sender]?.announcedName?.ifBlank { null }

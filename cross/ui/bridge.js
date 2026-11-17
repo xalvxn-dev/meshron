@@ -102,6 +102,7 @@
         saveFile: async ({ path }) => call('native.shareFile', { path }),
         badge: (count) => call('native.badge', { count }),
         keepAwake: (on) => call('native.keepAwake', { on }),
+        privacy: (on) => call('native.privacy', { on }),
         notify: null,
         focusState: () => !document.hidden
       }

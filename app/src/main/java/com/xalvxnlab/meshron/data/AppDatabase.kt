@@ -61,6 +61,7 @@ data class MessageEntity(
         const val PENDING = 0   // saved in Room, not yet in my log (worklet not running)
         const val SENT = 1      // appended to my log; replicates when peers are online
         const val DELIVERED = 2 // 1:1 only: peer stored it and acknowledged
+        const val SEEN = 3      // 1:1 only: peer opened the chat and saw it
         const val RECEIVED = 3  // incoming
 
         const val KIND_TEXT = "text"
@@ -78,8 +79,10 @@ data class MessageEntity(
         const val KIND_REACT = "react"
         /** What an unsent message becomes on every device: no body, shown as "deleted". */
         const val KIND_DELETED = "deleted"
+        /** Group settings and roles (body: {"op": …}); only the owner/admins' are applied. */
+        const val KIND_GMETA = "gmeta"
         /** Log entries that aren't shown as chat bubbles. */
-        val HIDDEN_KINDS = setOf(KIND_STORY, KIND_SEEN, KIND_EDIT, KIND_UNSEND, KIND_REACT)
+        val HIDDEN_KINDS = setOf(KIND_STORY, KIND_SEEN, KIND_EDIT, KIND_UNSEND, KIND_REACT, KIND_GMETA)
         const val GROUP_PREFIX = "g:"
 
         fun groupConversation(groupId: String) = GROUP_PREFIX + groupId
@@ -97,8 +100,18 @@ data class GroupEntity(
     /** Member keys (hex), comma-separated, including the creator and me. */
     val members: String,
     val createdAt: Long,
+    /** Current owner (the creator until ownership is handed over). Empty = [creatorKey]. */
+    val ownerKey: String = "",
+    /** Admins picked by the owner, comma-separated. */
+    val admins: String = "",
+    val bio: String = "",
+    /** Small group photo (base64 JPEG), or empty. */
+    val icon: String = "",
 ) {
     val memberList: List<String> get() = members.split(',').filter { it.isNotBlank() }
+    val owner: String get() = ownerKey.ifEmpty { creatorKey }
+    val adminList: List<String> get() = admins.split(',').filter { it.isNotBlank() }
+    fun isAdmin(key: String) = key == owner || key in adminList
     val conversationKey: String get() = MessageEntity.groupConversation(id)
 }
 
@@ -128,9 +141,23 @@ data class ConversationSummary(
     val unread: Int,
 )
 
+data class ActiveDay(val peerKey: String, val day: Long, val outgoing: Boolean)
+
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM messages WHERE peerKey = :peerKey AND kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react') ORDER BY localTime ASC")
+    /** Text messages containing [q] (newest first), for search. */
+    @Query("SELECT * FROM messages WHERE kind = 'text' AND body LIKE '%' || :q || '%' ORDER BY localTime DESC LIMIT 60")
+    suspend fun searchText(q: String): List<MessageEntity>
+
+    /** Everything you can read, for "Download my data". */
+    @Query("SELECT * FROM messages WHERE kind IN ('text', 'file', 'deleted') ORDER BY localTime ASC")
+    suspend fun exportAll(): List<MessageEntity>
+
+    /** Which days (local, as day numbers) each 1:1 chat had a message each way: for streaks. */
+    @Query("SELECT peerKey, (localTime + :tzOffset) / 86400000 AS day, outgoing FROM messages WHERE localTime > :since AND peerKey NOT LIKE 'g:%' AND kind IN ('text', 'file') GROUP BY peerKey, day, outgoing")
+    fun activeDays(since: Long, tzOffset: Long): kotlinx.coroutines.flow.Flow<List<ActiveDay>>
+
+    @Query("SELECT * FROM messages WHERE peerKey = :peerKey AND kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react', 'gmeta') ORDER BY localTime ASC")
     fun conversation(peerKey: String): Flow<List<MessageEntity>>
 
     /** Edits and reactions in a chat (oldest first), applied on top of the bubbles. */
@@ -161,10 +188,10 @@ interface MessageDao {
     @Query(
         """
         SELECT m.*, (SELECT COUNT(*) FROM messages u
-                     WHERE u.peerKey = m.peerKey AND u.outgoing = 0 AND u.read = 0 AND u.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react')) AS unread
+                     WHERE u.peerKey = m.peerKey AND u.outgoing = 0 AND u.read = 0 AND u.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react', 'gmeta')) AS unread
         FROM messages m
-        WHERE m.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react')
-          AND m.localTime = (SELECT MAX(localTime) FROM messages x WHERE x.peerKey = m.peerKey AND x.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react'))
+        WHERE m.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react', 'gmeta')
+          AND m.localTime = (SELECT MAX(localTime) FROM messages x WHERE x.peerKey = m.peerKey AND x.kind NOT IN ('story', 'seen', 'edit', 'unsend', 'react', 'gmeta'))
         GROUP BY m.peerKey
         ORDER BY m.localTime DESC
         """
@@ -186,6 +213,14 @@ interface MessageDao {
     @Query("UPDATE messages SET status = 2 WHERE peerKey = :peerKey AND outgoing = 1 AND seq IS NOT NULL AND seq < :length AND status < 2")
     suspend fun markDeliveredBelow(peerKey: String, length: Long)
 
+    /** The peer saw every entry of my outbox below [length]. */
+    @Query("UPDATE messages SET status = 3 WHERE peerKey = :peerKey AND outgoing = 1 AND seq IS NOT NULL AND seq < :length AND status < 3")
+    suspend fun markSeenBelow(peerKey: String, length: Long)
+
+    /** Highest position of theirs I hold in a 1:1 chat (for "Seen"). */
+    @Query("SELECT MAX(seq) FROM messages WHERE peerKey = :peerKey AND outgoing = 0 AND seq IS NOT NULL")
+    suspend fun maxIncomingSeq(peerKey: String): Long?
+
     /** Next 1:1 inbox position to read for each peer (resume point after a restart). */
     @Query("SELECT peerKey, MAX(seq) + 1 AS next FROM messages WHERE outgoing = 0 AND seq IS NOT NULL AND peerKey NOT LIKE 'g:%' GROUP BY peerKey")
     suspend fun inboxCursors(): List<InboxCursor>
@@ -202,6 +237,25 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE peerKey = :peerKey AND id = :id AND outgoing = :outgoing")
     suspend fun deleteMessage(peerKey: String, id: String, outgoing: Boolean)
+
+    /** Disappearing messages: chats that have messages older than [before]. */
+    @Query("SELECT DISTINCT peerKey FROM messages WHERE localTime < :before AND kind NOT IN ('story', 'seen')")
+    suspend fun conversationsOlderThan(before: Long): List<String>
+
+    @Query("SELECT localPath FROM messages WHERE localTime < :before AND localPath IS NOT NULL AND kind NOT IN ('story', 'seen')")
+    suspend fun filesOlderThan(before: Long): List<String>
+
+    @Query("DELETE FROM messages WHERE localTime < :before AND kind NOT IN ('story', 'seen')")
+    suspend fun deleteOlderThan(before: Long)
+
+    @Query("SELECT localPath FROM messages WHERE peerKey = :conv AND localTime < :before AND localPath IS NOT NULL AND kind NOT IN ('story', 'seen')")
+    suspend fun chatFilesOlderThan(conv: String, before: Long): List<String>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE peerKey = :conv AND localTime < :before AND kind NOT IN ('story', 'seen')")
+    suspend fun chatCountOlderThan(conv: String, before: Long): Int
+
+    @Query("DELETE FROM messages WHERE peerKey = :conv AND localTime < :before AND kind NOT IN ('story', 'seen')")
+    suspend fun deleteChatOlderThan(conv: String, before: Long)
 
     @Query("SELECT localPath FROM messages WHERE peerKey = :peerKey AND localPath IS NOT NULL")
     suspend fun localFiles(peerKey: String): List<String>
@@ -222,6 +276,18 @@ interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertGroup(group: GroupEntity): Long
+
+    @androidx.room.Update
+    suspend fun updateGroup(group: GroupEntity)
+
+    @Query("SELECT * FROM groups WHERE id = :id")
+    fun group(id: String): Flow<GroupEntity?>
+
+    @Query("SELECT * FROM groups WHERE id = :id")
+    suspend fun findGroup(id: String): GroupEntity?
+
+    @Query("DELETE FROM groups WHERE id = :id")
+    suspend fun deleteGroup(id: String)
 
     @Query("SELECT * FROM group_acks WHERE groupId = :groupId")
     fun groupAcks(groupId: String): Flow<List<GroupAck>>
@@ -295,6 +361,13 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+/** v7: group roles, bio and photo. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (c in listOf("ownerKey", "admins", "bio", "icon")) db.execSQL("ALTER TABLE groups ADD COLUMN $c TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 /** v5 (Phase 6): file messages remember their local copy. */
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -304,14 +377,14 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
 
 @Database(
     entities = [MessageEntity::class, GroupEntity::class, GroupAck::class, GroupLog::class, ReadMark::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
 
     companion object {
-        private const val NAME = "meshron.db"
+        private val NAME get() = if (com.xalvxnlab.meshron.identity.Mode.anon) "meshron-anon.db" else "meshron.db"
 
         /** Opens the database encrypted with SQLCipher (see [DatabaseEncryption]). */
         fun create(context: Context): AppDatabase {
@@ -320,7 +393,7 @@ abstract class AppDatabase : RoomDatabase() {
             DatabaseEncryption.encryptIfPlaintext(context, NAME, passphrase)
             return Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, NAME)
                 .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
         }
     }

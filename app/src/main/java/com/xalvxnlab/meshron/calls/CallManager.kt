@@ -269,7 +269,7 @@ class CallManager(
         val peer = _state.value.peer
         runCatching { CallService.start(context) }.onFailure { Log.w(TAG, "Call service: ${it.message}") }
         audioOn()
-        engine = VoiceEngine { packet -> network.callAudio(peer, packet) }.also { it.start() }
+        engine = VoiceEngine(send = { packet -> network.callAudio(peer, packet) }).also { it.start() }
         val id = _state.value.id
         val lowBandwidth = network.state.value.peers[peer]?.via == "nearby"
         val v = VideoEngine(

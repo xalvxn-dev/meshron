@@ -17,14 +17,14 @@ import java.security.SecureRandom
  */
 object DatabaseEncryption {
     private const val TAG = "DbCrypto"
-    private const val KEY_FILE = "db.key"
-    private val cipher = KeystoreCipher("meshron.db.wrap.v1")
+    private val KEY_FILE get() = if (com.xalvxnlab.meshron.identity.Mode.anon) "db-anon.key" else "db.key"
+    private val cipher by lazy { KeystoreCipher(if (com.xalvxnlab.meshron.identity.Mode.anon) "meshron.db.wrap.anon" else "meshron.db.wrap.v1") }
     private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 
     /** Moves an unreadable database (and its key) out of the way, keeping it on disk. */
     private fun setAside(context: Context) {
         val stamp = System.currentTimeMillis()
-        val db = context.getDatabasePath("meshron.db")
+        val db = context.getDatabasePath(if (com.xalvxnlab.meshron.identity.Mode.anon) "meshron-anon.db" else "meshron.db")
         for (f in listOf(db, File(db.path + "-wal"), File(db.path + "-shm"), File(db.path + "-journal"))) {
             if (f.exists()) f.renameTo(File(f.path + ".unreadable-" + stamp))
         }

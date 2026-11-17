@@ -24,6 +24,9 @@ const bundle = path.join(__dirname, 'bundle')
 const dataDir = path.join(app.getPath('userData'), 'data')
 fs.mkdirSync(dataDir, { recursive: true })
 const iconPath = path.join(bundle, 'icon.png')
+// Anonymous mode (chosen in Me, saved by the host): the window can't be captured.
+let anonMode = false
+try { anonMode = JSON.parse(fs.readFileSync(path.join(dataDir, 'mode.json'), 'utf8')).anon === true } catch {}
 
 let win = null
 let tray = null
@@ -67,6 +70,15 @@ function emit(ev, data) {
   }
   if (ev === 'prefs' && data && data.settings) settings = data.settings
   if (ev === 'incoming') notifyMessage(data)
+  // Switched between public and anonymous: start again as the other identity.
+  if (ev === 'restart') {
+    setTimeout(() => {
+      try { host.flush() } catch {}
+      try { if (host.stopLan) host.stopLan() } catch {}
+      app.relaunch()
+      app.exit(0)
+    }, 300)
+  }
   send(ev, data)
 }
 
@@ -151,10 +163,13 @@ function createWindow() {
       sandbox: true,
       spellcheck: true,
       // Keep the chat list, sounds and "online" live while minimised or in the tray.
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      // Reels play (and get compressed) with sound without an extra click.
+      autoplayPolicy: 'no-user-gesture-required'
     }
   })
   win.removeMenu()
+  if (anonMode) win.setContentProtection(true)
   win.loadFile(path.join(bundle, 'ui', 'index.html'))
   // Started with Windows: stay in the tray (still online, still notifying).
   if (!startHidden) win.once('ready-to-show', () => win.show())

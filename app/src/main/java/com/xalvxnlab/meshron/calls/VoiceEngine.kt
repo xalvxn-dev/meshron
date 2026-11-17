@@ -29,7 +29,14 @@ import kotlin.concurrent.thread
  * The links underneath are reliable, so a slow link means late audio, not lost audio; the
  * player drops packets when it falls too far behind to keep the delay short.
  */
-class VoiceEngine(private val send: (ByteArray) -> Unit) {
+class VoiceEngine(
+    private val send: (ByteArray) -> Unit,
+    /** Screen lives: also capture the sound games and apps play (needs the screen-share permission). */
+    private val gameAudio: android.media.projection.MediaProjection? = null,
+    private val bitrate: Int = BITRATE,
+) {
+    /** Game sound volume in the mix (0..1); the mic stays at full. */
+    @Volatile var gameVolume = 0.9f
     @Volatile private var running = false
     @Volatile var muted = false
     private val incoming = LinkedBlockingDeque<ByteArray>()
@@ -46,6 +53,13 @@ class VoiceEngine(private val send: (ByteArray) -> Unit) {
         if (running) return
         running = true
         recordThread = thread(name = "call-mic", isDaemon = true) { runCatching { record() }.onFailure { Log.e(TAG, "mic", it) } }
+        playThread = thread(name = "call-play", isDaemon = true) { runCatching { play() }.onFailure { Log.e(TAG, "play", it) } }
+    }
+
+    /** Only plays what arrives (watching a live: no microphone). */
+    fun startListening() {
+        if (running) return
+        running = true
         playThread = thread(name = "call-play", isDaemon = true) { runCatching { play() }.onFailure { Log.e(TAG, "play", it) } }
     }
 
@@ -85,12 +99,15 @@ class VoiceEngine(private val send: (ByteArray) -> Unit) {
 
         val enc = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS)
         val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, RATE, 1).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, BITRATE)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, FRAME_BYTES * 2)
         }
         enc.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         enc.start()
         rec.startRecording()
+        val game = gameAudio?.let { openPlaybackCapture(it) }
+        game?.startRecording()
+        val gamePcm = ByteArray(FRAME_BYTES)
         val pcm = ByteArray(FRAME_BYTES)
         val info = MediaCodec.BufferInfo()
         val frames = ArrayList<ByteArray>(FRAMES_PER_PACKET)
@@ -107,6 +124,11 @@ class VoiceEngine(private val send: (ByteArray) -> Unit) {
                 }
                 if (got < FRAME_BYTES) continue
                 if (muted) pcm.fill(0) // keep timing, send silence
+                if (game != null) {
+                    // Take whatever game sound is ready (never wait on it: the mic sets the pace).
+                    val g = game.read(gamePcm, 0, FRAME_BYTES, AudioRecord.READ_NON_BLOCKING)
+                    if (g > 0) mix(pcm, gamePcm, g, gameVolume)
+                }
                 val inIdx = enc.dequeueInputBuffer(10_000)
                 if (inIdx >= 0) {
                     enc.getInputBuffer(inIdx)!!.apply { clear(); put(pcm, 0, got) }
@@ -137,10 +159,30 @@ class VoiceEngine(private val send: (ByteArray) -> Unit) {
         } finally {
             runCatching { rec.stop() }
             rec.release()
+            game?.let { runCatching { it.stop() }; it.release() }
             effects.forEach { runCatching { it.release() } }
             runCatching { enc.stop() }
             enc.release()
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openPlaybackCapture(p: android.media.projection.MediaProjection): AudioRecord? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null
+        return runCatching {
+            val cfg = android.media.AudioPlaybackCaptureConfiguration.Builder(p)
+                .addMatchingUsage(android.media.AudioAttributes.USAGE_GAME)
+                .addMatchingUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .addMatchingUsage(android.media.AudioAttributes.USAGE_UNKNOWN)
+                .build()
+            AudioRecord.Builder()
+                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build())
+                .setBufferSizeInBytes(FRAME_BYTES * 8)
+                .setAudioPlaybackCaptureConfig(cfg)
+                .build()
+                .takeIf { it.state == AudioRecord.STATE_INITIALIZED }
+                .also { Log.i(TAG, if (it != null) "Game sound captured" else "Game sound unavailable") }
+        }.onFailure { Log.w(TAG, "Game sound", it) }.getOrNull()
     }
 
     private fun play() {
@@ -244,6 +286,20 @@ class VoiceEngine(private val send: (ByteArray) -> Unit) {
                 MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, 48_000, 1)
             ) != null
         }
+
+        /** Adds [b] (scaled by [vol]) into [a]: 16-bit little-endian samples, clipped. */
+        fun mix(a: ByteArray, b: ByteArray, len: Int, vol: Float) {
+            var i = 0
+            while (i + 1 < len && i + 1 < a.size) {
+                val x = (a[i].toInt() and 0xff) or (a[i + 1].toInt() shl 8)
+                val y = (b[i].toInt() and 0xff) or (b[i + 1].toInt() shl 8)
+                val m = (x + (y * vol).toInt()).coerceIn(-32768, 32767)
+                a[i] = m.toByte(); a[i + 1] = (m shr 8).toByte()
+                i += 2
+            }
+        }
+
+        const val LIVE_BITRATE = 40_000
 
         fun pack(seq: Int, frames: List<ByteArray>): ByteArray {
             val size = 3 + frames.sumOf { 2 + it.size }

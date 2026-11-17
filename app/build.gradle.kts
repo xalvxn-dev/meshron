@@ -15,10 +15,12 @@ android {
     defaultConfig {
         // -PappId=... installs a test build over another ID (e.g. the old emulator install).
         applicationId = (project.findProperty("appId") as String?) ?: "com.meshron.myapp"
+        // Test installs (an appId ending in .test) show as "Meshron Test", so they can't be mixed up with the real app.
+        resValue("string", "app_name", if (applicationId!!.endsWith(".test")) "Meshron Test" else "Meshron")
         minSdk = 29 // required by bare-kit-kotlin
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.5.3"
+        versionCode = 10
+        versionName = "1.6.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -28,6 +30,11 @@ android {
     val localProps = Properties().apply {
         rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
     }
+    // Public accounts server (server/accounts, see its DEPLOY.md): meshron.accountsUrl in local.properties,
+    // or -PaccountsUrl=http://10.0.2.2:8799 for a local test server.
+    defaultConfig.buildConfigField("String", "ACCOUNTS_URL", "\"" + ((project.findProperty("accountsUrl") as String?) ?: localProps.getProperty("meshron.accountsUrl") ?: "https://meshron-accounts.meshron.workers.dev") + "\"")
+    // Free Creative Commons song library (developer.jamendo.com). Put meshron.jamendoId=... in local.properties.
+    defaultConfig.buildConfigField("String", "JAMENDO_ID", "\"" + (localProps.getProperty("meshron.jamendoId") ?: "") + "\"")
     localProps.getProperty("meshron.ndkPath")?.let { file(it) }?.takeIf { it.resolve("source.properties").exists() }?.let { ndk ->
         ndkPath = ndk.path
         ndkVersion = Properties().apply { ndk.resolve("source.properties").inputStream().use { load(it) } }
@@ -39,7 +46,7 @@ android {
     splits {
         abi {
             // APKs only: app bundles (.aab) are split by Google Play itself.
-            isEnable = gradle.startParameter.taskNames.any { it.contains("assembleRelease") }
+            isEnable = gradle.startParameter.taskNames.any { it.contains("assembleRelease") || it.contains("assembleSideload") }
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = false
@@ -71,6 +78,23 @@ android {
                 enable = true
             }
         }
+        // Small, optimised APKs to install directly (not via Play): shrunk like release, but
+        // signed with the debug key so they update the debug builds already on phones in place.
+        create("sideload") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
+    }
+
+    packaging {
+        // The JavaScript engine (libbare-kit, 42 MB) and RocksDB compress to about a third.
+        // Compressed in the APK they make the download far smaller (unpacked once at install).
+        jniLibs { useLegacyPackaging = true }
+        // The app code compresses to about a third too (smaller download; unpacked once at install).
+        dex { useLegacyPackaging = true }
+        // Post-quantum lookup tables from BouncyCastle; Meshron only uses its Ed25519 code.
+        resources { excludes += listOf("org/bouncycastle/pqc/**", "org/bouncycastle/x509/*.properties", "META-INF/versions/9/OSGI-INF/**") }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -78,6 +102,8 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+        resValues = true
     }
 }
 
@@ -137,6 +163,14 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.sqlcipher.android)
     implementation(libs.play.services.nearby)
+    // Reels: in-app camera and video editing.
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.video)
+    implementation(libs.camerax.view)
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
+    implementation(libs.media3.common)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
 

@@ -1,6 +1,7 @@
 package com.xalvxnlab.meshron.ui
 
 import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -44,12 +45,40 @@ fun AppRoot(app: MeshronApp) {
     }.collectAsState(initial = RootState.Loading)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        // Age and the Terms / Privacy Policy / Community Guidelines: agreed once (again when they change).
+        val accepted by app.settings.legalAccepted.collectAsState(initial = -1)
+        if (accepted in 0 until com.xalvxnlab.meshron.ui.legal.LEGAL_VERSION) {
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            com.xalvxnlab.meshron.ui.legal.LegalGate(onAccept = { scope.launch { app.settings.acceptLegal(com.xalvxnlab.meshron.ui.legal.LEGAL_VERSION) } })
+            return@Surface
+        }
+        if (accepted < 0) return@Surface
         when (val s = state) {
             RootState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            RootState.NoIdentity -> OnboardingFlow(repo)
+            // Anonymous mode makes its identity by itself: a random nickname, nothing about you.
+            RootState.NoIdentity -> if (com.xalvxnlab.meshron.identity.Mode.anon) {
+                LaunchedEffect(Unit) { repo.create("Ghost " + (1000..9999).random()) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            } else {
+                // Public: sign up or sign in. Without internet, the old setup (recovery key) still works.
+                var offline by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+                if (offline) OnboardingFlow(repo) else com.xalvxnlab.meshron.ui.account.AuthFlow(offline = { offline = true })
+            }
             is RootState.Ready -> {
+                // App lock (a PIN set in Me): nothing shows until it's entered.
+                val pin by app.settings.pinHash.collectAsState(initial = null)
+                val isLocked by app.locked.collectAsState()
+                if (pin != null && isLocked) {
+                    com.xalvxnlab.meshron.ui.components.PinPad(
+                        title = if (com.xalvxnlab.meshron.identity.Mode.anon) "Anonymous" else "Meshron",
+                        subtitle = "Enter your PIN",
+                        check = { app.settings.pinMatches(pin!!, it) },
+                        onDone = { app.locked.value = false },
+                    )
+                    return@Surface
+                }
                 // Ask once for "Nearby devices" so the offline transports (same Wi-Fi, Bluetooth,
                 // Wi-Fi Direct) can run. The app works without it, over the internet only.
                 val askLocal = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -78,7 +107,16 @@ fun AppRoot(app: MeshronApp) {
                     app.startMessaging()
                     app.applyBackgroundSetting()
                 }
-                HomeScreen(s.identity, repo, app.contactsRepository, app.networkService, app.messagingService, app.fileService)
+                // Profile photos: contacts' (as they share them) and my own, for every Avatar.
+                val peerProfiles by app.profiles.peers.collectAsState()
+                val myProfile by app.profiles.me.collectAsState()
+                val myHex = remember(s.identity) { s.identity.publicKey.joinToString("") { "%02x".format(it) } }
+                val photos: (String) -> androidx.compose.ui.graphics.ImageBitmap? = { key ->
+                    if (key == myHex || key == "me") myProfile.photo else peerProfiles[key]?.photo
+                }
+                androidx.compose.runtime.CompositionLocalProvider(com.xalvxnlab.meshron.ui.components.LocalPhotos provides photos) {
+                    HomeScreen(s.identity, repo, app.contactsRepository, app.networkService, app.messagingService, app.fileService)
+                }
                 // The call screen fades and slides in over everything. It can be minimised to a
                 // floating window, so chats stay usable during a call.
                 val callState by app.calls.state.collectAsState()

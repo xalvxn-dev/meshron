@@ -72,6 +72,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -141,13 +143,14 @@ fun StoriesStrip(
     val stories by app.storyService.stories.collectAsState(initial = StoriesView())
     var viewing by remember { mutableStateOf<String?>(null) } // "me" or a key
     var composing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { app.openMomentComposer.collect { composing = true } }
     val withStories = stories.friends.map { it.key }.toSet()
     val activeOnly = added.filter { online(it.keyHex) && it.keyHex !in withStories }
     val live = activeOnly.size + stories.friends.count { online(it.key) }
 
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Stories", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text("Moments", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             if (live > 0) {
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.size(8.dp).background(MeshColors.Online, CircleShape))
@@ -157,7 +160,7 @@ fun StoriesStrip(
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             item(key = "me") {
-                StoryBubble("Your story", if (stories.mine.isEmpty()) RingStyle.NONE else RingStyle.MINE,
+                StoryBubble("You", if (stories.mine.isEmpty()) RingStyle.NONE else RingStyle.MINE,
                     onClick = { if (stories.mine.isEmpty()) composing = true else viewing = "me" },
                     badge = {
                         Box(Modifier.size(22.dp).align(Alignment.BottomEnd).background(MeshColors.Bg, CircleShape).padding(2.dp)
@@ -204,13 +207,19 @@ private fun StoryBubble(label: String, ring: RingStyle, onClick: () -> Unit, bad
                 Modifier.fillMaxSize().drawBehind {
                     val stroke = 3.dp.toPx()
                     val inset = stroke / 2
+                    // Soft-square frames (Meshron's shape), with a slowly turning aurora for new ones.
+                    val tl = Offset(inset, inset)
+                    val sz = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+                    val r = androidx.compose.ui.geometry.CornerRadius(size.width * 0.36f)
                     when (ring) {
-                        RingStyle.NEW -> rotate(spin) {
-                            drawArc(Brush.sweepGradient(listOf(MeshColors.GradStart, MeshColors.GradMid, MeshColors.GradEnd, MeshColors.GradMid, MeshColors.GradStart)),
-                                0f, 360f, false, topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke), style = Stroke(stroke))
+                        RingStyle.NEW -> {
+                            val a = Math.toRadians(spin.toDouble())
+                            val c = Offset(size.width / 2, size.height / 2)
+                            val d = Offset((kotlin.math.cos(a) * size.width / 2).toFloat(), (kotlin.math.sin(a) * size.height / 2).toFloat())
+                            drawRoundRect(Brush.linearGradient(listOf(MeshColors.GradStart, MeshColors.GradMid, MeshColors.GradEnd), start = c - d, end = c + d), tl, sz, r, style = Stroke(stroke))
                         }
-                        RingStyle.MINE -> drawCircle(MeshColors.Gradient, radius = size.minDimension / 2 - inset, style = Stroke(stroke))
-                        RingStyle.SEEN -> drawCircle(Color(0xFF3A3A46), radius = size.minDimension / 2 - inset, style = Stroke(stroke))
+                        RingStyle.MINE -> drawRoundRect(MeshColors.Gradient, tl, sz, r, style = Stroke(stroke))
+                        RingStyle.SEEN -> drawRoundRect(MeshColors.Surface3, tl, sz, r, style = Stroke(stroke))
                         RingStyle.NONE -> Unit
                     }
                 },
@@ -290,10 +299,36 @@ private fun StoryViewer(stories: StoriesView, start: String, nameOf: (String) ->
                         }
                     }
                 }
-                if (item.text.isNotEmpty()) {
-                    Text(item.text, Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 120.dp), color = Color.White,
-                        textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                // A reel shared to a moment carries its link: shown as a button, not as raw text.
+                val reelLink = remember(item.text) { Regex("meshron://reel/[0-9a-f]{64}/[A-Za-z0-9_-]+").find(item.text)?.value }
+                // The poster's own caption (not the auto lines that carry the reel link).
+                val shown = remember(item.text) { item.text.lines().filterNot { it.contains("meshron://reel/") || it.startsWith("Watch this") || it.startsWith("🎬") || it.startsWith("⧉") }.joinToString("\n").trim() }
+                // The shared video plays right where its card sits in the picture.
+                val card = remember(item.text) { Regex("⧉card:([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+)").find(item.text)?.groupValues?.drop(1)?.mapNotNull { it.toFloatOrNull() } }
+                val reelM = remember(item.text) { Regex("meshron://reel/([0-9a-f]{64})/([A-Za-z0-9_-]+)").find(item.text) }
+                if (photo != null && card != null && card.size == 4 && reelM != null) {
+                    val file by androidx.compose.runtime.produceState<java.io.File?>(null, reelM.value) {
+                        value = runCatching { app.reels.load(reelM.groupValues[1], reelM.groupValues[2]) }.getOrNull()
+                    }
+                    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val d = androidx.compose.ui.platform.LocalDensity.current
+                        val bw = constraints.maxWidth.toFloat(); val bh = constraints.maxHeight.toFloat()
+                        val s = minOf(bw / photo.width, bh / photo.height)
+                        val iw = photo.width * s; val ih = photo.height * s
+                        val ix = (bw - iw) / 2; val iy = (bh - ih) / 2
+                        val cw = iw * 0.62f; val chh = cw * 16f / 9f
+                        val cx = ix + card[0] * iw; val cy = iy + card[1] * ih
+                        file?.let { f ->
+                            Box(
+                                Modifier.offset { androidx.compose.ui.unit.IntOffset((cx - cw / 2).toInt(), (cy - chh / 2).toInt()) }
+                                    .size(with(d) { cw.toDp() }, with(d) { chh.toDp() })
+                                    .graphicsLayer { scaleX = card[2]; scaleY = card[2]; rotationZ = card[3]; clip = true; shape = RoundedCornerShape(16.dp) },
+                            ) { com.xalvxnlab.meshron.ui.reels.VideoSurface(f, play = !paused, muted = false, cover = true) }
+                        }
+                    }
                 }
+                if (shown.isNotEmpty()) Text(shown, color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(start = 24.dp, end = 24.dp, bottom = if (reelLink != null) 150.dp else 110.dp))
             } else {
                 Box(Modifier.fillMaxSize().background(STORY_BGS[Math.floorMod(item.bg, STORY_BGS.size)]).padding(32.dp), contentAlignment = Alignment.Center) {
                     val len = item.text.length
@@ -312,6 +347,29 @@ private fun StoryViewer(stories: StoriesView, start: String, nameOf: (String) ->
                             onPress = { paused = true; tryAwaitRelease(); paused = false },
                         )
                     })
+                }
+            }
+
+            // A shared video: a small TikTok-style "Original video" chip (above the tap zones) opens it.
+            if (item.isPhoto) {
+                val link = remember(item.text) { Regex("meshron://reel/[0-9a-f]{64}/[A-Za-z0-9_-]+").find(item.text)?.value }
+                if (link != null) {
+                    val by = remember(item.text) { Regex("🎬 (@?[^·]+?) ·").find(item.text)?.groupValues?.get(1)?.trim() }
+                    Row(
+                        Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 14.dp, bottom = 96.dp)
+                            .clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.55f))
+                            .clickable { app.openReelRequests.tryEmit(link); onClose() }.padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(MeshColors.Gradient), contentAlignment = Alignment.Center) {
+                            Text("▶", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Column(Modifier.padding(start = 10.dp)) {
+                            Text("Original video", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(by ?: "Meshron", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                        }
+                        Text("  ›", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -334,7 +392,7 @@ private fun StoryViewer(stories: StoriesView, start: String, nameOf: (String) ->
                         Text(timeAgo(item.sentAt), color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
                     }
                     if (mine) IconButton(onClick = {
-                        scope.launch { app.storyService.delete(item.sid); Toast.makeText(context, "Story deleted", Toast.LENGTH_SHORT).show() }
+                        scope.launch { app.storyService.delete(item.sid); com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Story deleted") }
                     }) { Icon(Icons.Rounded.Delete, "Delete", tint = Color.White) }
                     IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Color.White) }
                 }
@@ -359,7 +417,7 @@ private fun StoryViewer(stories: StoriesView, start: String, nameOf: (String) ->
                         val flat = quote.replace(Regex("\\s+"), " ")
                         val body = "↪ Story: ${flat.take(60)}${if (flat.length > 60) "…" else ""}\n$text"
                         scope.launch { app.messagingService.send(owner, body) }
-                        Toast.makeText(context, if (text.length <= 4) "Sent $text" else "Reply sent", Toast.LENGTH_SHORT).show()
+                        com.xalvxnlab.meshron.ui.components.Toasts.show(context, if (text.length <= 4) "Sent $text" else "Reply sent")
                     }
                     TextField(
                         value = reply, onValueChange = { reply = it.take(1000); paused = it.isNotEmpty() },
@@ -418,6 +476,14 @@ private fun StoryComposer(onClose: () -> Unit) {
         value = photo?.let { u -> withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(u)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 4 }) }?.asImageBitmap() }.getOrNull() } }
     }
 
+    // A photo story opens the full editor (text, stickers, mentions, drawing), like Instagram.
+    if (photo != null) {
+        val full by produceState<android.graphics.Bitmap?>(null, photo) {
+            value = photo?.let { u -> withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(u)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 2 }) } }.getOrNull() } }
+        }
+        full?.let { MomentEditor(it, "", onClose = { photo = null; onClose() }) }
+        return
+    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         // Layout: header, then the story (fills what's left), then the controls; the whole
         // column moves up with the keyboard so nothing hides behind it on small phones.
@@ -485,8 +551,8 @@ private fun StoryComposer(onClose: () -> Unit) {
                             scope.launch {
                                 val result = photo?.let { app.storyService.postPhoto(it, caption) } ?: app.storyService.postText(text, bg)
                                 busy = false
-                                result.onSuccess { Toast.makeText(context, "Shared to your story", Toast.LENGTH_SHORT).show(); onClose() }
-                                    .onFailure { Toast.makeText(context, it.message ?: "Couldn't share", Toast.LENGTH_LONG).show() }
+                                result.onSuccess { com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Shared to your story"); onClose() }
+                                    .onFailure { com.xalvxnlab.meshron.ui.components.Toasts.show(context, it.message ?: "Couldn't share", long = true) }
                             }
                         },
                     contentAlignment = Alignment.Center,

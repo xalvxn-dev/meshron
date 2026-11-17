@@ -33,6 +33,15 @@
   }
 
   const ICONS = {
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+    doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>',
+    exit: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+    heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+    bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+    music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+    eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
     reply: '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
     expand: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
     chat: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
@@ -106,7 +115,7 @@
     me: null, contacts: [], groups: [], summaries: [], net: { status: 'stopped', peers: {}, log: [] },
     prefs: { settings: {}, pinned: [], muted: [], drafts: {} }, fileStatus: {}, limits: { MAX_BODY: 4000, MAX_NAME: 32, MAX_FILE: 25 * 1024 * 1024 },
     tab: 'chats', open: null, rows: [], shown: PAGE, query: '', hits: [], firstUnread: null, flash: null,
-    seen: new Set(), sending: 0, pendingBelow: 0, typing: {}, reply: null, editing: null
+    seen: new Set(), sending: 0, pendingBelow: 0, typing: {}, reply: null, editing: null, profiles: { me: {}, peers: {} }
   }
   const isIos = M.platform === 'ios'
   document.body.classList.add(M.platform)
@@ -141,9 +150,17 @@
     if (!words.length) return '?'
     return (words.length === 1 ? [...words[0]][0] : [...words[0]][0] + [...words[1]][0]).toUpperCase()
   }
+  function photoOf(seed) {
+    const p = st.profiles || { me: {}, peers: {} }
+    if (st.me && seed === st.me.publicKey) return p.me && p.me.photo
+    return p.peers && p.peers[seed] && p.peers[seed].photo
+  }
+  const bioOf = (key) => ((st.profiles && st.profiles.peers && st.profiles.peers[key]) || {}).bio || ''
   function avatar(name, seed, size = 48, o = {}) {
     const [a, b] = AVATARS[javaHash(seed) % AVATARS.length]
-    const el = h('div', { class: 'avatar' + (o.group ? ' squircle' : ''), style: { width: size + 'px', height: size + 'px', fontSize: Math.round(size * 0.38) + 'px', background: `linear-gradient(135deg, ${a}, ${b})` } }, initials(name))
+    const photo = !o.group && photoOf(seed)
+    const el = h('div', { class: 'avatar' + (o.group ? ' squircle' : '') + (photo ? ' has-photo' : ''), style: { width: size + 'px', height: size + 'px', fontSize: Math.round(size * 0.38) + 'px', background: `linear-gradient(135deg, ${a}, ${b})` } },
+      photo ? h('img', { src: photo, alt: '' }) : initials(name))
     if (o.online && !o.ring) el.appendChild(h('span', { class: 'dot' }))
     if (!o.ring) return el
     return h('div', { class: 'ring' }, h('div', { class: 'gap' }, el), h('span', { class: 'dot' }))
@@ -188,6 +205,7 @@
   const EDIT_WINDOW = 15 * 60 * 1000
   function displayBody(row) {
     if (row.kind === 'deleted') return row.outgoing ? 'You deleted this message' : 'This message was deleted'
+    if (row.kind === 'text' && row.body.startsWith('meshron://ai/')) return '✦ Meshron AI answered'
     if (row.kind === 'text') return bodyText(row.body)
     if (row.kind === 'file') {
       const f = fileInfo(row)
@@ -301,6 +319,7 @@
         point('lock', '#22A06B', 'Encrypted end to end', 'Only you and your friend can read it.'),
         point('zap', '#F59E0B', 'Works with the phone app', 'Chat with friends on Android, iPhone and Windows.')),
       h('button', { class: 'btn primary wide', onClick: showCreate }, 'Get started'),
+      h('button', { class: 'btn soft wide', style: { marginTop: '8px' }, onClick: () => window.MeshronAccount.showSignIn() }, 'Sign in with my Meshron account'),
       h('button', { class: 'btn ghost wide', style: { marginTop: '8px' }, onClick: showRestore }, 'I have a recovery key')))
   }
 
@@ -388,7 +407,9 @@
 
   // ---- Shell: rail -----------------------------------------------------------------
 
-  const TABS = [['chats', 'Chats', 'chat'], ['contacts', 'Contacts', 'users'], ['me', 'Me', 'user']]
+  const ALL_TABS = [['chats', 'Chats', 'chat'], ['contacts', 'Contacts', 'users'], ['reels', 'Reels', 'play'], ['me', 'Me', 'user']]
+  // Reels are public, so the anonymous identity doesn't have them.
+  const TABS = { find: (f) => ALL_TABS.find(f), map: (f) => ALL_TABS.filter((t) => !(st.anon && t[0] === 'reels')).map(f) }
   const unreadTotal = () => st.summaries.reduce((n, s) => n + (st.prefs.muted.includes(s.conv) ? 0 : s.unread), 0)
   const requestCount = () => st.contacts.filter((c) => c.status === 'REQUEST').length
 
@@ -411,7 +432,6 @@
           icon(ic, 24), h('span', { class: 'label' }, text), n && st.tab !== id ? h('span', { class: 'badge' }, n > 99 ? '99+' : n) : null)
       }),
       h('div', { class: 'rail-spacer' }),
-      h('button', { class: 'rail-sos', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
       h('button', { class: 'rail-btn rail-net', title: label, onClick: showConnection }, h('span', { class: 'net-dot ' + cls }), h('span', { class: 'label' }, label)))
     const pill = $('#status-pill')
     if (pill) pill.replaceChildren(h('span', { class: 'net-dot ' + cls }), label)
@@ -422,10 +442,13 @@
 
   function setTab(id) {
     if (st.tab === id) return
+    const wasReels = st.tab === 'reels'
     st.tab = id
     st.query = ''
     st.hits = []
     renderRail()
+    if (id === 'reels') return window.MeshronReels.show()
+    if (wasReels) window.MeshronReels.hide()
     buildSide()
   }
 
@@ -436,6 +459,7 @@
     const title = TABS.find((t) => t[0] === st.tab)[1]
     const head = h('div', { class: 'side-head' },
       h('h1', { class: 't-h1' }, title),
+      st.anon ? h('span', { class: 'anon-chip', title: 'Anonymous identity' }, icon('eyeOff', 13), 'ANONYMOUS') : null,
       h('button', { class: 'sos-pill', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
       h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
       st.tab === 'chats' ? h('button', { class: 'icon-btn desk-only', title: 'New chat (Ctrl+N)', onClick: showNewChat }, icon('edit')) : null,
@@ -476,7 +500,7 @@
     const top = body.scrollTop
     if (st.tab === 'chats') renderChats(body)
     else if (st.tab === 'contacts') renderContacts(body)
-    else renderMe(body)
+    else if (st.tab === 'me') renderMe(body)
     body.scrollTop = top
   }
 
@@ -552,6 +576,8 @@
     const rows = chatRows().filter((r) => !q || r.title.toLowerCase().includes(q))
     const added = st.contacts.filter((c) => c.status === 'ADDED')
     const kids = []
+    if (!q && !st.anon) kids.push(h('button', { class: 'ai-entry', onClick: () => window.MeshronAI.openChat(), style: { display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 24px)', margin: '4px 12px 10px', padding: '12px 14px', borderRadius: '18px', border: 'none', background: 'rgba(110,130,255,0.14)', color: 'inherit', textAlign: 'left', cursor: 'pointer' } },
+      window.MeshronAI.aiAvatar(40), h('div', {}, h('div', { style: { fontWeight: 700 } }, 'Meshron AI'), h('div', { class: 'dim', style: { fontSize: '13px' } }, 'Ask anything, plan, write, translate'))))
     if (!q) kids.push(storiesStrip(added))
     if (!rows.length && !q) {
       kids.push(h('div', { class: 'empty' },
@@ -787,19 +813,40 @@
     const toggle = (key) => () => M.call('prefs.set', { key, value: !s[key] }).catch(oops)
     const dht = st.net.dht
     body.replaceChildren(
-      h('div', { class: 'cover' }),
-      h('div', { class: 'me-avatar' }, avatar(me.username, me.publicKey, 96)),
-      h('div', { class: 'me-name t-h1' }, me.username),
-      h('div', { class: 'me-sub' }, [me.handle ? '@' + me.handle : null, 'ID ' + me.shortId].filter(Boolean).join('  ·  ')),
+      window.MeshronProfile.head(),
       h('div', { class: 'actions3' },
         h('button', { onClick: shareMe }, h('div', { class: 'orb' }, icon('share', 20)), 'Share'),
         h('button', { onClick: showQr }, h('div', { class: 'orb' }, icon('qr', 20)), 'QR code'),
         h('button', { onClick: () => copy(me.id, 'ID copied') }, h('div', { class: 'orb' }, icon('copy', 20)), 'Copy ID')),
+      h('button', { class: 'mode-card' + (st.anon ? ' on' : ''), onClick: confirmSwitch },
+        h('div', { class: 'orb' }, icon(st.anon ? 'globe' : 'eyeOff', 22)),
+        h('div', { class: 'grow' },
+          h('div', { class: 't-title' }, st.anon ? "You're anonymous" : 'Go anonymous'),
+          h('div', { class: 't-small dim' }, st.anon ? 'Separate identity, nothing links it to you. Tap to go back to public.' : 'A separate identity nobody can link to you, with every privacy feature on.'))),
+      h('div', { class: 'section' }, 'Privacy'),
+      h('div', { class: 'group' },
+        setRow('lock', '#5F55D6', 'App lock', { sub: st.locked ? 'PIN on · locks after a minute away' : 'Ask for a PIN to open Meshron', checked: !!st.locked, onClick: toggleLock }),
+        setRow('clock', '#239C8E', 'Disappearing messages', { value: hoursLabel(s.disappearHours || 0), onClick: cycleDisappear }),
+        setRow('shield', '#2F9E5B', 'Hide my IP address', { sub: 'Internet links go through relays (slower). Applies after restart.', checked: !!s.hideIp, onClick: toggle('hideIp') }),
+        setRow('userPlus', '#3D7BE0', 'Chat requests', { sub: s.allowRequests !== false ? "People who aren't your contacts can ask to chat" : 'Off: only your contacts can reach you', checked: s.allowRequests !== false, onClick: toggle('allowRequests') }),
+        st.anon ? null : setRow('chat', '#D9822B', 'Who can comment on my videos', { value: { everyone: 'Everyone', followers: 'Followers', friends: 'Friends', off: 'No one' }[s.cmFrom || 'everyone'], onClick: cycleComments })),
+      st.anon ? null : h('div', { class: 'section' }, 'Meshron'),
+      st.anon ? null : h('div', { class: 'group' },
+        setRow('shield', '#5F55D6', 'From Meshron', { sub: 'Updates on your reports, removals and appeals', value: noticeCount ? String(noticeCount) : '', onClick: () => { noticeCount = 0; window.MeshronMod.showNotices() } }),
+        setRow('verified', '#3D7BE0', 'Request verification', { sub: 'For known people, creators and brands', onClick: () => window.MeshronMod.requestVerification() })),
       h('div', { class: 'section' }, 'Account'),
       h('div', { class: 'group' },
         setRow('user', '#3D7BE0', 'Name', { value: me.username, onClick: editName }),
-        setRow('at', '#5F55D6', 'Username', { value: me.handle ? '@' + me.handle : 'Not set', onClick: editHandle }),
-        setRow('key', '#D9822B', 'Recovery key', { sub: 'Restore your ID on a new device', onClick: showRecovery })),
+        st.anon ? null : setRow('at', '#5F55D6', 'Username', { value: me.handle ? '@' + me.handle : 'Not set', onClick: editHandle }),
+        setRow('key', '#D9822B', 'Recovery key', { sub: 'Restore your ID on a new device', onClick: showRecovery }),
+        st.anon ? null : (window.MeshronAccount && window.MeshronAccount.state
+          ? setRow('lock', '#2F9E5B', 'Meshron account', { sub: 'Signed in as @' + window.MeshronAccount.state.username + ' · sign in on new devices with your password', onClick: async () => { if (await confirmBox('Sign out of your account here?', 'Your ID and chats stay on this device. You only stop using the account (AI, translation) until you sign in again.', 'Sign out')) M.call('account.forget').then(() => { window.MeshronAccount.refresh(); renderSide() }) } })
+          : setRow('lock', '#2F9E5B', 'Create an account', { sub: 'Username, password and email, so you can sign in on new devices', onClick: () => window.MeshronAccount.showSignUp() })),
+        st.anon || !(window.MeshronAccount && window.MeshronAccount.state) ? null
+          : setRow('at', '#3D7BE0', 'Log out · switch account', { sub: 'Sign in as @' + window.MeshronAccount.state.username + ' or another account', onClick: async () => {
+            const u = window.MeshronAccount.state.username
+            if (await confirmBox('Log out of @' + u + '?', 'Meshron keeps chats on your device, not on a server. Logging out clears this device: chats, files and settings here are removed. Your account, profile and videos stay: sign in again (or with another account) on the next screen.', 'Log out', true)) M.call('app.logout').catch(oops)
+          } })),
       h('div', { class: 'section' }, 'Connections'),
       h('div', { class: 'group' },
         setRow('globe', '#3D7BE0', 'Internet', { sub: 'Reach contacts anywhere', checked: s.useInternet !== false, onClick: toggle('useInternet') }),
@@ -810,11 +857,127 @@
         setRow('bell', '#C94F72', 'Message alerts', { sub: isIos ? 'While Meshron is open' : 'When Meshron is in the background', checked: !!s.notifications, onClick: toggle('notifications') }),
         setRow('volume', '#7A5CC2', 'Sounds', { checked: !!s.sounds, onClick: toggle('sounds') }),
         isIos ? null : setRow('enter', '#239C8E', 'Enter sends', { sub: 'Shift+Enter makes a new line', checked: s.enterSends !== false, onClick: toggle('enterSends') })),
+      h('div', { class: 'section' }, 'Legal'),
+      h('div', { class: 'group' }, ...['TERMS', 'PRIVACY', 'GUIDELINES'].map((k) => setRow('doc', '#5B5B66', window.MeshronLegal.docs[k].title, { onClick: () => showLegal(window.MeshronLegal.docs[k]) }))),
       h('div', { class: 'section' }, 'About'),
       h('div', { class: 'group' },
         setRow('info', '#5B5B66', 'About Meshron', { sub: 'Version ' + VERSION, onClick: showAbout }),
         setRow('sliders', '#5B5B66', 'Connection details', { sub: 'For troubleshooting', onClick: showConnection })))
   }
+
+  let noticeCount = 0
+  async function refreshNoticeCount() {
+    if (st.anon || !window.MeshronMod) return
+    noticeCount = await window.MeshronMod.unseenNotices()
+  }
+  /** Everyone → followers → friends → no one. Remembered here, enforced by the Reels worklet. */
+  async function cycleComments() {
+    const order = ['everyone', 'followers', 'friends', 'off']
+    const s = st.prefs.settings
+    const next = order[(order.indexOf(s.cmFrom || 'everyone') + 1) % order.length]
+    try { await M.call('reels.cmFrom', { v: next }); await M.call('prefs.set', { key: 'cmFrom', value: next }); s.cmFrom = next; renderSide() } catch (e) { oops(e) }
+  }
+
+  const hoursLabel = (h) => ({ 0: 'Off', 1: '1 hour', 24: '24 hours', 168: '7 days' })[h] || h + ' h'
+  function cycleDisappear() {
+    const steps = [0, 1, 24, 168]
+    const cur = steps.indexOf(st.prefs.settings.disappearHours || 0)
+    M.call('prefs.set', { key: 'disappearHours', value: steps[(cur + 1) % steps.length] }).catch(oops)
+  }
+
+  function confirmSwitch() {
+    const to = !st.anon
+    modal({
+      title: to ? 'Go anonymous?' : 'Go public?',
+      body: h('p', { class: 'dim' }, to
+        ? 'Meshron restarts as a separate anonymous identity: a random name, no @username, photo or bio, connections only through relays (your IP stays hidden), messages that disappear after 24 hours, screenshots blocked and silent notifications. Your public chats stay hidden until you switch back, and messages to them arrive then.'
+        : 'Meshron restarts as your public self: your name, @username, photo and public chats. Your anonymous identity and its chats stay hidden until you switch back.'),
+      buttons: [{ label: 'Cancel' }, { label: 'Switch', kind: 'primary', onClick: async (m) => { m.close(); restarting(); await M.call('mode.switch', { anon: to }).catch(oops) } }]
+    })
+  }
+  function restarting() {
+    if ($('#restarting')) return
+    document.body.appendChild(h('div', { class: 'lock-screen', id: 'restarting' }, h('div', { class: 'lock-orb' }, icon('eyeOff', 30)), h('div', { class: 't-h1' }, 'Switching…')))
+    // A plain browser (dev server) reloads itself once the host is back.
+    if (M.platform === 'web') setTimeout(function again () { fetch(location.href).then(() => location.reload(), () => setTimeout(again, 700)) }, 1500)
+  }
+
+  async function toggleLock() {
+    if (st.locked) {
+      await M.call('lock.set', { pin: '' }).catch(oops)
+      st.locked = false
+      return renderSideSoon()
+    }
+    const first = await pinPad({ title: 'Choose a PIN', sub: '6 digits. Needed to open Meshron.', cancel: true })
+    if (!first) return
+    const again = await pinPad({ title: 'Repeat it', sub: '6 digits. Needed to open Meshron.', cancel: true, check: async (p) => p === first })
+    if (!again) return
+    await M.call('lock.set', { pin: first }).catch(oops)
+    st.locked = true
+    toast('App lock on')
+    renderSideSoon()
+  }
+
+  /** PIN pad over everything. Resolves with the PIN (or null when cancelled). */
+  function pinPad({ title, sub, cancel, check }) {
+    return new Promise((resolve) => {
+      let pin = ''
+      let wrong = 0
+      let waitUntil = 0
+      let busy = false
+      const dots = h('div', { class: 'pin-dots' })
+      const msg = h('div', { class: 'dim' }, sub)
+      const draw = () => dots.replaceChildren(...[0, 1, 2, 3, 4, 5].map((i) => h('span', { class: i < pin.length ? 'on' : '' })))
+      const done = (v) => { el.remove(); document.removeEventListener('keydown', onKey, true); resolve(v) }
+      const press = async (k) => {
+        if (busy || Date.now() < waitUntil) return
+        if (k === '<') pin = pin.slice(0, -1)
+        else if (pin.length < 6) pin += k
+        draw()
+        if (pin.length < 6) return
+        const p = pin
+        busy = true
+        const ok = check ? await check(p).catch(() => false) : true
+        busy = false
+        if (ok) return done(p)
+        wrong++
+        pin = ''
+        draw()
+        msg.textContent = 'Wrong PIN'
+        msg.classList.add('error')
+        dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake')
+        if (wrong % 5 === 0) {
+          waitUntil = Date.now() + 30000
+          const tick = () => { const left = Math.ceil((waitUntil - Date.now()) / 1000); if (left > 0) { msg.textContent = 'Try again in ' + left + ' s'; setTimeout(tick, 500) } else msg.textContent = 'Enter your PIN' }
+          tick()
+        }
+      }
+      const onKey = (e) => {
+        if (/^[0-9]$/.test(e.key)) press(e.key)
+        else if (e.key === 'Backspace') press('<')
+        else if (e.key === 'Escape' && cancel) done(null)
+        else return
+        e.preventDefault(); e.stopPropagation()
+      }
+      document.addEventListener('keydown', onKey, true)
+      const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '<']
+      const el = h('div', { class: 'lock-screen' },
+        h('div', { class: 'lock-orb' }, icon('lock', 30)),
+        h('div', { class: 't-h1' }, title), msg, dots,
+        h('div', { class: 'pin-keys' }, ...keys.map((k) => k ? h('button', { 'aria-label': k === '<' ? 'Delete' : k, onClick: () => press(k) }, k === '<' ? icon('back', 22) : k) : h('span'))),
+        cancel ? h('button', { class: 'pin-cancel', onClick: () => done(null) }, 'Cancel') : null)
+      draw()
+      document.body.appendChild(el)
+    })
+  }
+  const unlock = () => pinPad({ title: st.anon ? 'Anonymous' : 'Meshron', sub: 'Enter your PIN', check: (p) => M.call('lock.check', { pin: p }) })
+  // Locks again after a minute away.
+  let hiddenAt = 0
+  let unlocking = false
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) { hiddenAt = Date.now(); return }
+    if (st.locked && hiddenAt && Date.now() - hiddenAt > 60000 && !unlocking) { unlocking = true; await unlock(); unlocking = false }
+  })
 
   function qrSvg(text) {
     const qr = qrcode(0, 'M')
@@ -841,6 +1004,63 @@
     })
   }
 
+  /** Profile photo: square-cropped to 256 px JPEG (~15 KB) before it's shared. */
+  function pickProfilePhoto() {
+    const input = h('input', { type: 'file', accept: 'image/*' })
+    input.onchange = async () => {
+      const file = input.files[0]
+      if (!file) return
+      try {
+        const bmp = await createImageBitmap(file)
+        const side = Math.min(bmp.width, bmp.height)
+        const c = document.createElement('canvas')
+        c.width = c.height = 256
+        c.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 256, 256)
+        const url = c.toDataURL('image/jpeg', 0.82)
+        st.profiles = await M.call('profile.set', { photo: url.slice(url.indexOf(',') + 1) })
+        renderSide()
+        toast('Profile photo updated')
+      } catch (err) { oops(err) }
+    }
+    input.click()
+  }
+  function editBio() {
+    const cur = (st.profiles.me || {}).bio || ''
+    const input = h('textarea', { class: 'input', rows: 3, maxlength: 150, placeholder: 'A few words about you' })
+    input.value = cur
+    const count = h('div', { class: 'hint' }, cur.length + '/150 · your contacts see this')
+    input.addEventListener('input', () => { count.textContent = input.value.length + '/150 · your contacts see this' })
+    const buttons = [
+      { label: 'Cancel', onClick: (m) => m.close() },
+      { label: 'Save', kind: 'primary', onClick: async (m) => { m.close(); st.profiles = await M.call('profile.set', { bio: input.value }).catch(oops) || st.profiles; renderSide() } }
+    ]
+    if ((st.profiles.me || {}).photo) buttons.unshift({ label: 'Remove photo', kind: 'soft danger', onClick: async (m) => { m.close(); st.profiles = await M.call('profile.set', { photo: '' }).catch(oops) || st.profiles; renderSide() } })
+    modal({ title: 'Your bio', body: h('div', {}, input, count), buttons })
+  }
+
+  /** Someone's profile: photo, name, @username, bio, ID and quick actions. */
+  function showPerson(key) {
+    const c = contact(key)
+    if (!c) return showSafety(key)
+    const online = isOnline(key)
+    const bio = bioOf(key)
+    const act = (ic, label, fn) => h('button', { class: 'd-act', onClick: (e) => { m.close(); fn(e) } }, h('span', {}, icon(ic, 20)), label)
+    const m = modal({
+      title: '',
+      body: h('div', { class: 'person' },
+        avatar(c.displayName, key, 112, { online }),
+        h('div', { class: 'p-name' }, c.displayName, c.verified ? h('span', { class: 'd-ver', title: 'Safety code verified' }, icon('verified', 18)) : null),
+        h('div', { class: 'p-sub' + (online ? ' on' : '') }, [c.handle ? '@' + c.handle : null, online ? 'online' : 'offline'].filter(Boolean).join(' · ')),
+        bio ? h('p', { class: 'p-bio' }, bio) : null,
+        h('div', { class: 'd-actions' },
+          c.status === 'ADDED' ? act('phone', 'Call', () => startCall(key, false)) : null,
+          c.status === 'ADDED' ? act('video', 'Video', () => startCall(key, true)) : null,
+          act('shield', c.verified ? 'Verified' : 'Verify', () => showSafety(key))),
+        h('div', { class: 'd-label', style: { marginTop: '14px' } }, 'Meshron ID'),
+        h('button', { class: 'd-id', onClick: () => copy(c.id, 'ID copied') }, c.id))
+    })
+  }
+
   function editName() {
     const input = h('input', { class: 'input', value: st.me.username, maxlength: 40 })
     const save = async (m) => {
@@ -861,7 +1081,7 @@
       clearTimeout(timer)
       const hh = input.value.trim().replace(/^@/, '').toLowerCase()
       if (!hh || hh === st.me.handle) { hint.textContent = ' '; hint.className = 'hint'; return setOk(true) }
-      if (!/^[a-z0-9_]{3,20}$/.test(hh)) { hint.textContent = '3–20 letters, numbers or _'; hint.className = 'hint error'; return setOk(false) }
+      if (!/^[a-z0-9_]{3,24}$/.test(hh)) { hint.textContent = '3–24 letters, numbers or _'; hint.className = 'hint error'; return setOk(false) }
       hint.textContent = 'Checking…'
       hint.className = 'hint'
       setOk(false)
@@ -972,6 +1192,7 @@
   }
 
   async function openChat(conv, jumpTo) {
+    if (st.tab === 'reels') setTab('chats')
     if (st.open === conv && !jumpTo) { $('#shell').classList.add('chat-open'); return }
     saveDraft()
     st.open = conv
@@ -1024,7 +1245,7 @@
     }
     const c = contact(conv)
     if (c && c.status === 'REQUEST') return ['Wants to chat with you', false]
-    if ((st.typing[conv] || 0) > Date.now()) return ['typing…', true]
+    if ((st.typing[conv] || 0) > Date.now()) return [(st.typingWhat && st.typingWhat[conv]) === 'recording' ? 'recording a voice note…' : 'typing…', true]
     if (isOnline(conv)) return ['Online', true]
     return ["Offline · they'll get messages later", false]
   }
@@ -1035,7 +1256,7 @@
     const title = convTitle(conv)
     const [status, on] = headerStatus(conv)
     chatEls.who.replaceChildren(
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, h('span', { class: 't-title ellipsis' }, title), verifiedBadge(conv)),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, h('span', { class: 't-title ellipsis' }, title), verifiedBadge(conv), !isGroup(conv) && window.MeshronMod ? window.MeshronMod.badgeEl(conv, 14) : null),
       h('div', { class: 'status ellipsis' + (on ? ' on' : '') }, status))
     chatEls.av.replaceChildren(avatar(title, conv, 42, { group: isGroup(conv), online: !isGroup(conv) && isOnline(conv) }))
     const c = !isGroup(conv) && contact(conv)
@@ -1046,7 +1267,7 @@
   function buildChat() {
     const conv = st.open
     const av = h('div', {})
-    const who = h('div', { class: 'who', onClick: () => (isGroup(conv) ? showGroupInfo(conv) : showSafety(conv)) })
+    const who = h('div', { class: 'who', onClick: () => (isGroup(conv) ? showGroupInfo(conv) : showPerson(conv)) })
     const msgs = h('div', { class: 'msgs', id: 'msgs' })
     const toBottom = h('button', { class: 'to-bottom hide', onClick: () => scrollBottom(true) }, icon('down', 22))
     const input = h('textarea', { rows: 1, placeholder: 'Message', maxlength: st.limits.MAX_BODY })
@@ -1164,7 +1385,8 @@
         h('button', { class: 'icon-btn d-close', title: 'Close (Ctrl+I)', onClick: toggleDetails }, icon('x', 20)),
         avatar(title, conv, 96, { group: groupChat, online: !groupChat && isOnline(conv) }),
         h('div', { class: 'd-name' }, title, c && c.verified ? h('span', { class: 'd-ver', title: 'Safety code verified' }, icon('verified', 18)) : null),
-        h('div', { class: 'd-sub' }, c && c.handle ? '@' + c.handle + ' · ' : '', status)),
+        h('div', { class: 'd-sub' }, c && c.handle ? '@' + c.handle + ' · ' : '', status),
+        c && bioOf(conv) ? h('p', { class: 'd-bio' }, bioOf(conv)) : null),
       h('div', { class: 'd-actions' },
         groupChat ? null : action('phone', 'Call', () => startCall(conv, false)),
         groupChat ? null : action('video', 'Video', () => startCall(conv, true)),
@@ -1293,7 +1515,8 @@
     const muted = st.prefs.muted.includes(conv)
     const pinned = st.prefs.pinned.includes(conv)
     menu(x, y, [
-      isGroup(conv) ? { icon: 'users', label: 'Members', onClick: () => showGroupInfo(conv) } : { icon: 'shield', label: 'Verify safety code', onClick: () => showSafety(conv) },
+      isGroup(conv) ? { icon: 'users', label: 'Group info', onClick: () => showGroupInfo(conv) } : { icon: 'shield', label: 'Verify safety code', onClick: () => showSafety(conv) },
+      isGroup(conv) || st.anon ? null : { icon: 'flag', label: 'Report', onClick: () => window.MeshronMod.report({ kind: 'person', target: conv, owner: conv, name: nameOf(conv), page: 'Chat with ' + nameOf(conv) }) },
       { icon: 'pin', label: pinned ? 'Unpin' : 'Pin to top', onClick: () => M.call('prefs.pin', { conv, on: !pinned }) },
       { icon: muted ? 'bell' : 'bellOff', label: muted ? 'Unmute' : 'Mute', onClick: () => M.call('prefs.mute', { conv, on: !muted }) },
       { icon: 'trash', label: 'Delete chat', danger: true, onClick: () => deleteChat(conv) },
@@ -1301,19 +1524,74 @@
     ])
   }
 
+  /** Group page: photo, name, bio, members with roles, and the owner's/admins' tools. */
   function showGroupInfo(conv) {
     const g = group(conv)
     if (!g) return
-    modal({
+    const me = st.me.publicKey
+    const owner = g.ownerKey || g.creatorKey
+    const admins = g.admins || []
+    const iAmIn = g.members.includes(me)
+    const iAdmin = iAmIn && (me === owner || admins.includes(me))
+    const iOwner = iAmIn && me === owner
+    const id = g.id
+    const act = (method, args, done) => M.call(method, { id, ...args }).then(() => { if (done) toast(done); m.close(); setTimeout(() => showGroupInfo(conv), 300) }).catch(oops)
+    const order = [...g.members].sort((x, y) => (x === owner ? 0 : admins.includes(x) ? 1 : 2) - (y === owner ? 0 : admins.includes(y) ? 1 : 2))
+    const icon64 = g.icon ? h('img', { src: 'data:image/jpeg;base64,' + g.icon, style: { width: '84px', height: '84px', borderRadius: '24px', objectFit: 'cover' } }) : avatar(g.name, conv, 84, { group: true })
+    const memberMenu = (k, e) => {
+      if (k === me) return
+      const isAdm = admins.includes(k)
+      menu(e.clientX, e.clientY, [
+        iOwner ? { icon: 'shield', label: isAdm ? 'Remove as admin' : 'Make admin', onClick: () => act('group.admin', { who: k, on: !isAdm }, isAdm ? 'No longer an admin' : 'Now an admin') } : null,
+        iOwner ? { icon: 'key', label: 'Make owner', onClick: async () => { if (await confirmBox('Make ' + nameOf(k) + ' the owner?', "You'll stay as an admin.", 'Make owner')) act('group.owner', { who: k }) } } : null,
+        k !== owner && (iOwner || (iAdmin && !isAdm)) ? { icon: 'trash', label: 'Remove from group', danger: true, onClick: async () => { if (await confirmBox('Remove ' + nameOf(k) + '?', 'They stop getting new messages.', 'Remove', true)) act('group.remove', { who: k }) } } : null,
+        st.anon ? null : { icon: 'flag', label: 'Report', onClick: () => window.MeshronMod.report({ kind: 'person', target: k, owner: k, name: nameOf(k), page: 'Member of group "' + g.name + '"' }) },
+        contact(k) ? null : { icon: 'userPlus', label: 'Add as contact', onClick: () => M.call('contacts.add', { key: k, name: nameOf(k) === shortKey(k) ? '' : nameOf(k) }).then(() => toast('Contact added')) }
+      ].filter(Boolean))
+    }
+    const editInfo = () => {
+      const name = h('input', { class: 'field', value: g.name, placeholder: 'Group name', maxlength: 48 })
+      const bio = h('textarea', { class: 'field', rows: 3, placeholder: 'What this group is about', maxlength: 200 }, g.bio || '')
+      let photo = g.icon || ''
+      const pick = h('input', { type: 'file', accept: 'image/*', hidden: true, onChange: async () => {
+        const f = pick.files[0]; if (!f) return
+        const img = await createImageBitmap(f); const side = Math.min(img.width, img.height)
+        const c = document.createElement('canvas'); c.width = 160; c.height = 160
+        c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 160, 160)
+        photo = c.toDataURL('image/jpeg', 0.8).split(',')[1]; toast('Photo ready, press Save')
+      } })
+      modal({ title: 'Edit group', body: h('div', {}, name, bio, pick, h('button', { class: 'btn small soft', onClick: () => pick.click() }, 'Change photo')),
+        buttons: [{ label: 'Cancel', onClick: (x) => x.close() }, { label: 'Save', kind: 'primary', onClick: (x) => { x.close(); act('group.info', { name: name.value, bio: bio.value, icon: photo }, 'Saved') } }] })
+    }
+    const addMembers = () => {
+      const options = st.contacts.filter((c) => c.status === 'ADDED' && !g.members.includes(c.keyHex))
+      const picked = new Set()
+      modal({ title: 'Add members', body: h('div', {}, options.length ? null : h('p', { class: 'dim' }, 'All your contacts are already here.'),
+        ...options.map((c) => { const box = h('input', { type: 'checkbox', onChange: () => box.checked ? picked.add(c.keyHex) : picked.delete(c.keyHex) }); return h('label', { class: 'pick' }, box, avatar(c.name, c.keyHex, 36), h('span', { class: 't-title' }, nameOf(c.keyHex))) })),
+      buttons: [{ label: 'Cancel', onClick: (x) => x.close() }, { label: 'Add', kind: 'primary', onClick: (x) => { x.close(); if (picked.size) act('group.add', { members: [...picked] }, 'Added') } }] })
+    }
+    const leave = async () => {
+      if (iOwner && g.members.length > 1) return toast('Make someone else the owner first (tap a member)')
+      if (await confirmBox('Leave ' + g.name + '?', "You'll stop getting its messages.", 'Leave', true)) act('group.leave', {}, 'You left the group')
+    }
+    const m = modal({
       title: g.name,
       body: h('div', {},
-        h('p', { class: 'dim t-small' }, `${g.members.length} members. Everyone's messages are encrypted for the group.`),
-        h('div', { style: { marginTop: '8px', maxHeight: '340px', overflowY: 'auto' } }, g.members.map((k) => {
-          const me = k === st.me.publicKey
-          const known = !!contact(k)
-          return h('div', { class: 'pick', style: { cursor: me || known ? 'default' : 'pointer' }, onClick: () => { if (!me && !known) M.call('contacts.add', { key: k, name: nameOf(k) === shortKey(k) ? '' : nameOf(k) }).then(() => toast('Contact added')) } },
-            avatar(me ? st.me.username : nameOf(k), k, 42, { online: !me && isOnline(k) }),
-            h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { class: 't-title ellipsis' }, me ? st.me.username + ' (you)' : nameOf(k)), h('div', { class: 't-small dim' }, k === g.creatorKey ? 'Created the group' : me ? '' : known ? '' : 'Tap to add as a contact')))
+        h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', margin: '4px 0 12px' } },
+          icon64, h('div', { class: 't-h2' }, g.name), h('div', { class: 'dim t-small' }, g.members.length + ' members'), g.bio ? h('p', { style: { textAlign: 'center' } }, g.bio) : null),
+        h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '8px' } },
+          iAdmin ? h('button', { class: 'btn small soft', onClick: editInfo }, 'Edit') : null,
+          iAdmin ? h('button', { class: 'btn small soft', onClick: addMembers }, 'Add members') : null,
+          st.anon ? null : h('button', { class: 'btn small soft', onClick: () => window.MeshronMod.report({ kind: 'group', target: g.id, owner, name: g.name, page: 'Group "' + g.name + '", ' + g.members.length + ' members. Bio: ' + (g.bio || '') }) }, 'Report'),
+          iAmIn ? h('button', { class: 'btn small soft danger', onClick: leave }, 'Leave') : null),
+        iAmIn ? null : h('p', { class: 'dim t-small' }, "You're no longer in this group."),
+        h('div', { style: { maxHeight: '340px', overflowY: 'auto' } }, order.map((k) => {
+          const mine = k === me
+          const role = k === owner ? 'Owner' : admins.includes(k) ? 'Admin' : ''
+          return h('div', { class: 'pick', style: { cursor: mine ? 'default' : 'pointer' }, onClick: (e) => memberMenu(k, e) },
+            avatar(mine ? st.me.username : nameOf(k), k, 42, { online: !mine && isOnline(k) }),
+            h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { class: 't-title ellipsis' }, mine ? st.me.username + ' (you)' : nameOf(k))),
+            role ? h('span', { class: 'role-pill' }, role) : null)
         })))
     })
   }
@@ -1394,6 +1672,16 @@
     layer.appendChild(box)
   }
 
+  /** Group owner/admins can delete others' messages (admins: not the owner's). */
+  function canModerate(row) {
+    if (row.outgoing || !isGroup(row.peerKey) || (row.kind !== 'text' && row.kind !== 'file')) return false
+    const g = group(row.peerKey)
+    if (!g || !g.members.includes(st.me.publicKey)) return false
+    const owner = g.ownerKey || g.creatorKey
+    const me = st.me.publicKey
+    return me === owner || ((g.admins || []).includes(me) && row.senderKey !== owner)
+  }
+
   function messageMenu(row, x, y) {
     const f = row.kind === 'file' ? fileInfo(row) : null
     const gone = row.kind === 'deleted'
@@ -1406,7 +1694,8 @@
       f && row.localPath && M.native.showFile ? { icon: 'file', label: 'Show in folder', onClick: () => M.native.showFile({ path: row.localPath }) } : null,
       { icon: 'info', label: `${row.outgoing ? 'Sent' : 'Received'} ${dayLabel(row.sentAt)}, ${clock(row.sentAt)}`, onClick: () => {} },
       { icon: 'trash', label: 'Delete for me', danger: true, onClick: () => M.call('chat.deleteMessage', { conv: row.peerKey, id: row.id }) },
-      row.outgoing && (row.kind === 'text' || row.kind === 'file') ? { icon: 'trash', label: 'Delete for everyone', danger: true, onClick: () => unsend(row) } : null
+      row.outgoing && (row.kind === 'text' || row.kind === 'file') ? { icon: 'trash', label: 'Delete for everyone', danger: true, onClick: () => unsend(row) } : null,
+      canModerate(row) ? { icon: 'trash', label: 'Delete for everyone (admin)', danger: true, onClick: () => M.call('group.deleteForEveryone', { conv: row.peerKey, id: row.id }).catch(oops) } : null
     ])
     // Quick reactions across the top of the menu.
     const m = $('#menu')
@@ -1509,7 +1798,16 @@
         kids.push(h('div', { class: 'story-quote' }, icon('zap', 14), h('span', { class: 'ellipsis' }, (row.outgoing ? 'You replied to their story: ' : 'Replied to your story: ') + reply[1])))
         const rbig = reply[2].length <= 12 && BIG_EMOJI.test(reply[2])
         kids.push(h('div', { class: 'text' + (rbig ? ' big' : '') }, richText(reply[2], hl)))
-      } else kids.push(h('div', { class: 'text' + (big ? ' big' : '') }, richText(row.body, hl)))
+      } else if (row.body.startsWith('meshron://ai/')) {
+        // Meshron AI's answer (shown only when its signature checks out).
+        const box = h('div', { class: 'text' }, '…')
+        kids.push(h('div', { class: 'ai-head', style: { display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', marginBottom: '3px' } }, window.MeshronAI.aiAvatar(18), 'Meshron AI', window.MeshronMod ? window.MeshronMod.badgeEl(window.MeshronAI.AI_ID, 12) : null), box)
+        window.MeshronAI.parseGroup(row.peerKey, row.body).then((a) => { box.textContent = a ? window.MeshronAI.clean(a.text) : "A message that couldn't be checked" })
+      } else {
+        const t = h('div', { class: 'text' + (big ? ' big' : '') }, richText(row.body, hl))
+        kids.push(t)
+        if (!row.outgoing && !big) window.MeshronAI.translateInto(row.peerKey + ':' + row.id, row.body, t)
+      }
     }
     kids.push(h('div', { class: 'meta' }, row.edited && row.kind === 'text' ? h('span', { class: 'edited' }, 'edited ·') : null, clock(row.sentAt), row.outgoing && row.kind !== 'deleted' ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
     const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos-msg' : '') }, kids)
@@ -1603,6 +1901,13 @@
       if (edit) await M.call('chat.edit', { conv: st.open, id: edit.id, text })
       else {
         await M.call('chat.send', { conv: st.open, text, replyTo: reply ? reply.id : null, urgent: !!urgent })
+        if (isGroup(st.open) && window.MeshronAI.tagged(text)) {
+          const conv = st.open
+          const ctx = (st.rows || []).filter((r) => r.kind === 'text').slice(-12).map((r) => (r.outgoing ? 'Me' : 'Member') + ': ' + displayBody(r))
+          window.MeshronAI.ask(conv, Math.random().toString(36).slice(2, 14), text, '', '', ctx)
+            .then((a) => M.call('chat.send', { conv, text: window.MeshronAI.PREFIX + JSON.stringify(a) }))
+            .catch((e) => toast(e.message || "Meshron AI couldn't answer"))
+        }
         if (urgent) toast('Sent urgently: every Meshron phone nearby will pass it on')
         scrollBottom(false)
       }
@@ -1947,7 +2252,26 @@
         const img = h('img', { class: 'sv-photo', alt: '' })
         const back = h('div', { class: 'sv-blur' })
         photoUrl(item).then((url) => { img.src = url; back.style.backgroundImage = `url("${url}")` }).catch(() => {})
-        body = h('div', { class: 'sv-media' }, back, img, item.text ? h('div', { class: 'sv-caption' }, item.text) : null)
+        const P = window.MeshronStoryEditor ? window.MeshronStoryEditor.parse(item.text) : { shown: item.text, reel: null, card: null, by: null }
+        const media = h('div', { class: 'sv-media' }, back, img, P.shown ? h('div', { class: 'sv-caption', style: P.reel ? { bottom: '150px' } : {} }, P.shown) : null)
+        if (P.reel && P.card && window.MeshronReels && window.MeshronReels.videoUrl) {
+          const vid = h('video', { playsinline: true, loop: true, autoplay: true, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } })
+          const box = h('div', { style: { position: 'absolute', overflow: 'hidden', borderRadius: '16px', pointerEvents: 'none' } }, vid)
+          media.appendChild(box)
+          const place = () => {
+            const mb = media.getBoundingClientRect(); const iw0 = img.naturalWidth; const ih0 = img.naturalHeight
+            if (!iw0 || !mb.width) return
+            const s = Math.min(mb.width / iw0, mb.height / ih0); const iw = iw0 * s; const ih = ih0 * s
+            const ix = (mb.width - iw) / 2; const iy = (mb.height - ih) / 2; const cw = iw * 0.62; const chh = cw * 16 / 9
+            Object.assign(box.style, { left: (ix + P.card[0] * iw - cw / 2) + 'px', top: (iy + P.card[1] * ih - chh / 2) + 'px', width: cw + 'px', height: chh + 'px', transform: 'rotate(' + P.card[3] + 'deg) scale(' + P.card[2] + ')' })
+          }
+          img.addEventListener('load', place)
+          window.MeshronReels.videoUrl(P.reel).then((u) => { vid.src = u; vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}) }); place() }).catch(() => box.remove())
+        }
+        if (P.reel) media.appendChild(h('button', { class: 'sv-original', onClick: (e) => { e.stopPropagation(); closeViewer(); window.MeshronReels.openReel(P.reel.ch, P.reel.id) }, style: { position: 'absolute', left: '16px', bottom: '96px', zIndex: 6, display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px 8px 8px', borderRadius: '14px', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', textAlign: 'left' } },
+          h('span', { style: { width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg,#4F7BFF,#8B5CFF)', display: 'grid', placeItems: 'center', fontSize: '12px' } }, '▶'),
+          h('span', {}, h('b', { style: { display: 'block', fontSize: '13px' } }, 'Original video'), h('span', { style: { fontSize: '12px', opacity: 0.75 } }, P.by || 'Meshron')), h('b', {}, '›')))
+        body = media
       }
     } else {
       const len = item.text.length
@@ -2077,6 +2401,7 @@
       if (!file) return
       try {
         photo = await shrinkImage(file)
+        if (window.MeshronStoryEditor) { const p = photo; photo = null; close(); window.MeshronStoryEditor.open({ photo: p.blob }); return }
         draw()
       } catch { toast("Couldn't open that picture") }
     })
@@ -2620,6 +2945,7 @@
     if (first && me) enterApp()
     else if (st.tab === 'me') renderSide()
   })
+  M.on('account', () => { if (window.MeshronAccount) window.MeshronAccount.refresh().then(() => { if (st.tab === 'me') renderSide() }) })
   M.on('contacts', (list) => { st.contacts = list; renderRail(); renderSide(); refreshHeader() })
   M.on('groups', (list) => { st.groups = list; renderSide(); refreshHeader() })
   M.on('summaries', (list) => { st.summaries = list; renderRail(); if (st.tab === 'chats') renderSide() })
@@ -2652,13 +2978,17 @@
     renderMsgs()
   })
   M.on('incoming', onIncoming)
-  M.on('typing', ({ key }) => {
+  M.on('profiles', (p) => { st.profiles = p; renderSideSoon(); refreshHeader() })
+  M.on('typing', ({ key, what }) => {
     st.typing[key] = Date.now() + 6000
+    st.typingWhat = st.typingWhat || {}
+    st.typingWhat[key] = what === 'recording' ? 'recording' : 'typing'
     if (st.open === key) { refreshHeader(); setTimeout(refreshHeader, 6100) }
   })
   M.on('stories', (v) => { st.stories = v; if (st.tab === 'chats') renderSideSoon(); refreshViewer() })
   M.on('request', ({ key }) => toast(`${nameOf(key)} wants to chat with you`))
   M.on('open-chat', ({ conv }) => openChat(conv))
+  M.on('restart', restarting)
   M.on('open-link', ({ text }) => { if (st.me) showAddContact(text) })
   M.on('call-msg', onCallSignal)
   M.on('call-audio', ({ key, data }) => { if (call && call.phase === 'active' && call.peer === key) onAudioPacket(call, data) })
@@ -2702,17 +3032,63 @@
 
   // ---- Start -------------------------------------------------------------------------
 
+  // ---- Legal: Terms, Privacy Policy, Community Guidelines, and the one-time agreement ----
+  function showLegal(d) {
+    modal({ title: d.title, wide: true, body: h('div', { class: 'legal' },
+      h('p', { class: 'dim t-small' }, 'Last updated ' + d.updated), h('p', {}, d.intro),
+      ...d.sections.map(([t, b]) => h('div', {}, h('h3', { class: 't-title', style: { marginTop: '16px' } }, t), h('p', { class: 'dim' }, b)))) })
+  }
+  function legalGate() {
+    const L = window.MeshronLegal
+    return new Promise((resolve) => {
+      let age = false
+      let agree = false
+      const go = h('button', { class: 'btn primary', disabled: true, onClick: async () => { await M.call('prefs.set', { key: 'legalVersion', value: L.version }).catch(() => {}); resolve() } }, 'Continue')
+      const tick = (label, set) => {
+        const box = h('input', { type: 'checkbox', onChange: () => { set(box.checked); go.disabled = !(age && agree) } })
+        return h('label', { class: 'set-row', style: { cursor: 'pointer' } }, box, h('span', { class: 'grow' }, label))
+      }
+      ob.hidden = false
+      ob.replaceChildren(h('div', { class: 'ob-card' },
+        h('h1', { class: 't-h1' }, 'Welcome to Meshron'),
+        h('p', { class: 'dim' }, 'Private chats, moments and videos, device to device. Before you start:'),
+        tick("I'm 13 or older (or the minimum age in my country)", (v) => { age = v }),
+        tick("I agree to the Terms of Service and Community Guidelines, and I've read the Privacy Policy", (v) => { agree = v }),
+        h('p', {}, ...['TERMS', 'PRIVACY', 'GUIDELINES'].map((k) => h('a', { href: '#', style: { marginRight: '14px' }, onClick: (e) => { e.preventDefault(); showLegal(L.docs[k]) } }, L.docs[k].title))),
+        go))
+    })
+  }
+
   function enterApp() {
     ob.hidden = true
     $('#shell').hidden = false
     buildSide()
     showHero()
+    refreshNoticeCount().then(() => { if (noticeCount && st.tab === 'me') renderSide() })
   }
+
+  // Shared with reels.js.
+  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto }
 
   async function start() {
     try {
       const init = await M.call('init')
-      Object.assign(st, { stories: init.stories || { mine: [], friends: [] }, me: init.identity, contacts: init.contacts, groups: init.groups, summaries: init.summaries, net: init.net, prefs: init.prefs, fileStatus: init.fileStatus || {}, limits: init.limits })
+      st.anon = !!init.anon
+      st.locked = !!init.locked
+      document.documentElement.classList.toggle('anon', st.anon)
+      if (M.native.privacy) M.native.privacy(st.anon)
+      if (st.locked) { $('#boot').classList.add('gone'); await unlock() }
+      // Anonymous makes its own identity: a random nickname, nothing about you.
+      if (st.anon && !init.identity) {
+        await M.call('identity.create', { name: 'Ghost ' + (1000 + Math.floor(Math.random() * 9000)) })
+        init.identity = (await M.call('init')).identity
+      }
+      Object.assign(st, { stories: init.stories || { mine: [], friends: [] }, me: init.identity, contacts: init.contacts, groups: init.groups, summaries: init.summaries, net: init.net, prefs: init.prefs, fileStatus: init.fileStatus || {}, limits: init.limits, profiles: init.profiles || { me: {}, peers: {} } })
+      if (window.MeshronLegal && ((st.prefs.settings || {}).legalVersion || 0) < window.MeshronLegal.version) {
+        $('#boot').classList.add('gone')
+        await legalGate()
+        st.prefs.settings.legalVersion = window.MeshronLegal.version
+      }
       if (st.me) enterApp()
       else { ob.hidden = false; showWelcome() }
     } catch (err) {

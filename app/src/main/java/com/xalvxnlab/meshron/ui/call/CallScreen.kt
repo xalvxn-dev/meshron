@@ -362,7 +362,7 @@ fun CallMini(calls: CallManager, onExpand: () -> Unit) {
 
 /** A TextureView that reports its surface and keeps the picture upright and filled. */
 @Composable
-private fun VideoView(format: VideoFormat?, crop: Boolean, onTexture: (SurfaceTexture?) -> Unit, modifier: Modifier) {
+internal fun VideoView(format: VideoFormat?, crop: Boolean, onTexture: (SurfaceTexture?) -> Unit, modifier: Modifier) {
     val holder = remember { arrayOfNulls<VideoFormat>(1) }
     holder[0] = format
     DisposableEffect(Unit) { onDispose { onTexture(null) } }

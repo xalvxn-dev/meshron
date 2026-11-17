@@ -1,5 +1,7 @@
 package com.xalvxnlab.meshron.messaging
 
+import kotlinx.coroutines.flow.map
+
 import android.util.Log
 import com.xalvxnlab.meshron.contacts.Contact
 import com.xalvxnlab.meshron.contacts.ContactsRepository
@@ -50,10 +52,41 @@ class MessagingService(
     /** Called after a new incoming file message is stored (FileService downloads it). */
     var onFileMessage: (suspend (MessageEntity) -> Unit)? = null
 
+    /** Disappearing messages: hours to keep messages (0 = forever). Set before [start]. */
+    var retentionHours: kotlinx.coroutines.flow.Flow<Int>? = null
+    /** Per-chat disappearing timers (conversation -> hours); they override [retentionHours]. */
+    var chatTimers: (suspend () -> Map<String, Int>)? = null
+
     /** Called after any new incoming message is stored (used for notifications). */
     var onIncoming: (suspend (MessageEntity) -> Unit)? = null
 
     val summaries = dao.summaries()
+
+    /** Messages containing [q] (text only), newest first. */
+    suspend fun exportAll(): List<MessageEntity> = dao.exportAll()
+    suspend fun allGroupsNow() = dao.allGroups()
+
+    suspend fun search(q: String): List<MessageEntity> = if (q.trim().length < 2) emptyList() else dao.searchText(q.trim().replace("%", "").replace("_", ""))
+
+    /**
+     * Streaks: for each 1:1 chat, how many days in a row (up to today, or yesterday if today
+     * hasn't happened yet) you both sent something. 0 when broken.
+     */
+    val streaks: kotlinx.coroutines.flow.Flow<Map<String, Int>> = run {
+        val tz = java.util.TimeZone.getDefault().rawOffset.toLong()
+        dao.activeDays(System.currentTimeMillis() - 400L * 86_400_000, tz).map { rows ->
+            val today = (System.currentTimeMillis() + tz) / 86_400_000
+            rows.groupBy { it.peerKey }.mapValues { (_, days) ->
+                val mine = days.filter { it.outgoing }.map { it.day }.toSet()
+                val theirs = days.filter { !it.outgoing }.map { it.day }.toSet()
+                val both = mine intersect theirs
+                var d = if (today in both) today else today - 1
+                var n = 0
+                while (d in both) { n++; d-- }
+                n
+            }.filterValues { it > 0 }
+        }
+    }
     val groups = dao.groups()
     fun conversation(key: String) = dao.conversation(key)
     fun modifiers(key: String) = dao.modifiers(key)
@@ -72,6 +105,34 @@ class MessagingService(
             network.events.collect { e -> runCatching { handle(e) }.onFailure { Log.e(TAG, "event $e", it) } }
         }
         network.start()
+        // Disappearing messages: every minute, delete what's older than the chosen time.
+        retentionHours?.let { hours ->
+            scope.launch {
+                while (true) {
+                    val h = hours.first()
+                    val now = System.currentTimeMillis()
+                    runCatching {
+                        val timers = chatTimers?.invoke().orEmpty()
+                        if (h > 0) deleteOlderThan(now - h * 3_600_000L, except = timers.keys)
+                        for ((conv, ch) in timers) deleteChatOlderThan(conv, now - ch * 3_600_000L)
+                    }.onFailure { Log.w(TAG, "disappearing", it) }
+                    kotlinx.coroutines.delay(60_000)
+                }
+            }
+        }
+    }
+
+    private suspend fun deleteOlderThan(before: Long, except: Set<String> = emptySet()) {
+        val convs = dao.conversationsOlderThan(before).filter { it !in except }
+        for (c in convs) deleteChatOlderThan(c, before)
+    }
+
+    private suspend fun deleteChatOlderThan(conv: String, before: Long) {
+        val paths = dao.chatFilesOlderThan(conv, before)
+        if (dao.chatCountOlderThan(conv, before) == 0) return
+        keepReadPosition(conv)
+        paths.forEach { runCatching { java.io.File(it).delete() } }
+        dao.deleteChatOlderThan(conv, before)
     }
 
     private suspend fun myKey(): String = identity.identity.filterNotNull().first().publicKey.toHex()
@@ -121,10 +182,18 @@ class MessagingService(
         )
         dao.insertGroup(group)
         if (network.isOnline) openGroup(group)
-        val invite = JSONObject()
-            .put("id", group.id).put("name", group.name).put("secret", group.secret)
-            .put("creator", group.creatorKey).put("members", JSONArray(group.memberList))
-            .toString()
+        sendInvites(group, memberKeys)
+        return group
+    }
+
+    private fun inviteJson(g: GroupEntity) = JSONObject()
+        .put("id", g.id).put("name", g.name).put("secret", g.secret)
+        .put("creator", g.creatorKey).put("members", JSONArray(g.memberList))
+        .put("owner", g.owner).put("admins", JSONArray(g.adminList)).put("bio", g.bio).put("icon", g.icon)
+        .toString()
+
+    private suspend fun sendInvites(group: GroupEntity, memberKeys: List<String>) {
+        val invite = inviteJson(group)
         for (member in memberKeys) {
             val now = System.currentTimeMillis()
             val row = MessageEntity(
@@ -134,7 +203,99 @@ class MessagingService(
             dao.insert(row)
             if (network.isOnline) appendLock.withLock { appendRow(row) }
         }
-        return group
+    }
+
+    // ---- Group roles and settings ----
+    // Every change is a signed "gmeta" entry in the sender's group log. Each member applies it only
+    // if the sender is allowed to make it (owner > admins > members), so nobody can take over a group.
+
+    fun group(id: String) = dao.group(id)
+
+    private suspend fun meta(g: GroupEntity, o: JSONObject) {
+        val me = myKey()
+        applyMeta(g.id, me, o)
+        sendKind(g.conversationKey, o.toString(), MessageEntity.KIND_GMETA)
+    }
+
+    /** Owner/admins: name, bio and photo. */
+    suspend fun setGroupInfo(g: GroupEntity, name: String, bio: String, icon: String) =
+        meta(g, JSONObject().put("op", "info").put("name", name.trim().take(48)).put("bio", bio.trim().take(200)).put("icon", icon.take(24_000)))
+
+    /** Owner only: make someone an admin, or take it away. */
+    suspend fun setAdmin(g: GroupEntity, who: String, on: Boolean) = meta(g, JSONObject().put("op", "admin").put("who", who).put("on", on))
+
+    /** Owner removes anyone; admins remove members (not admins or the owner). */
+    suspend fun removeMember(g: GroupEntity, who: String) = meta(g, JSONObject().put("op", "remove").put("who", who))
+
+    /** Owner/admins add contacts: the group learns it, and they get an invite. */
+    suspend fun addMembers(g: GroupEntity, keys: List<String>) {
+        val fresh = keys.filter { it !in g.memberList }
+        if (fresh.isEmpty()) return
+        meta(g, JSONObject().put("op", "add").put("who", JSONArray(fresh)))
+        dao.findGroup(g.id)?.let { sendInvites(it, fresh) }
+    }
+
+    /** Owner only: hand the group to another member (the old owner stays as an admin). */
+    suspend fun transferOwnership(g: GroupEntity, who: String) = meta(g, JSONObject().put("op", "owner").put("who", who))
+
+    /** Leave the group. An owner has to hand it over first. */
+    suspend fun leaveGroup(g: GroupEntity) {
+        require(g.owner != myKey() || g.memberList.size <= 1) { "Make someone else the owner first" }
+        meta(g, JSONObject().put("op", "leave"))
+    }
+
+    /** Owner/admins: delete anyone's message for everyone. */
+    suspend fun deleteForEveryone(g: GroupEntity, m: MessageEntity) = meta(g, JSONObject().put("op", "del").put("id", m.id))
+
+    private suspend fun applyMeta(groupId: String, from: String, o: JSONObject) {
+        val g = dao.findGroup(groupId) ?: return
+        if (from !in g.memberList) return
+        val who = o.optString("who")
+        val members = g.memberList.toMutableList()
+        val admins = g.adminList.toMutableList()
+        var next: GroupEntity? = null
+        when (o.optString("op")) {
+            "info" -> if (g.isAdmin(from)) next = g.copy(
+                name = o.optString("name").take(48).ifBlank { g.name },
+                bio = o.optString("bio").take(200),
+                icon = o.optString("icon").take(24_000),
+            )
+            "admin" -> if (from == g.owner && who in members && who != g.owner) {
+                admins.remove(who); if (o.optBoolean("on")) admins += who
+                next = g.copy(admins = admins.joinToString(","))
+            }
+            "remove" -> if (who in members && who != g.owner && (from == g.owner || (from in admins && who !in admins))) {
+                members.remove(who); admins.remove(who)
+                next = g.copy(members = members.joinToString(","), admins = admins.joinToString(","))
+            }
+            "add" -> if (g.isAdmin(from)) {
+                val arr = o.optJSONArray("who") ?: JSONArray()
+                for (i in 0 until minOf(arr.length(), 64)) arr.optString(i).takeIf { HEX64.matches(it) && it !in members }?.let { members += it }
+                if (members.size <= 256) next = g.copy(members = members.joinToString(","))
+            }
+            "owner" -> if (from == g.owner && who in members && who != from) {
+                admins.remove(who); if (from !in admins) admins += from
+                next = g.copy(ownerKey = who, admins = admins.joinToString(","))
+            }
+            "leave" -> if (from != g.owner) {
+                members.remove(from); admins.remove(from)
+                next = g.copy(members = members.joinToString(","), admins = admins.joinToString(","))
+            }
+            "del" -> if (g.isAdmin(from)) {
+                val id = o.optString("id").take(100)
+                val target = dao.find(g.conversationKey, id)
+                // Admins can't delete the owner's messages; the owner can delete anything.
+                if (target != null && (from == g.owner || target.senderKey != g.owner)) {
+                    target.localPath?.let { runCatching { java.io.File(it).delete() } }
+                    dao.markUnsent(g.conversationKey, id)
+                }
+            }
+        }
+        if (next != null && next != g) {
+            dao.updateGroup(next)
+            // Membership changed: the network layer follows the new member list.
+            if (next.members != g.members && network.isOnline && myKey() in next.memberList) openGroup(next)
+        }
     }
 
     /** Sends a file message whose blob is already stored (see FileService). */
@@ -159,6 +320,12 @@ class MessagingService(
     }
 
     suspend fun markRead(conversation: String) = dao.markRead(conversation)
+
+    /** Lets a contact see that I've read their messages (if read receipts are on). */
+    suspend fun sendSeen(keyHex: String) {
+        val top = dao.maxIncomingSeq(keyHex) ?: return
+        network.readUpTo(keyHex, top + 1)
+    }
 
     /** Changes the text of my own message, on every device that has it. */
     suspend fun edit(m: MessageEntity, text: String) {
@@ -279,6 +446,7 @@ class MessagingService(
             }
             is PeerEvent.Appended -> dao.markAppended(e.key, e.id, e.seq)
             is PeerEvent.Delivered -> dao.markDeliveredBelow(e.key, e.length)
+            is PeerEvent.Read -> dao.markSeenBelow(e.key, e.length)
             is PeerEvent.Message -> onDirectMessage(e)
             is PeerEvent.GroupAppended ->
                 dao.markAppended(MessageEntity.groupConversation(e.group), MessageEntity.groupRowId(myKey(), e.id), e.seq)
@@ -320,6 +488,13 @@ class MessagingService(
         val g = parseInvite(json) ?: return false
         if (from !in g.memberList || myKey() !in g.memberList) return false
         if (dao.insertGroup(g) != -1L) openGroup(g)
+        else {
+            // Added back after leaving or being removed: take the fresh member list and settings.
+            val old = dao.findGroup(g.id)
+            if (old != null && myKey() !in old.memberList && old.secret == g.secret) {
+                dao.updateGroup(g.copy(createdAt = old.createdAt)); openGroup(g)
+            }
+        }
         return true
     }
 
@@ -335,6 +510,7 @@ class MessagingService(
         )
         if (dao.insert(row) != -1L) {
             applyChange(row)
+            if (row.kind == MessageEntity.KIND_GMETA) runCatching { applyMeta(group.id, e.from, JSONObject(row.body)) }
             if (row.kind == MessageEntity.KIND_FILE) onFileMessage?.invoke(row)
             if (!hidden) runCatching { onIncoming?.invoke(row) }
         }
@@ -374,11 +550,14 @@ class MessagingService(
             val arr = o.getJSONArray("members")
             val members = List(arr.length()) { arr.getString(it) }
             if (!HEX32.matches(id) || !HEX64.matches(secret) || !HEX64.matches(creator)) return null
-            if (members.any { !HEX64.matches(it) } || creator !in members || members.size > 64) return null
+            if (members.any { !HEX64.matches(it) } || members.size > 256) return null
+            val owner = o.optString("owner").takeIf { HEX64.matches(it) && it in members } ?: creator
+            val adm = o.optJSONArray("admins")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty().filter { it in members }
             GroupEntity(
                 id = id, name = o.optString("name").take(48).ifBlank { "Group" }, secret = secret,
                 creatorKey = creator, members = members.distinct().joinToString(","),
                 createdAt = System.currentTimeMillis(),
+                ownerKey = owner, admins = adm.joinToString(","), bio = o.optString("bio").take(200), icon = o.optString("icon").take(24_000),
             )
         }.getOrNull()
     }

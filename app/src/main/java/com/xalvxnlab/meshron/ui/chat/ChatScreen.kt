@@ -3,6 +3,13 @@ package com.xalvxnlab.meshron.ui.chat
 import androidx.compose.material.icons.filled.LocationOn
 
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Translate
 
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 
@@ -10,6 +17,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.border
@@ -189,11 +197,11 @@ fun ChatScreen(
     val calls = app.calls
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok && target is ChatTarget.Direct) calls.call(target.contact.keyHex)
-        else if (!ok) Toast.makeText(context, "Calls need the microphone", Toast.LENGTH_LONG).show()
+        else if (!ok) com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Calls need the microphone", long = true)
     }
     val askVideo = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
         val mic = r[Manifest.permission.RECORD_AUDIO] == true || calls.hasMicPermission()
-        if (!mic) Toast.makeText(context, "Calls need the microphone", Toast.LENGTH_LONG).show()
+        if (!mic) com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Calls need the microphone", long = true)
         else if (target is ChatTarget.Direct) {
             // Without the camera it becomes a voice call; the camera can be allowed later.
             calls.call(target.contact.keyHex, video = r[Manifest.permission.CAMERA] == true)
@@ -206,6 +214,13 @@ fun ChatScreen(
         if (target is ChatTarget.Group) messaging.groupAcks(target.group.id) else flowOf(emptyList())
     }.collectAsState(initial = emptyList())
     val net by network.state.collectAsState()
+    val liveGroup by remember(conversation) {
+        if (target is ChatTarget.Group) messaging.group(target.group.id) else flowOf(null)
+    }.collectAsState(initial = null)
+    val grp = (target as? ChatTarget.Group)?.let { liveGroup ?: it.group }
+    val grpIcon = remember(grp?.icon) { grp?.let { groupIcon(it) } }
+    val inGroup = grp == null || myKey in grp.memberList
+    var reportChat by remember { mutableStateOf(false) }
     var draft by rememberSaveable(conversation) { mutableStateOf("") }
     val mods by remember(conversation) { messaging.modifiers(conversation) }.collectAsState(initial = emptyList())
     val extras = remember(mods, myKey) { summarize(mods, myKey) }
@@ -229,14 +244,26 @@ fun ChatScreen(
                 urgent -> messaging.sendUrgent(conversation, text, reply)
                 else -> messaging.send(conversation, text, reply)
             }
+            if (edit == null && target is ChatTarget.Group && com.xalvxnlab.meshron.account.MeshronAi.tagged(text)) {
+                val app = context.applicationContext as com.xalvxnlab.meshron.MeshronApp
+                val ctx = messages.filter { it.kind == MessageEntity.KIND_TEXT }.takeLast(12).map { (if (it.outgoing) "Me" else "Member") + ": " + displayBody(it) }
+                runCatching { app.ai.ask(conversation, java.util.UUID.randomUUID().toString().take(12), text, context = ctx) }
+                    .onSuccess { messaging.send(conversation, com.xalvxnlab.meshron.account.MeshronAi.body(it)) }
+                    .onFailure { com.xalvxnlab.meshron.ui.components.Toasts.show(context, it.message ?: "Meshron AI couldn't answer", long = true) }
+            }
         }
     }
     val typingNow by network.typing.collectAsState()
     val theyAreTyping = target is ChatTarget.Direct && typingNow.containsKey(target.contact.keyHex)
+    val recordingNow by network.recording.collectAsState()
+    val theyAreRecording = target is ChatTarget.Direct && recordingNow.containsKey(target.contact.keyHex)
+    val chatApp = LocalContext.current.applicationContext as com.xalvxnlab.meshron.MeshronApp
+    val readReceipts by chatApp.settings.readReceipts.collectAsState(initial = true)
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     var showMembers by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var showSafety by rememberSaveable { mutableStateOf(false) }
+    var showProfile by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var confirmBlock by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -246,6 +273,12 @@ fun ChatScreen(
         if (messages.isNotEmpty()) listState.scrollToItem(0) // reverse layout: 0 = newest, at the bottom
         messaging.markRead(conversation)
     }
+    // "Seen": tell a friend I've read their messages while the chat is open (and again when they come online).
+    val peerOnline = target is ChatTarget.Direct && net.peers[target.contact.keyHex]?.state == PeerInfo.State.CONNECTED
+    LaunchedEffect(messages.size, peerOnline, readReceipts) {
+        if (target is ChatTarget.Direct && readReceipts && peerOnline && target.contact.status == Contact.Status.ADDED && !com.xalvxnlab.meshron.identity.Mode.anon)
+            runCatching { messaging.sendSeen(target.contact.keyHex) }
+    }
 
     val online = { key: String -> net.peers[key]?.state == PeerInfo.State.CONNECTED }
     val (title, subtitle) = when (target) {
@@ -253,18 +286,28 @@ fun ChatScreen(
             val peer = net.peers[target.contact.keyHex]
             target.contact.displayName to when {
                 target.contact.status == Contact.Status.REQUEST -> "Not in your contacts yet"
+                theyAreRecording -> "recording a voice note…"
                 theyAreTyping -> "typing…"
                 peer?.state == PeerInfo.State.CONNECTED -> (if (target.contact.verified) "Verified · " else "") + "Online · ${peer.viaLabel}"
                 else -> "Offline · they'll get messages later"
             }
         }
         is ChatTarget.Group -> {
-            val others = target.group.memberList.filter { it != myKey }
-            target.group.name to "${others.size + 1} members · ${others.count(online)} online"
+            val g = grp ?: target.group
+            val others = g.memberList.filter { it != myKey }
+            g.name to if (myKey !in g.memberList) "You're not in this group" else "${others.size + 1} members · ${others.count(online)} online"
         }
     }
     val ackByMember = acks.associate { it.member to it.length }
     val isRequest = target is ChatTarget.Direct && target.contact.status == Contact.Status.REQUEST
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var stickerOpen by remember { mutableStateOf(false) }
+    var recordingVoice by remember { mutableStateOf(false) }
+    LaunchedEffect(recordingVoice) {
+        if (target !is ChatTarget.Direct || com.xalvxnlab.meshron.identity.Mode.anon) return@LaunchedEffect
+        while (recordingVoice) { network.typing(target.contact.keyHex, "recording"); kotlinx.coroutines.delay(4000) }
+    }
+    var suggesting by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -274,17 +317,21 @@ fun ChatScreen(
                 },
                 title = {
                     Row(
-                        Modifier.clickable(enabled = target is ChatTarget.Group) { showMembers = true },
+                        Modifier.clickable { if (target is ChatTarget.Group) showMembers = true else showProfile = true },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Avatar(
                             title, conversation, 40.dp,
                             group = target is ChatTarget.Group,
                             online = target is ChatTarget.Direct && online(target.contact.keyHex),
+                            image = grpIcon,
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                if (target is ChatTarget.Direct) com.xalvxnlab.meshron.ui.components.Badges(target.contact.keyHex, 12.dp)
+                            }
                             Text(
                                 subtitle,
                                 style = MaterialTheme.typography.bodySmall,
@@ -323,6 +370,11 @@ fun ChatScreen(
                                 leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
                                 onClick = { menu = false; confirmDelete = true },
                             )
+                            DropdownMenuItem(
+                                text = { Text(if (target is ChatTarget.Group) "Report group" else "Report") },
+                                leadingIcon = { Icon(Icons.Filled.Flag, null) },
+                                onClick = { menu = false; reportChat = true },
+                            )
                             if (target is ChatTarget.Direct) {
                                 DropdownMenuItem(
                                     text = { Text("Block ${target.contact.displayName}", color = MeshColors.Danger) },
@@ -333,12 +385,22 @@ fun ChatScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MeshColors.Surface1),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MeshColors.Bg),
             )
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
-            Box(Modifier.weight(1f)) {
+            Box(Modifier.weight(1f).drawBehind {
+                // Meshron's chat wallpaper: faint diagonal mesh lines.
+                val step = 34.dp.toPx()
+                val c = MeshColors.TextPrimary.copy(alpha = 0.035f)
+                var x = -size.height
+                while (x < size.width) {
+                    drawLine(c, androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x + size.height, size.height), 1f)
+                    drawLine(c, androidx.compose.ui.geometry.Offset(x + size.height, 0f), androidx.compose.ui.geometry.Offset(x, size.height), 1f)
+                    x += step
+                }
+            }) {
                 if (messages.isEmpty()) {
                     Column(
                         Modifier.align(Alignment.Center).padding(32.dp),
@@ -369,6 +431,7 @@ fun ChatScreen(
                     reverseLayout = true,
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    val lastOutId = ordered.firstOrNull { it.outgoing }?.id
                     itemsIndexed(ordered, key = { _, m -> m.id + m.outgoing }) { i, m ->
                         val status = when {
                             !m.outgoing -> ""
@@ -379,6 +442,7 @@ fun ChatScreen(
                                 if (got == 0) "Sent" else "Delivered to $got of ${others.size}"
                             }
                             m.status == MessageEntity.SENT -> "Sent"
+                            m.status >= MessageEntity.SEEN && readReceipts -> if (m.id == lastOutId) "SeenLast" else "Seen"
                             else -> "Delivered"
                         }
                         // Reverse layout: the item drawn above this one is the next index.
@@ -415,10 +479,12 @@ fun ChatScreen(
                                 onCopy = {
                                     context.getSystemService(android.content.ClipboardManager::class.java)
                                         .setPrimaryClip(android.content.ClipData.newPlainText("Message", displayBody(m)))
-                                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                                    com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Copied")
                                 },
                                 onDelete = { scope.launch { messaging.deleteMessage(m) } },
-                                onUnsend = { scope.launch { messaging.unsend(m) } },
+                                onUnsend = { scope.launch { if (m.outgoing) messaging.unsend(m) else grp?.let { messaging.deleteForEveryone(it, m) } } },
+                                canModerate = grp != null && !m.outgoing && inGroup && grp.isAdmin(myKey) && (grp.owner == myKey || m.senderKey != grp.owner) &&
+                                    (m.kind == MessageEntity.KIND_TEXT || m.kind == MessageEntity.KIND_FILE),
                                 onReply = {
                                     editing = null
                                     replyTo = m
@@ -468,9 +534,27 @@ fun ChatScreen(
                         }) { Text("Ignore") }
                     }
                 }
+            } else if (!inGroup) {
+                Text("You're no longer in this group, so you can't send messages.", color = MeshColors.TextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(20.dp))
             } else {
-                Column(Modifier.fillMaxWidth().background(MeshColors.Bg)) {
-                    Box(Modifier.fillMaxWidth().height(0.5.dp).background(MeshColors.Hairline))
+                Column(Modifier.fillMaxWidth()) {
+                    // AI reply suggestions: tap one to put it in the box.
+                    if (suggestions.isNotEmpty()) androidx.compose.foundation.lazy.LazyRow(
+                        contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 6.dp),
+                    ) {
+                        items(suggestions.size) { i ->
+                            val text = suggestions[i]
+                            Box(
+                                Modifier.clip(RoundedCornerShape(50)).background(MeshColors.AccentContainer)
+                                    .clickable { if (!text.startsWith("⚠")) draft = text; suggestions = emptyList() }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            ) { Text(text, color = MeshColors.OnAccentContainer, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+                        }
+                    }
+                    if (recordingVoice) Text("● Recording… let go to send", color = MeshColors.Danger, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 20.dp, top = 6.dp))
+                    if (stickerOpen) Box(Modifier.padding(horizontal = 12.dp)) { Stickers.Picker(onPick = { st -> stickerOpen = false; scope.launch { messaging.send(conversation, st) } }) }
                     val bar = editing ?: replyTo
                     AnimatedVisibility(visible = bar != null) {
                         val m = bar ?: return@AnimatedVisibility
@@ -502,9 +586,24 @@ fun ChatScreen(
                         }
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).navigationBarsPadding(),
+                        Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp)
+                            .shadow(12.dp, RoundedCornerShape(28.dp), ambientColor = Color.Black.copy(alpha = 0.15f), spotColor = Color.Black.copy(alpha = 0.15f))
+                            .clip(RoundedCornerShape(28.dp)).background(MeshColors.Surface1)
+                            .border(1.dp, MeshColors.Hairline, RoundedCornerShape(28.dp)).padding(4.dp),
                         verticalAlignment = Alignment.Bottom,
                     ) {
+                        if (!com.xalvxnlab.meshron.identity.Mode.anon && !isRequest) IconButton(onClick = {
+                            suggesting = true
+                            suggestions = emptyList()
+                            scope.launch {
+                                val recent = messages.filter { it.kind == MessageEntity.KIND_TEXT }.takeLast(8).map { com.xalvxnlab.meshron.account.AiService.Turn(it.outgoing, displayBody(it)) }
+                                suggestions = runCatching { app.ai.replies(recent) }.getOrElse { listOf("⚠ " + (it.message ?: "AI unavailable")) }
+                                suggesting = false
+                            }
+                        }) {
+                            if (suggesting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Filled.AutoAwesome, "Suggest replies", tint = MeshColors.Accent)
+                        }
                         IconButton(enabled = !sendingFile, onClick = { pickFile.launch("*/*") }) {
                             if (sendingFile) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             else Icon(Icons.Rounded.AddCircleOutline, "Send a photo or file", tint = MeshColors.TextSecondary)
@@ -515,7 +614,7 @@ fun ChatScreen(
                                 if (it.length <= MessagingService.MAX_BODY) draft = it
                                 // "typing…" for the other person, at most every 4 seconds.
                                 val now = System.currentTimeMillis()
-                                if (target is ChatTarget.Direct && it.isNotBlank() && now - lastTyping > 4000) {
+                                if (target is ChatTarget.Direct && !com.xalvxnlab.meshron.identity.Mode.anon && it.isNotBlank() && now - lastTyping > 4000) {
                                     lastTyping = now
                                     network.typing(target.contact.keyHex)
                                 }
@@ -525,14 +624,41 @@ fun ChatScreen(
                             textStyle = MaterialTheme.typography.bodyLarge,
                             shape = RoundedCornerShape(24.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MeshColors.Surface2,
-                                unfocusedContainerColor = MeshColors.Surface2,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
                                 cursorColor = MeshColors.GradMid,
                                 focusedIndicatorColor = Color.Transparent,
                                 unfocusedIndicatorColor = Color.Transparent,
                             ),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp).focusRequester(focus),
                         )
+                        if (!isRequest) IconButton(onClick = { stickerOpen = !stickerOpen }) {
+                            Icon(Icons.Filled.EmojiEmotions, "Stickers", tint = if (stickerOpen) MeshColors.Accent else MeshColors.TextSecondary)
+                        }
+                        // Voice note: hold the mic to record, let go to send.
+                        if (draft.isBlank() && !isRequest) Box(
+                            Modifier.size(48.dp).clip(CircleShape).background(if (recordingVoice) MeshColors.Danger else MeshColors.Surface2)
+                                .pointerInput(conversation) {
+                                    detectTapGestures(onPress = {
+                                        if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                            askMic.launch(Manifest.permission.RECORD_AUDIO); return@detectTapGestures
+                                        }
+                                        val rec = VoiceRecorder.start(context) ?: return@detectTapGestures
+                                        recordingVoice = true
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        tryAwaitRelease()
+                                        recordingVoice = false
+                                        val file = rec.stop()
+                                        if (file != null) scope.launch {
+                                            sendingFile = true
+                                            files.send(messaging, conversation, VoiceRecorder.uriOf(context, file))
+                                                .onFailure { com.xalvxnlab.meshron.ui.components.Toasts.show(context, it.message ?: "Couldn't send the voice note", long = true) }
+                                            sendingFile = false
+                                        } else com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Hold the mic to record")
+                                    })
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Filled.Mic, "Hold to record a voice note", tint = if (recordingVoice) Color.White else MeshColors.TextSecondary) }
                         // The send button appears only when there's something to send.
                         AnimatedVisibility(
                             visible = draft.isNotBlank(),
@@ -592,10 +718,22 @@ fun ChatScreen(
                     sendingFile = true
                     files.send(messaging, conversation, uri)
                         .onSuccess { if (caption.isNotBlank()) messaging.send(conversation, caption) }
-                        .onFailure { Toast.makeText(context, it.message ?: "Couldn't send the file", Toast.LENGTH_LONG).show() }
+                        .onFailure { com.xalvxnlab.meshron.ui.components.Toasts.show(context, it.message ?: "Couldn't send the file", long = true) }
                     sendingFile = false
                 }
             },
+        )
+    }
+
+    if (showProfile && target is ChatTarget.Direct) {
+        com.xalvxnlab.meshron.ui.profile.PersonSheet(
+            contact = target.contact,
+            online = online(target.contact.keyHex),
+            onDismiss = { showProfile = false },
+            onMessage = null,
+            onCall = if (isRequest) null else ({ showProfile = false; if (calls.hasMicPermission()) calls.call(target.contact.keyHex) else askMic.launch(Manifest.permission.RECORD_AUDIO) }),
+            onVideo = if (isRequest) null else ({ showProfile = false; if (calls.hasMicPermission() && calls.hasCameraPermission()) calls.call(target.contact.keyHex, video = true) else askVideo.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)) }),
+            onVerify = { showProfile = false; showSafety = true },
         )
     }
 
@@ -636,26 +774,16 @@ fun ChatScreen(
         dismissButton = { TextButton(onClick = { confirmBlock = false }) { Text("Cancel") } },
     )
 
-    if (showMembers && target is ChatTarget.Group) {
-        AlertDialog(
-            onDismissRequest = { showMembers = false },
-            title = { Text(target.group.name) },
-            text = {
-                Column {
-                    target.group.memberList.forEach { key ->
-                        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val on = key == myKey || online(key)
-                            Avatar(if (key == myKey) "You" else nameOf(key), key, 36.dp, online = on && key != myKey)
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                (if (key == myKey) "You" else nameOf(key)) +
-                                    if (key == target.group.creatorKey) " · creator" else ""
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showMembers = false }) { Text("Close") } },
+    if (showMembers && grp != null) {
+        GroupInfo(grp, myKey, nameOf, online, onBack = { showMembers = false }, onLeft = { showMembers = false })
+    }
+    if (reportChat) {
+        val recent = messages.filter { it.kind == MessageEntity.KIND_TEXT }.takeLast(10).joinToString("\n") { (if (it.outgoing) "me" else (it.senderKey?.let(nameOf) ?: title)) + ": " + displayBody(it) }
+        com.xalvxnlab.meshron.ui.components.ReportSheet(
+            if (target is ChatTarget.Group) "group" else "person",
+            if (target is ChatTarget.Direct) target.contact.keyHex else grp?.id.orEmpty(), title,
+            "Chat with ${title}. Last messages:\n" + recent, onClose = { reportChat = false },
+            owner = if (target is ChatTarget.Direct) target.contact.keyHex else grp?.owner.orEmpty(), content = recent,
         )
     }
 }
@@ -720,12 +848,14 @@ private fun Bubble(
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onUnsend: () -> Unit,
+    canModerate: Boolean = false,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onReact: (String) -> Unit,
     onQuoteTap: () -> Unit,
 ) {
-    val mine = m.outgoing
+    val aiAnswer = remember(m.id, m.body) { if (m.kind == MessageEntity.KIND_TEXT && m.body.startsWith(com.xalvxnlab.meshron.account.MeshronAi.PREFIX)) com.xalvxnlab.meshron.account.MeshronAi.parse(m.peerKey, m.body) else null }
+    val mine = m.outgoing && aiAnswer == null
     val deleted = m.kind == MessageEntity.KIND_DELETED
     var menu by remember { mutableStateOf(false) }
     var confirmUnsend by remember { mutableStateOf(false) }
@@ -743,8 +873,18 @@ private fun Bubble(
         if (highlighted) MeshColors.GradMid.copy(alpha = 0.18f) else Color.Transparent, tween(300), label = "flash",
     )
     // Rounded all round, except the author's side tightens where the group continues.
-    val big = 18.dp
-    val small = 4.dp
+    val big = 22.dp
+    val small = 6.dp
+    var translation by remember(m.id) { mutableStateOf<String?>(null) }
+    val aiApp = LocalContext.current.applicationContext as com.xalvxnlab.meshron.MeshronApp
+    translation?.let { t ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { translation = null },
+            title = { Text("Translation") },
+            text = { if (t == "…") CircularProgressIndicator(Modifier.size(24.dp)) else Text(t) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { translation = null }) { Text("Done") } },
+        )
+    }
     val shape = if (mine) RoundedCornerShape(topStart = big, bottomStart = big, topEnd = if (first) big else small, bottomEnd = if (last) big else small)
     else RoundedCornerShape(topEnd = big, bottomEnd = big, topStart = if (first) big else small, bottomStart = if (last) big else small)
 
@@ -789,7 +929,7 @@ private fun Bubble(
                 Modifier
                     .widthIn(max = 300.dp)
                     .clip(shape)
-                    .then(if (sos) Modifier.background(Color(0xFFE5243B)) else if (gradient) Modifier.background(MeshColors.BubbleGradient) else Modifier.background(MeshColors.Surface2))
+                    .then(if (sos) Modifier.background(Color(0xFFE5243B)) else if (gradient) Modifier.background(MeshColors.BubbleGradient) else Modifier.background(MeshColors.BubbleOther).border(1.dp, if (MeshColors.isDark) Color.Transparent else MeshColors.Hairline, shape))
                     .combinedClickable(
                         onClick = { if (m.kind == MessageEntity.KIND_FILE) onOpenFile() },
                         // Double-tap: quick heart.
@@ -818,6 +958,14 @@ private fun Bubble(
                         DropdownMenuItem(text = { Text("Reply") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, null) }, onClick = { menu = false; onReply() })
                         if (m.kind != MessageEntity.KIND_FILE) {
                             DropdownMenuItem(text = { Text("Copy") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = { menu = false; onCopy() })
+                            if (!com.xalvxnlab.meshron.identity.Mode.anon && m.kind == MessageEntity.KIND_TEXT) DropdownMenuItem(
+                                text = { Text("Translate") }, leadingIcon = { Icon(Icons.Filled.Translate, null) },
+                                onClick = {
+                                    menu = false
+                                    translation = "…"
+                                    scope.launch { translation = runCatching { aiApp.ai.translate(displayBody(m)) }.getOrElse { "Couldn't translate: " + it.message } }
+                                },
+                            )
                         }
                         if (canEdit) {
                             DropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { menu = false; onEdit() })
@@ -828,7 +976,7 @@ private fun Bubble(
                         leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
                         onClick = { menu = false; onDelete() },
                     )
-                    if (mine && (m.kind == MessageEntity.KIND_TEXT || m.kind == MessageEntity.KIND_FILE)) {
+                    if ((mine && (m.kind == MessageEntity.KIND_TEXT || m.kind == MessageEntity.KIND_FILE)) || canModerate) {
                         DropdownMenuItem(
                             text = { Text("Delete for everyone", color = MeshColors.Danger) },
                             leadingIcon = { Icon(Icons.Filled.DeleteForever, null, tint = MeshColors.Danger) },
@@ -837,11 +985,13 @@ private fun Bubble(
                     }
                 }
                 if (sender != null) {
+                    val nameApp = LocalContext.current.applicationContext as com.xalvxnlab.meshron.MeshronApp
                     Text(
                         sender,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MeshColors.avatar(m.senderKey ?: sender),
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = m.senderKey != null) { m.senderKey?.let { nameApp.openProfileRequests.tryEmit(it) } },
                     )
                 }
                 when {
@@ -863,9 +1013,37 @@ private fun Bubble(
                         } else if (m.kind == MessageEntity.KIND_TEXT && reply != null) {
                             QuoteBlock(quoteAuthor ?: "Reply", reply.groupValues[1], textColor, onClick = onQuoteTap)
                             Text(reply.groupValues[2], color = textColor, style = MaterialTheme.typography.bodyLarge)
+                        } else if (m.kind == MessageEntity.KIND_TEXT && Stickers.isSticker(m.body)) {
+                            Stickers.Sticker(Stickers.emojiOf(m.body), 64)
+                        } else if (m.kind == MessageEntity.KIND_TEXT && m.body.startsWith("meshron://reel/")) {
+                            ReelLinkCard(m.body, textColor)
+                        } else if (m.kind == MessageEntity.KIND_TEXT && m.body.startsWith("meshron://collab/")) {
+                            CollabCard(m.body, m.outgoing, textColor)
+                        } else if (aiAnswer != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                                com.xalvxnlab.meshron.ui.reels.MeshronAiAvatar(20.dp)
+                                Text(" Meshron AI", fontWeight = FontWeight.Bold, color = textColor, style = MaterialTheme.typography.labelLarge)
+                                com.xalvxnlab.meshron.ui.components.Badges(com.xalvxnlab.meshron.account.MeshronAi.ID, 13.dp)
+                            }
+                            Text(aiAnswer.text, color = textColor, style = MaterialTheme.typography.bodyLarge)
                         } else {
-                            Text(displayBody(m), color = textColor, style = MaterialTheme.typography.bodyLarge,
+                            // Someone else's words in another language: shown in mine, with a note.
+                            val autoTr by aiApp.settings.autoTranslate.collectAsState(initial = true)
+                            val account by aiApp.accounts.state.collectAsState(initial = null)
+                            var auto by remember(m.id) { mutableStateOf<com.xalvxnlab.meshron.account.AiService.Translation?>(null) }
+                            var showOriginal by remember(m.id) { mutableStateOf(false) }
+                            LaunchedEffect(m.id, autoTr, account) {
+                                if (!m.outgoing && autoTr && account != null && !sos && !com.xalvxnlab.meshron.identity.Mode.anon && m.kind == MessageEntity.KIND_TEXT)
+                                    auto = runCatching { aiApp.ai.autoTranslate(m.id, displayBody(m)) }.getOrNull()
+                            }
+                            val tr = auto
+                            Text(if (tr != null && !showOriginal) tr.text else displayBody(m), color = textColor, style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = if (sos) FontWeight.SemiBold else null)
+                            if (tr != null) Text(
+                                if (showOriginal) "↺ " + tr.note else tr.note + " · " + tr.original,
+                                color = textColor.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable { showOriginal = !showOriginal },
+                            )
                             if (sos) {
                                 // Open the shared location in any maps app.
                                 val link = remember(m.body) { Regex("https://maps\\.google\\.com/\\?q=[-0-9.,]+").find(m.body)?.value }
@@ -907,6 +1085,10 @@ private fun Bubble(
                             "Sending" -> Icon(Icons.Filled.Schedule, "Sending", Modifier.size(14.dp), tint = metaColor)
                             "Sent" -> Icon(Icons.Filled.Done, "Sent", Modifier.size(14.dp), tint = metaColor)
                             "Delivered" -> Icon(Icons.Filled.DoneAll, "Delivered", Modifier.size(14.dp), tint = Color.White)
+                            "Seen", "SeenLast" -> {
+                                Icon(Icons.Filled.DoneAll, "Seen", Modifier.size(14.dp), tint = Color(0xFF7DF9FF))
+                                if (status == "SeenLast") Text(" Seen", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                            }
                             else -> Text(status, style = MaterialTheme.typography.labelSmall, color = metaColor)
                         }
                     }
@@ -1074,6 +1256,7 @@ private fun FileContent(m: MessageEntity, fileStatus: String?) {
         return
     }
     val path = m.localPath
+    if (info.mime.startsWith("audio/") && path != null) { VoiceNote(path); return }
     val thumb by produceState<ImageBitmap?>(null, path) {
         value = if (path != null && info.isImage) withContext(Dispatchers.IO) { loadThumbnail(path) } else null
     }
@@ -1120,15 +1303,21 @@ private fun openFile(context: Context, m: MessageEntity) {
     try {
         context.startActivity(Intent.createChooser(view, info.name))
     } catch (_: ActivityNotFoundException) {
-        Toast.makeText(context, "No app can open this file", Toast.LENGTH_SHORT).show()
+        com.xalvxnlab.meshron.ui.components.Toasts.show(context, "No app can open this file")
     }
 }
 
 /** Invites are stored as JSON; show them as a sentence. */
 fun displayBody(m: MessageEntity): String = when (m.kind) {
     MessageEntity.KIND_DELETED -> if (m.outgoing) "You deleted this message" else "This message was deleted"
-    MessageEntity.KIND_TEXT -> MessagingService.bodyText(m.body)
-    MessageEntity.KIND_FILE -> FileInfo.parse(m.body)?.let { (if (it.isImage) "Photo: " else "File: ") + it.name } ?: "File"
+    MessageEntity.KIND_TEXT -> when {
+        Stickers.isSticker(m.body) -> Stickers.emojiOf(m.body) + " Sticker"
+        m.body.startsWith("meshron://reel/") -> "🎬 Reel"
+        m.body.startsWith("meshron://collab/") -> "🤝 Collab invite"
+        m.body.startsWith(com.xalvxnlab.meshron.account.MeshronAi.PREFIX) -> com.xalvxnlab.meshron.account.MeshronAi.parse(m.peerKey, m.body)?.let { "✨ Meshron AI: " + it.text } ?: "A message that couldn't be checked"
+        else -> MessagingService.bodyText(m.body)
+    }
+    MessageEntity.KIND_FILE -> FileInfo.parse(m.body)?.let { if (it.mime.startsWith("audio/")) "🎤 Voice note" else (if (it.isImage) "Photo: " else "File: ") + it.name } ?: "File"
     MessageEntity.KIND_INVITE -> {
         val name = MessagingService.parseInvite(m.body)?.name ?: "a group"
         if (m.outgoing) "You invited them to “$name”" else "Added you to the group “$name”"
@@ -1142,3 +1331,86 @@ private fun sameGroup(a: MessageEntity, b: MessageEntity): Boolean =
 
 /** A story reply: "↪ Story: <quote>", a newline, then the reply (same format on every platform). */
 private val STORY_REPLY = Regex("^↪ Story: (.*)\\n([\\s\\S]+)$")
+
+/** A reel shared into the chat: a card that opens it. */
+@Composable
+private fun ReelLinkCard(body: String, textColor: Color) {
+    val lines = body.lines()
+    val app = LocalContext.current.applicationContext as MeshronApp
+    Row(
+        Modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.18f)).clickable { app.openReelRequests.tryEmit(lines.first()) }.padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(width = 42.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)).background(MeshColors.Gradient), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.PlayArrow, null, tint = Color.White)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.widthIn(max = 200.dp)) {
+            Text("Reel", color = textColor, fontWeight = FontWeight.Bold)
+            lines.drop(1).take(2).forEach { Text(it, color = textColor.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+        }
+    }
+}
+
+/** A collab invite for a reel: the invited friend can accept, which puts it on their profile too. */
+@Composable
+private fun CollabCard(body: String, outgoing: Boolean, textColor: Color) {
+    val lines = body.lines()
+    val parts = lines.first().removePrefix("meshron://collab/").split("/")
+    val app = LocalContext.current.applicationContext as MeshronApp
+    val scope = rememberCoroutineScope()
+    // Remembered across visits, so an accepted invite never asks again.
+    val prefs = remember { app.getSharedPreferences("collabs", android.content.Context.MODE_PRIVATE) }
+    val key = parts.joinToString("/")
+    var state by remember(body) { mutableStateOf(if (prefs.getBoolean(key, false)) "ok" else "") }
+    Column(Modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.18f)).padding(12.dp).widthIn(max = 240.dp)) {
+        Text("🤝 Collab invite", color = textColor, fontWeight = FontWeight.Bold)
+        Text(if (outgoing) "You invited them to collaborate on your reel." else "They want you as a collaborator on their reel.", color = textColor.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+        lines.drop(1).firstOrNull()?.takeIf { it.isNotBlank() }?.let { Text(it, color = textColor.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("View", color = textColor, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.18f))
+                .clickable { if (parts.size == 2) app.openReelRequests.tryEmit("meshron://reel/" + parts[0] + "/" + parts[1]) }.padding(horizontal = 14.dp, vertical = 6.dp))
+            if (!outgoing && parts.size == 2) Text(when (state) { "ok" -> "Accepted"; "busy" -> "…"; "" -> "Accept"; else -> "Try again" }, color = Color.White, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(if (state == "ok") MeshColors.Surface3 else MeshColors.AccentStrong).clickable(enabled = state != "ok" && state != "busy") {
+                    state = "busy"
+                    scope.launch {
+                        state = if (runCatching { app.reels.collabAccept(parts[0], parts[1]) }.isSuccess) "ok" else "err"
+                        if (state == "ok") prefs.edit().putBoolean(key, true).apply()
+                    }
+                }.padding(horizontal = 14.dp, vertical = 6.dp))
+        }
+    }
+}
+
+/** Voice note: play/pause, progress and length. */
+@Composable
+private fun VoiceNote(path: String) {
+    val player = remember(path) { android.media.MediaPlayer().apply { runCatching { setDataSource(path); prepare() } } }
+    var playing by remember { mutableStateOf(false) }
+    var pos by remember { mutableStateOf(0f) }
+    val dur = remember(player) { runCatching { player.duration }.getOrDefault(0).coerceAtLeast(1) }
+    androidx.compose.runtime.DisposableEffect(player) { onDispose { player.release() } }
+    LaunchedEffect(playing) {
+        while (playing) {
+            pos = player.currentPosition.toFloat() / dur
+            if (!player.isPlaying) { playing = false; pos = 0f }
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(min = 200.dp)) {
+        Box(
+            Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).clickable {
+                if (playing) { player.pause(); playing = false } else { player.start(); playing = true }
+            },
+            contentAlignment = Alignment.Center,
+        ) { Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "Pause" else "Play") }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.25f))) {
+                Box(Modifier.fillMaxWidth(pos).height(4.dp).background(Color.White))
+            }
+            Text("%d:%02d".format(dur / 60000, (dur / 1000) % 60), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}

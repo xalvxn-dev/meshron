@@ -1,0 +1,39 @@
+name = "meshron-accounts"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Change to your own domain's address once it's verified in Resend, e.g. "Meshron <codes@meshron.app>".
+FROM = "Meshron <onboarding@resend.dev>"
+# Brevo (free, no domain): the one sender address verified in Brevo. Key: npx wrangler secret put BREVO_KEY
+BREVO_SENDER = "meshronmessanger@gmail.com"
+# AI: Groq (console.groq.com), OpenAI-compatible. The key is a secret:
+#   npx wrangler secret put AI_KEY
+AI_URL = "https://api.groq.com/openai/v1"
+AI_MODEL = "openai/gpt-oss-120b"
+# Every report and appeal is emailed here (comma-separate several).
+MOD_EMAIL = "xalvxn@gmail.com"
+# Usernames that are Meshron admins (can appoint moderators). Founders: reserved usernames.
+ADMINS = "alvinnanakojopieterson,clementkofiyeboah,xalvxn"
+
+[[kv_namespaces]]
+binding = "ACCOUNTS"
+# Filled in by: npx wrangler kv namespace create ACCOUNTS
+id = "55f81e27a8b7465d82604e2c5f3511c8"
+preview_id = "local"
+
+# Local tests only (npx wrangler dev --local --port 8799 --env test): same as above, plus a
+# test admin account "modtester" used by test/moderation.js.
+[env.test.vars]
+FROM = "Meshron <onboarding@resend.dev>"
+# Brevo (free, no domain): the one sender address verified in Brevo. Key: npx wrangler secret put BREVO_KEY
+BREVO_SENDER = "meshronmessanger@gmail.com"
+AI_URL = "http://127.0.0.1:8800"
+AI_MODEL = "auto"
+MOD_EMAIL = "xalvxn@gmail.com"
+ADMINS = "alvinnanakojopieterson,clementkofiyeboah,modtester"
+
+[[env.test.kv_namespaces]]
+binding = "ACCOUNTS"
+id = "local-test"
+preview_id = "local-test"

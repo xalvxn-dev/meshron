@@ -347,3 +347,15 @@ textarea.input { resize: none; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Meshron badges, roles, moderation cards */
+.badges { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; vertical-align: middle; }
+.badges .b-verified { display: block; }
+.badges .b-mod { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #7C5CFF; color: #fff; }
+.badges .b-title { display: inline-flex; align-items: center; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 900; line-height: 16px; }
+.badges .b-title.founder { background: linear-gradient(135deg, #FFE08A, #F5B400, #B8860B); color: #3D2A00; }
+.badges .b-title.cofounder { background: linear-gradient(135deg, #FFD6E0, #E38AAE, #9D5CFF); color: #2A0F2E; }
+.role-pill { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: rgba(107, 91, 255, .15); color: #6b5bff; }
+.card { background: var(--surface1, rgba(127,127,127,.08)); border-radius: 14px; padding: 12px 14px; margin: 8px 0; }
+.card.danger { background: rgba(255, 59, 92, .12); }
+.legal p { margin: 6px 0; }

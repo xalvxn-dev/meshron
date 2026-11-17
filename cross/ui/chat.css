@@ -125,3 +125,66 @@
   .side-head .status-pill { font-size: 0; gap: 0; padding: 10px; }
   .side-head .status-pill .net-dot { width: 10px; height: 10px; }
 }
+
+/* ---- Profiles: photos, bio, person sheet ---- */
+.avatar.has-photo { background: var(--s2) !important; }
+.avatar.has-photo img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.me-avatar { position: relative; cursor: pointer; }
+.me-cam { position: absolute; right: calc(50% - 50px); bottom: 2px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--grad); color: #fff; border: 3px solid var(--bg); }
+.me-bio { display: block; margin: 8px auto 4px; max-width: 320px; padding: 4px 10px; border-radius: 10px; text-align: center; font-size: 15px; line-height: 21px; color: var(--text); white-space: pre-wrap; }
+.me-bio.empty { color: #e879f9; font-weight: 700; }
+.me-bio:hover { background: var(--s2); }
+.person { display: grid; justify-items: center; text-align: center; gap: 6px; padding-bottom: 6px; }
+.person .p-name { margin-top: 10px; font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+.person .p-sub { color: var(--text2); font-size: 14px; }
+.person .p-sub.on { color: var(--online, #2ecc71); }
+.person .p-bio, .d-bio { margin: 6px 0 0; font-size: 15px; line-height: 21px; white-space: pre-wrap; max-width: 340px; }
+.d-bio { color: var(--text); font-size: 14px; text-align: center; }
+.person .d-actions { border: 0; padding: 12px 0 0; display: flex; gap: 8px; justify-content: center; }
+.person .d-act { display: grid; justify-items: center; gap: 6px; width: 72px; padding: 8px 0; border-radius: 14px; font-size: 12px; font-weight: 700; color: var(--text2); }
+.person .d-act span { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--s2); color: var(--text); }
+.person .d-label { justify-self: stretch; text-align: left; color: var(--text3); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; }
+.person .d-id { justify-self: stretch; text-align: left; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; color: var(--text2); word-break: break-all; padding: 8px 10px; border-radius: 10px; background: var(--s2); }
+
+/* ---- Anonymous mode: stealth palette, badge, mode card, PIN lock ---- */
+html.anon {
+  --bg: #000000; --s1: #0c0e0f; --s2: #15191a; --s3: #1e2426; --hair: #1a2022;
+  --text: #eef6f5; --text2: #9fb3b0; --text3: #5f7472; --accent: #5eead4;
+  --g1: #0f766e; --g2: #14b8a6; --g3: #5eead4;
+  --bubble: linear-gradient(135deg, #0f766e, #0d9488);
+}
+.anon-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.side-head .anon-chip + .sos-pill { margin-left: auto; }
+@media (max-width: 420px) { .anon-chip { font-size: 0; gap: 0; padding: 6px; } }
+.mode-card {
+  display: flex; align-items: center; gap: 14px; width: calc(100% - 32px); margin: 14px 16px 4px; padding: 16px;
+  border: 1px solid var(--hair); border-radius: var(--r-l); background: var(--s1); color: var(--text); text-align: left; cursor: pointer; font: inherit;
+}
+.mode-card.on { background: color-mix(in srgb, var(--accent) 12%, var(--s1)); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.mode-card .orb { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--grad); color: #fff; }
+.mode-card .grow { min-width: 0; }
+.mode-card .t-small { margin-top: 2px; }
+.lock-screen {
+  position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: calc(24px + var(--safe-t)) 16px calc(24px + var(--safe-b)); animation: lock-in .2s var(--ease);
+}
+.lock-orb { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--grad); color: #fff; margin-bottom: 8px; }
+.lock-screen .error { color: var(--danger); }
+.pin-dots { display: flex; gap: 16px; margin: 18px 0 26px; }
+.pin-dots span { width: 14px; height: 14px; border-radius: 50%; background: var(--s3); transition: background .15s; }
+.pin-dots span.on { background: var(--g2); }
+.pin-dots.shake { animation: pin-shake .35s; }
+@keyframes pin-shake { 20% { transform: translateX(14px) } 40% { transform: translateX(-11px) } 60% { transform: translateX(8px) } 80% { transform: translateX(-4px) } }
+.pin-keys { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px 22px; }
+.pin-keys button {
+  width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--s2); color: var(--text);
+  font-family: inherit; font-size: 26px; font-weight: 600; display: grid; place-items: center; cursor: pointer;
+}
+.pin-keys button:active { background: var(--s3); }
+.pin-cancel { margin-top: 14px; background: none; border: 0; color: var(--accent); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; padding: 10px 18px; }
+@keyframes lock-in { from { opacity: 0 } to { opacity: 1 } }
+.mode-card .grow { flex: 1; }

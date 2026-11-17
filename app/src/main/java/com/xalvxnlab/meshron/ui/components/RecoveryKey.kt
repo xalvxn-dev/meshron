@@ -61,7 +61,7 @@ fun RecoveryKeyDialog(load: suspend () -> String, onDismiss: () -> Unit) {
             onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
         }
     }
-    AlertDialog(
+    com.xalvxnlab.meshron.ui.components.PageDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Key, null, tint = MeshColors.PurpleBright) },
         title = { Text(if (reveal) "Your recovery key" else "Back up your account") },
@@ -106,7 +106,7 @@ fun RecoveryKeyDialog(load: suspend () -> String, onDismiss: () -> Unit) {
                     // Android 13+: keep it out of clipboard previews.
                     clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
                     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
-                    Toast.makeText(context, "Copied. Paste it somewhere private, then clear your clipboard.", Toast.LENGTH_LONG).show()
+                    com.xalvxnlab.meshron.ui.components.Toasts.show(context, "Copied. Paste it somewhere private, then clear your clipboard.", long = true)
                 }) { Text("Copy") }
             } else {
                 TextButton(onClick = onDismiss) { Text("Not now") }

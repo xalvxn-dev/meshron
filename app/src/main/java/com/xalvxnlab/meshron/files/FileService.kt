@@ -81,8 +81,8 @@ class FileService(
     private val random = SecureRandom()
     private val uploads = ConcurrentHashMap<String, CompletableDeferred<PeerEvent.FileStored>>()
     private val downloads = ConcurrentHashMap<String, Download>()
-    private val sentDir = File(context.filesDir, "chatfiles/sent").apply { mkdirs() }
-    private val receivedDir = File(context.filesDir, "chatfiles/received").apply { mkdirs() }
+    private val sentDir = File(context.filesDir, com.xalvxnlab.meshron.identity.Mode.name("chatfiles") + "/sent").apply { mkdirs() }
+    private val receivedDir = File(context.filesDir, com.xalvxnlab.meshron.identity.Mode.name("chatfiles") + "/received").apply { mkdirs() }
 
     private class Download(
         val row: MessageEntity,

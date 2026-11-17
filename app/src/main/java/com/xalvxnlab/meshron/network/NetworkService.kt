@@ -45,6 +45,7 @@ class NetworkService(
     private val identity: IdentityRepository,
     private val contacts: ContactsRepository,
     private val settings: com.xalvxnlab.meshron.settings.AppSettings,
+    private val profiles: com.xalvxnlab.meshron.profile.ProfileStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow(NetworkState())
@@ -129,7 +130,14 @@ class NetworkService(
     val typing: kotlinx.coroutines.flow.StateFlow<Map<String, Long>> = _typing
 
     /** Tells a connected contact I'm typing (at most every few seconds; never stored). */
-    fun typing(keyHex: String) = scope.launch { if (isOnline) send(cmd("typing").put("key", keyHex).toString()) }
+    fun typing(keyHex: String, what: String = "typing") = scope.launch { if (isOnline) send(cmd("typing").put("key", keyHex).put("what", what).toString()) }
+
+    /** Contacts recording a voice note to me right now (same timing as [typing]). */
+    private val _recording = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Long>>(emptyMap())
+    val recording: kotlinx.coroutines.flow.StateFlow<Map<String, Long>> = _recording
+
+    /** Tells a contact I've seen their messages below [length] (live only). */
+    fun readUpTo(keyHex: String, length: Long) = scope.launch { if (isOnline) send(cmd("read").put("key", keyHex).put("length", length).toString()) }
 
     /** Android switched networks; the worklet rebinds its sockets. */
     fun networkChanged() = scope.launch { if (isOnline) send(cmd("network-change").toString()) }
@@ -147,11 +155,12 @@ class NetworkService(
     private val writeLock = Mutex()
     private var worklet: Worklet? = null
     private var ipc: Ipc? = null
-    private var myKeyHex: String? = null
+    var myKeyHex: String? = null
+        private set
     private val dialled = mutableSetOf<String>()
 
     /** Logs this phone carries for others (mesh), remembered across restarts. */
-    private val carried = CarriedLogs(File(context.filesDir, "mesh-carry.json"))
+    private val carried = CarriedLogs(File(context.filesDir, com.xalvxnlab.meshron.identity.Mode.name("mesh-carry") + ".json"))
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
@@ -173,11 +182,15 @@ class NetworkService(
                 // authenticate as us (Noise handshake). It is never written to disk.
                 val cursors = JSONObject()
                 inboxCursors?.invoke()?.forEach { (peer, next) -> cursors.put(peer, next) }
-                val storage = File(context.filesDir, "corestore").absolutePath
+                val storage = File(context.filesDir, com.xalvxnlab.meshron.identity.Mode.name("corestore")).absolutePath
                 val internet = settings.useInternet.first()
                 val carry = settings.carryForOthers.first()
+                // Anonymous: no @username on the DHT, nothing about me shared, and (by default)
+                // internet links only through relays so contacts never learn my IP address.
+                val hideIp = settings.hideIp.first()
+                val handle = if (com.xalvxnlab.meshron.identity.Mode.anon) "" else me.handle
                 val startCmd = identity.withSeed { seed ->
-                    JSONObject().put("cmd", "start").put("seed", seed.toHex()).put("name", me.username).put("handle", me.handle)
+                    JSONObject().put("cmd", "start").put("seed", seed.toHex()).put("name", me.username).put("handle", handle).put("profile", profiles.myProfileJson()).put("forceRelay", hideIp)
                         .put("storage", storage).put("cursors", cursors)
                         .put("internet", internet).put("carry", carry).put("carried", carried.load())
                         .toString()
@@ -319,8 +332,28 @@ class NetworkService(
         }
     }
 
+    /** Reels (ReelsService) handles its own events ("reel…" / "reels…"). */
+    @Volatile var onReelsEvent: ((JSONObject) -> Unit)? = null
+
+    /** Sends a Reels command to the worklet. */
+    suspend fun reelsSend(json: JSONObject) = send(json.toString())
+
+    /** Live (LiveService) handles its own events ("live-…"). */
+    @Volatile var onLiveEvent: ((JSONObject) -> Unit)? = null
+
+    fun liveSend(json: JSONObject) = scope.launch { send(json.toString()) }
+
+    /** A live video/audio frame for every viewer; old ones are dropped if the worklet falls behind. */
+    fun liveFrame(kind: String, data: ByteArray) {
+        val json = cmd("live-frame").put("kind", kind).put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP)).toString()
+        if (kind == "a") audioOut.trySend(json) else videoOut.trySend(json)
+    }
+
     private suspend fun onEvent(e: JSONObject) {
-        when (e.optString("ev")) {
+        val name = e.optString("ev")
+        if (name.startsWith("reel")) { onReelsEvent?.invoke(e); return }
+        if (name.startsWith("live-")) { onLiveEvent?.invoke(e); return }
+        when (name) {
             "ready" -> {
                 val matches = e.optString("publicKey") == myKeyHex
                 _state.update {
@@ -358,10 +391,12 @@ class NetworkService(
             "typing" -> {
                 val key = e.getString("key")
                 val at = System.currentTimeMillis()
-                _typing.update { it + (key to at) }
+                val (on, off) = if (e.optString("what") == "recording") _recording to _typing else _typing to _recording
+                off.update { it - key }
+                on.update { it + (key to at) }
                 scope.launch {
                     kotlinx.coroutines.delay(TYPING_MS)
-                    _typing.update { if (it[key] == at) it - key else it }
+                    on.update { if (it[key] == at) it - key else it }
                 }
             }
             "call-msg" -> {
@@ -390,6 +425,12 @@ class NetworkService(
                 }
                 if (name.isNotEmpty()) contacts.updateName(key, name)
                 contacts.updateHandle(key, e.optString("handle"))
+                // Their bio/photo changed (or I never had it): ask for it.
+                val pv = e.optInt("pv")
+                if (pv > 0 && pv != profiles.versionOf(key)) send(cmd("profile-get").put("key", key).toString())
+            }
+            "profile" -> {
+                profiles.savePeer(e.getString("key"), e.optInt("pv"), e.optString("bio"), e.optString("photo"))
             }
             "msg" -> _events.emit(
                 PeerEvent.Message(
@@ -433,6 +474,7 @@ class NetworkService(
             )
             "appended" -> _events.emit(PeerEvent.Appended(e.getString("key"), e.getString("id"), e.getLong("seq")))
             "delivered" -> _events.emit(PeerEvent.Delivered(e.getString("key"), e.getLong("length")))
+            "read" -> _events.emit(PeerEvent.Read(e.getString("key"), e.getLong("length")))
             "log" -> log(e.optString("msg"))
             "error" -> {
                 val msg = e.optString("msg")
@@ -479,8 +521,9 @@ class NetworkService(
                 val known = list.any { it.keyHex == key } || isGroupMember?.invoke(key) == true
                 // Carriers handing over someone's urgent message aren't requests either.
                 if (!known && via == "internet" && !e.optBoolean("carrier")) {
-                    // Strangers can make endless new IDs, so cap how many requests we keep.
-                    if (list.count { it.status == Contact.Status.REQUEST } >= MAX_REQUESTS) {
+                    // Strangers can make endless new IDs, so cap how many requests we keep; and
+                    // nobody gets in when I turned requests off.
+                    if (!settings.allowRequests.first() || list.count { it.status == Contact.Status.REQUEST } >= MAX_REQUESTS) {
                         log("Too many pending requests, dropped $short…")
                         send(cmd("disconnect").put("key", key).toString())
                         _state.update { it.copy(peers = it.peers - key) }
@@ -526,8 +569,12 @@ class NetworkService(
     }
 
     private suspend fun followName() {
+        // My bio/photo changed: tell the worklet (it lets contacts know).
         scope.launch {
-            identity.identity.filterNotNull().map { it.handle }.distinctUntilChanged().collect {
+            profiles.me.collect { send(profiles.myProfileJson().put("cmd", "profile").toString()) }
+        }
+        scope.launch {
+            identity.identity.filterNotNull().map { if (com.xalvxnlab.meshron.identity.Mode.anon) "" else it.handle }.distinctUntilChanged().collect {
                 send(cmd("handle").put("handle", it).toString())
             }
         }

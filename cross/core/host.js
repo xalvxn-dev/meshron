@@ -15,7 +15,7 @@ const { JsonFile, ensureDir, makeBox } = require('./store')
 
 const HEX64 = /^[0-9a-f]{64}$/
 const HEX32 = /^[0-9a-f]{32}$/
-const HANDLE = /^[a-z0-9_]{3,20}$/
+const HANDLE = /^[a-z0-9_]{3,24}$/
 const LINK = /meshron:\/\/id\/([a-z0-9]+)(?:\?name=(\S*))?/
 const BARE_ID = /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/
 
@@ -25,13 +25,13 @@ const DELIVERED = 2 // 1:1 only: peer stored it and acknowledged
 const RECEIVED = 3 // incoming
 const GROUP = 'g:'
 // Stories, view receipts, edits, unsends and reactions are log entries but not chat bubbles.
-const HIDDEN = new Set(['story', 'seen', 'edit', 'unsend', 'react'])
+const HIDDEN = new Set(['story', 'seen', 'edit', 'unsend', 'react', 'gmeta'])
 const STORY_KINDS = new Set(['story', 'seen'])
 const UNSENDABLE = new Set(['text', 'file'])
 const REPLY = /^↩ (.*)\n([\s\S]+)$/
 const bodyText = (body) => { const m = REPLY.exec(body); return m ? m[2] : body }
 const STORY_TTL = 24 * 60 * 60 * 1000
-const visible = (r) => !HIDDEN.has(r.kind)
+const visible = (r) => !HIDDEN.has(r.kind) && !(r.kind === 'text' && /^\{"op":"/.test(r.body || ''))
 
 const MAX_BODY = 4000
 const MAX_NAME = 32
@@ -39,7 +39,9 @@ const MAX_FILE = 25 * 1024 * 1024
 const MAX_REQUESTS = 30
 const FILE_CHUNK = 48 * 1024
 
-const DEFAULT_SETTINGS = { useInternet: true, carry: true, notifications: true, sounds: true, enterSends: true, previews: true }
+const DEFAULT_SETTINGS = { useInternet: true, carry: true, notifications: true, sounds: true, enterSends: true, previews: true, hideIp: false, disappearHours: 0, allowRequests: true, legalVersion: 0, noticesSeen: 0, cmFrom: 'everyone' }
+// Anonymous mode starts with every privacy option on.
+const ANON_SETTINGS = { hideIp: true, disappearHours: 24, previews: false }
 
 function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, onLink }) {
   const hex = (buf) => b4a.toString(buf, 'hex')
@@ -57,6 +59,37 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
   const wireId = (row) => (isGroup(row.peerKey) ? row.id.slice(row.id.indexOf(':') + 1) : row.id)
   const wireConv = (conv) => (isGroup(conv) ? conv : 'dm:' + conv)
   const safeName = (name) => (String(name).replace(/[^A-Za-z0-9._-]/g, '_').slice(-80) || 'file')
+
+  // ---- Public / anonymous ---------------------------------------------------------
+  // Anonymous is a second, separate identity: its own folder and its own secrets, so
+  // nothing on disk or on the wire links it to the public one. mode.json picks which opens.
+  const rootDir = dataDir
+  const baseSecrets = secrets
+  const modeFile = path.join(rootDir, 'mode.json')
+  const wipeFile = path.join(rootDir, '.logout')
+  // Log out: the last run left a marker, so clear every file before anything opens them.
+  function rmTree (p) {
+    let st
+    try { st = fs.statSync(p) } catch { return }
+    if (st.isDirectory()) { for (const n of fs.readdirSync(p)) rmTree(path.join(p, n)); try { fs.rmdirSync(p) } catch {} } else { try { fs.unlinkSync(p) } catch {} }
+  }
+  if (fs.existsSync(wipeFile)) { for (const n of fs.readdirSync(rootDir)) rmTree(path.join(rootDir, n)) }
+  let anon = false
+  try { anon = JSON.parse(fs.readFileSync(modeFile, 'utf8')).anon === true } catch {}
+  if (anon) {
+    dataDir = path.join(rootDir, 'anon')
+    const base = secrets
+    secrets = { get: (n) => base.get('anon.' + n), set: (n, v) => base.set('anon.' + n, v) }
+  }
+  const pinHash = (salt, pin) => {
+    let h = b4a.from(salt + ':' + pin)
+    for (let i = 0; i < 20000; i++) {
+      const out = b4a.alloc(32)
+      sodium.crypto_hash_sha256(out, h)
+      h = out
+    }
+    return hex(h)
+  }
 
   let loaded = null // promise of storage being open
   let state = null // JsonFile of everything except messages
@@ -92,10 +125,11 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
         box = makeBox(key)
         state = new JsonFile(fs, path.join(dataDir, 'state.bin'), () => ({
           v: 1, identity: null, contacts: [], groups: [], groupAcks: {}, groupLogs: {}, readMarks: {},
-          carried: [], settings: { ...DEFAULT_SETTINGS }, pinned: [], muted: [], drafts: {}, seenStories: []
+          carried: [], settings: { ...DEFAULT_SETTINGS, ...(anon ? ANON_SETTINGS : {}) }, pinned: [], muted: [], drafts: {}, seenStories: [],
+          profile: { pv: 0, bio: '', photo: '' }, profiles: {}
         }), box)
         const s = state.value
-        s.settings = { ...DEFAULT_SETTINGS, ...(s.settings || {}) }
+        s.settings = { ...DEFAULT_SETTINGS, ...(anon ? ANON_SETTINGS : {}), ...(s.settings || {}) }
         for (const k of ['pinned', 'muted', 'carried', 'contacts', 'groups', 'seenStories']) if (!Array.isArray(s[k])) s[k] = []
         for (const k of ['groupAcks', 'groupLogs', 'readMarks', 'drafts']) if (!s[k] || typeof s[k] !== 'object') s[k] = {}
         if (s.identity) myKey = s.identity.publicKey
@@ -220,6 +254,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
         last = r
         if (!r.outgoing && !r.read) unread++
       }
+      // A group with only settings changes so far still belongs in the list.
+      if (!last && isGroup(conv)) { const r = c.rows[c.rows.length - 1]; last = { id: r.id, peerKey: conv, kind: 'text', body: '', outgoing: false, read: true, localTime: r.localTime, sentAt: r.sentAt, status: r.status } }
       if (last) out.push({ conv, last, unread })
     }
     return out.sort((a, b) => b.last.localTime - a.last.localTime)
@@ -322,7 +358,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       log('Worklet started')
       const i = S().identity
       cmd({
-        cmd: 'start', seed, name: i.username, handle: i.handle || '', storage: path.join(dataDir, 'corestore'),
+        cmd: 'start', seed, name: i.username, handle: anon ? '' : i.handle || '', profile: anon ? { pv: 0, bio: '', photo: '' } : myProfile(), forceRelay: !!S().settings.hideIp, storage: path.join(dataDir, 'corestore'),
         cursors: inboxCursors(), internet: S().settings.useInternet !== false, carry: S().settings.carry !== false,
         carried: S().carried
       })
@@ -396,6 +432,16 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
   }
 
   async function onEvent(e) {
+    // Reels answers (matched to the request that asked).
+    if (e.req != null && reelWaits.has(e.req)) {
+      const w = reelWaits.get(e.req)
+      if (e.ev === 'reel-data') return w.chunks.push(e.data)
+      reelWaits.delete(e.req)
+      if (e.ev === 'reel-error') return w.reject(new Error(e.msg || 'Reels failed'))
+      return w.resolve(e.ev === 'reel-done' ? w.chunks : e)
+    }
+    if (e.ev === 'reels-changed') return emit('reels-changed', { chans: e.chans || [] })
+    if (typeof e.ev === 'string' && e.ev.startsWith('live-')) return emit(e.ev, e)
     switch (e.ev) {
       case 'ready': {
         net.keyMatches = e.publicKey === myKey
@@ -403,6 +449,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
         net.status = 'online'
         log('Network ready')
         syncContacts()
+        if (!anon) startReels()
         // Groups first, so queued group messages have a log to go into.
         for (const g of S().groups) openGroup(g)
         for (const r of [...allRows()].filter((r) => r.outgoing && r.status < DELIVERED && r.seq == null).sort((a, b) => a.localTime - b.localTime)) appendRow(r)
@@ -430,6 +477,15 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
           if ((!name || c.name === name) && c.handle === handle) return c
           return { ...c, name: name || c.name, handle }
         })
+        // Their bio/photo changed (or I never had it): ask for it.
+        if (e.pv > 0 && e.pv !== ((profiles()[e.key] || {}).pv || 0)) cmd({ cmd: 'profile-get', key: e.key })
+        return
+      }
+      case 'profile': {
+        if (!HEX64.test(e.key)) return
+        profiles()[e.key] = { pv: e.pv | 0, bio: String(e.bio || '').slice(0, 150), photo: String(e.photo || '') }
+        saveState()
+        emit('profiles', profilesView())
         return
       }
       case 'msg':
@@ -504,7 +560,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
         return
       // Local links (same Wi-Fi, Bluetooth): bytes for the platform transport that owns the link.
       case 'typing':
-        emit('typing', { key: e.key })
+        emit('typing', { key: e.key, what: e.what === 'recording' ? 'recording' : 'typing' })
         return
       case 'link-data':
       case 'link-close':
@@ -547,8 +603,9 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       // Someone we don't know dialled our ID: keep it as a request for the user.
       // (Carriers handing over someone's urgent message aren't requests.)
       if (!known && via === 'internet' && !e.carrier) {
-        // Strangers can make endless new IDs, so cap how many requests we keep.
-        if (list.filter((c) => c.status === 'REQUEST').length >= MAX_REQUESTS) {
+        // Strangers can make endless new IDs, so cap how many requests we keep; and nobody gets
+        // in when chat requests are turned off.
+        if (S().settings.allowRequests === false || list.filter((c) => c.status === 'REQUEST').length >= MAX_REQUESTS) {
           log('Too many pending requests, dropped ' + short + '…')
           cmd({ cmd: 'disconnect', key })
           delete net.peers[key]
@@ -602,7 +659,10 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       localTime: now(), status: RECEIVED, signature: e.sig, read: HIDDEN.has(e.kind), seq: e.seq, senderKey: e.from,
       kind: e.kind || 'text', localPath: null
     }
-    if (insertRow(row)) afterIncoming(row, g.name)
+    if (insertRow(row)) {
+      if (row.kind === 'gmeta') { try { applyMeta(g.id, e.from, JSON.parse(row.body)) } catch {} }
+      afterIncoming(row, g.name)
+    }
     cmd({ cmd: 'group-ack', group: e.group, member: e.from, seq: e.seq })
   }
 
@@ -613,7 +673,9 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     }
     if (HIDDEN.has(row.kind)) return
     if (row.kind === 'file') download(row)
-    if (!S().muted.includes(row.peerKey)) emit('incoming', { conv: row.peerKey, row, title })
+    if (S().muted.includes(row.peerKey)) return
+    if (anon) emit('incoming', { conv: row.peerKey, row: { ...row, kind: 'text', body: 'New message' }, title: 'Meshron' })
+    else emit('incoming', { conv: row.peerKey, row, title })
   }
 
   function parseInvite(json) {
@@ -621,10 +683,12 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       const o = JSON.parse(json)
       const members = Array.isArray(o.members) ? o.members : null
       if (!HEX32.test(o.id) || !HEX64.test(o.secret) || !HEX64.test(o.creator) || !members) return null
-      if (members.some((m) => !HEX64.test(m)) || !members.includes(o.creator) || members.length > 64) return null
+      if (members.some((m) => !HEX64.test(m)) || members.length > 256) return null
+      const owner = HEX64.test(o.owner) && members.includes(o.owner) ? o.owner : o.creator
+      const admins = (Array.isArray(o.admins) ? o.admins : []).filter((m) => members.includes(m))
       return {
         id: o.id, name: String(o.name || '').slice(0, 48).trim() || 'Group', secret: o.secret, creatorKey: o.creator,
-        members: [...new Set(members)], createdAt: now()
+        members: [...new Set(members)], createdAt: now(), ownerKey: owner, admins, bio: String(o.bio || '').slice(0, 200), icon: String(o.icon || '').slice(0, 24000)
       }
     } catch {
       return null
@@ -634,13 +698,102 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
   function acceptInvite(from, json) {
     const g = parseInvite(json)
     if (!g || !g.members.includes(from) || !g.members.includes(myKey)) return false
-    if (!S().groups.some((x) => x.id === g.id)) {
+    const old = S().groups.find((x) => x.id === g.id)
+    if (!old) {
       S().groups.push(g)
       saveState()
       emit('groups', groupsView())
       openGroup(g)
+    } else if (!old.members.includes(myKey) && old.secret === g.secret) {
+      // Added back after leaving or being removed.
+      Object.assign(old, { ...g, createdAt: old.createdAt })
+      saveState()
+      emit('groups', groupsView())
+      openGroup(old)
     }
     return true
+  }
+
+  // ---- Group roles and settings (same rules as Android) -----------------------------
+  // Every change is a signed "gmeta" entry in the sender's group log; each member applies it
+  // only if the sender may make it (owner > admins > members).
+
+  const ownerOf = (g) => g.ownerKey || g.creatorKey
+  const isAdminOf = (g, k) => k === ownerOf(g) || (g.admins || []).includes(k)
+
+  function applyMeta(groupId, from, o) {
+    const g = S().groups.find((x) => x.id === groupId)
+    if (!g || !g.members.includes(from) || !o || typeof o !== 'object') return
+    const who = typeof o.who === 'string' ? o.who : ''
+    const members = [...g.members]
+    let admins = [...(g.admins || [])]
+    let touched = false
+    const owner = ownerOf(g)
+    switch (o.op) {
+      case 'info':
+        if (!isAdminOf(g, from)) return
+        g.name = String(o.name || '').slice(0, 48).trim() || g.name
+        g.bio = String(o.bio || '').slice(0, 200)
+        g.icon = String(o.icon || '').slice(0, 24000)
+        touched = true
+        break
+      case 'admin':
+        if (from !== owner || !members.includes(who) || who === owner) return
+        admins = admins.filter((k) => k !== who)
+        if (o.on) admins.push(who)
+        g.admins = admins; touched = true
+        break
+      case 'remove':
+        if (!members.includes(who) || who === owner || !(from === owner || (admins.includes(from) && !admins.includes(who)))) return
+        g.members = members.filter((k) => k !== who); g.admins = admins.filter((k) => k !== who); touched = true
+        break
+      case 'add':
+        if (!isAdminOf(g, from)) return
+        for (const k of (Array.isArray(o.who) ? o.who : []).slice(0, 64)) if (HEX64.test(k) && !members.includes(k)) members.push(k)
+        if (members.length > 256) return
+        g.members = members; touched = true
+        break
+      case 'owner':
+        if (from !== owner || !members.includes(who) || who === from) return
+        admins = admins.filter((k) => k !== who)
+        if (!admins.includes(from)) admins.push(from)
+        g.ownerKey = who; g.admins = admins; touched = true
+        break
+      case 'leave':
+        if (from === owner) return
+        g.members = members.filter((k) => k !== from); g.admins = admins.filter((k) => k !== from); touched = true
+        break
+      case 'del': {
+        if (!isAdminOf(g, from)) return
+        const c = chat(GROUP + g.id)
+        const target = c.rows.find((r) => r.id === String(o.id || ''))
+        // Admins can't delete the owner's messages; the owner can delete anything.
+        if (!target || (from !== owner && target.senderKey === owner) || !UNSENDABLE.has(target.kind)) return
+        if (target.localPath) try { fs.unlinkSync(target.localPath) } catch {}
+        target.kind = 'deleted'; target.body = ''; target.localPath = null; target.reactions = {}
+        c.file.save()
+        changed(GROUP + g.id, [target])
+        return
+      }
+      default:
+        return
+    }
+    if (touched) {
+      saveState()
+      emit('groups', groupsView())
+      if (net.status === 'online' && g.members.includes(myKey)) openGroup(g)
+    }
+  }
+
+  function groupMeta(groupId, o) {
+    const g = S().groups.find((x) => x.id === groupId)
+    if (!g) throw new Error('No such group')
+    applyMeta(g.id, myKey, o)
+    sendRow(GROUP + g.id, JSON.stringify(o), 'gmeta')
+  }
+
+  function inviteJson(g) {
+    return JSON.stringify({ id: g.id, name: g.name, secret: g.secret, creator: g.creatorKey, members: g.members, owner: ownerOf(g), admins: g.admins || [], bio: g.bio || '', icon: g.icon || '' })
   }
 
   // ---- Files ------------------------------------------------------------------------
@@ -947,8 +1100,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     const name = cleanName(username)
     if (name.length < 1 || name.length > MAX_NAME) throw new Error('Name must be 1–' + MAX_NAME + ' characters')
     if (S().identity) throw new Error('This device already has an account')
-    const h = cleanHandle(handle)
-    if (h && !HANDLE.test(h)) throw new Error('Usernames are 3–20 letters, numbers or _')
+    const h = anon ? '' : cleanHandle(handle)
+    if (h && !HANDLE.test(h)) throw new Error('Usernames are 3–24 letters, numbers or _')
     const pk = b4a.alloc(sodium.crypto_sign_PUBLICKEYBYTES)
     const sk = b4a.alloc(sodium.crypto_sign_SECRETKEYBYTES)
     sodium.crypto_sign_seed_keypair(pk, sk, seed)
@@ -965,14 +1118,322 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
 
   // ---- Calls from the screens -----------------------------------------------------------
 
+  // ---- Profiles (bio + small photo) --------------------------------------------------
+  const profiles = () => (S().profiles = S().profiles || {})
+  const myProfile = () => (S().profile = S().profile || { pv: 0, bio: '', photo: '' })
+  /** For the screens: { me: {bio, photo}, peers: { key: {bio, photo} } }, photos as data URLs. */
+  function profilesView() {
+    const url = (b64) => (b64 ? 'data:image/jpeg;base64,' + b64 : '')
+    const peers = {}
+    for (const [k, p] of Object.entries(profiles())) peers[k] = { bio: p.bio, photo: url(p.photo) }
+    const me = myProfile()
+    return { me: { bio: me.bio, link: me.link || '', photo: url(me.photo) }, peers }
+  }
+
+  let sweeping = null
+  function startSweep() {
+    if (sweeping) return
+    const sweep = () => {
+      const hours = Number(S().settings.disappearHours) || 0
+      if (hours <= 0) return
+      const before = now() - hours * 3600 * 1000
+      for (const [conv, c] of chats) {
+        const old = c.rows.filter((r) => (r.localTime || r.sentAt || 0) < before)
+        if (!old.length) continue
+        keepReadPosition(conv)
+        for (const r of old) if (r.localPath) try { fs.unlinkSync(r.localPath) } catch {}
+        const gone = new Set(old)
+        c.rows.splice(0, c.rows.length, ...c.rows.filter((r) => !gone.has(r)))
+        c.file.save()
+        emit('msgs-removed', { conv, ids: old.map((r) => r.id) })
+        changed(conv)
+      }
+    }
+    sweep()
+    sweeping = setInterval(sweep, 60 * 1000)
+  }
+
+  // ---- Reels (short public videos; the worklet's reels.js does the work) -------------
+
+  const reelsDir = path.join(dataDir, 'reels-cache')
+  const reelWaits = new Map()
+  let reelSeq = 0
+  let reelsCh = null
+  const REELS_CACHE = 400 * 1024 * 1024
+  function reelCmd(c, timeout = 30000, req = 'r' + ++reelSeq) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { reelWaits.delete(req); reject(new Error('Reels took too long. Check your connection.')) }, timeout)
+      reelWaits.set(req, {
+        chunks: [],
+        resolve: (v) => { clearTimeout(timer); resolve(v) },
+        reject: (err) => { clearTimeout(timer); reject(err) }
+      })
+      cmd({ ...c, req })
+    })
+  }
+  function reelsProfile() {
+    const i = S().identity || {}
+    const p = myProfile()
+    return { name: i.username || '', handle: i.handle || '', bio: p.bio || '', link: p.link || '', photo: p.photo && p.photo.length <= 60 * 1024 ? p.photo : '' }
+  }
+  function startReels() {
+    if (anon || reelsCh) return
+    reelCmd({ cmd: 'reels-start', ...reelsProfile() }, 60000).then((r) => {
+      reelsCh = r.ch
+      emit('reels-ready', { ch: r.ch })
+    }, (err) => log('Reels: ' + err.message))
+  }
+  function reelsMe() {
+    if (!anon && reelsCh) cmd({ cmd: 'reels-me', ...reelsProfile() })
+  }
+  const needReels = () => {
+    if (anon) throw new Error('Reels are off while you are anonymous')
+    if (!reelsCh) throw new Error('Reels are starting. Try again in a moment.')
+  }
+  const reelFile = (ch, id) => {
+    if (!HEX64.test(ch) || !/^[0-9a-f]{16,32}$/.test(id)) throw new Error('Bad video')
+    return path.join(reelsDir, ch.slice(0, 16) + '-' + id + '.mp4')
+  }
+  const reelLoads = new Map()
+  function trimReelCache() {
+    try {
+      const files = fs.readdirSync(reelsDir).map((n) => {
+        const p = path.join(reelsDir, n)
+        const st = fs.statSync(p)
+        return { p, size: st.size, t: st.mtimeMs || 0 }
+      }).sort((a, b) => a.t - b.t)
+      let total = files.reduce((n, x) => n + x.size, 0)
+      for (const x of files) {
+        if (total <= REELS_CACHE) break
+        try { fs.unlinkSync(x.p); total -= x.size } catch {}
+      }
+    } catch {}
+  }
+
+  // ---- Public accounts (same crypto as Android's AccountCrypto) ---------------------------
+  //   salt    = SHA-256("meshron-account-v1:" + username)[0..16]
+  //   master  = Argon2id(password, salt, 3 passes, 64 MiB) -> 64 bytes
+  //   authKey = master[0..32]  (proves the password; the server keeps only a hash)
+  //   lockKey = master[32..64] (locks the identity seed; never leaves the device)
+  //   blob    = base64(nonce12 || ChaCha20-Poly1305(lockKey, seed, ad = "meshron-blob-v1"))
+  let pendingKeys = null // { u, auth, lock } between typing the password and the server's answer
+  function deriveKeys(username, password) {
+    const u = String(username || '').trim().replace(/^@/, '').toLowerCase()
+    const h = b4a.alloc(32)
+    sodium.crypto_hash_sha256(h, b4a.from('meshron-account-v1:' + u))
+    const master = b4a.alloc(64)
+    sodium.crypto_pwhash(master, b4a.from(String(password)), h.subarray(0, 16), 3, 64 * 1024 * 1024, sodium.crypto_pwhash_ALG_ARGON2ID13)
+    const keys = { u, auth: hex(master.subarray(0, 32)), lock: b4a.from(master.subarray(32, 64)) }
+    master.fill(0)
+    return keys
+  }
+  const AD = b4a.from('meshron-blob-v1')
+  function lockSeed(lock, seed) {
+    const nonce = b4a.alloc(12); sodium.randombytes_buf(nonce)
+    const out = b4a.alloc(seed.byteLength + 16)
+    sodium.crypto_aead_chacha20poly1305_ietf_encrypt(out, seed, AD, null, nonce, lock)
+    return b4a.toString(b4a.concat([nonce, out]), 'base64')
+  }
+  function unlockSeed(lock, blob) {
+    const b = b4a.from(String(blob), 'base64')
+    const seed = b4a.alloc(b.byteLength - 12 - 16)
+    sodium.crypto_aead_chacha20poly1305_ietf_decrypt(seed, null, b.subarray(12), AD, b.subarray(0, 12), lock)
+    return seed
+  }
+  async function saveAccount(a) { await secrets.set('account', JSON.stringify(a)) }
+  async function loadAccount() { try { return JSON.parse((await secrets.get('account')) || 'null') } catch { return null } }
+
   const methods = {
+    /** Turns a password into keys (slow on purpose). Returns the authKey to send to the server. */
+    async 'account.keys'({ username, password }) {
+      pendingKeys = deriveKeys(username, password)
+      return { username: pendingKeys.u, authKey: pendingKeys.auth }
+    },
+    /** After a good sign-in: open the identity with the password's lock key and use it here. */
+    async 'account.adopt'({ blob, publicKey, email, twoFactor }) {
+      const k = pendingKeys
+      if (!k) throw new Error('Start again')
+      let seed
+      try { seed = unlockSeed(k.lock, blob) } catch { throw new Error("Couldn't open the account") }
+      const pk = b4a.alloc(32); const sk = b4a.alloc(64)
+      sodium.crypto_sign_seed_keypair(pk, sk, seed); sk.fill(0)
+      if (hex(pk) !== publicKey) { seed.fill(0); throw new Error("Account data doesn't match") }
+      if (!S().identity) await createIdentity(k.u, seed, k.u)
+      else if (S().identity.publicKey !== publicKey) { seed.fill(0); throw new Error('This device already has a different Meshron ID') }
+      await saveAccount({ username: k.u, email: email || '', authKey: k.auth, twoFactor: !!twoFactor })
+      k.lock.fill(0); pendingKeys = null
+      emit('account', { username: k.u, email: email || '', twoFactor: !!twoFactor })
+      return { ok: true }
+    },
+    /** For signing up: this device's identity locked with the new password, and the signature. */
+    async 'account.signupData'({ username }) {
+      const k = pendingKeys
+      if (!k) throw new Error('Start again')
+      const seedHex = await secrets.get('seed')
+      if (!seedHex) throw new Error('The private key is missing from this device')
+      const seed = b4a.from(seedHex, 'hex')
+      const pk = b4a.alloc(32); const sk = b4a.alloc(64)
+      sodium.crypto_sign_seed_keypair(pk, sk, seed)
+      const sig = b4a.alloc(64)
+      sodium.crypto_sign_detached(sig, b4a.from('meshron-signup-v1:' + k.u), sk)
+      sk.fill(0)
+      const blob = lockSeed(k.lock, seed); seed.fill(0)
+      return { blob, publicKey: hex(pk), sig: hex(sig), authKey: k.auth }
+    },
+    async 'account.saved'({ email, twoFactor }) {
+      const k = pendingKeys
+      if (!k) throw new Error('Start again')
+      await saveAccount({ username: k.u, email: email || '', authKey: k.auth, twoFactor: !!twoFactor })
+      if (S().identity && !S().identity.handle) { S().identity.handle = k.u; saveState(); cmd({ cmd: 'handle', handle: k.u }); reelsMe(); emit('identity', identityView()) }
+      k.lock.fill(0); pendingKeys = null
+      emit('account', { username: k.u, email: email || '', twoFactor: !!twoFactor })
+      return { ok: true }
+    },
+    async 'account.state'() { const a = await loadAccount(); return a ? { username: a.username, email: a.email, twoFactor: a.twoFactor } : null },
+    /** Credentials for account requests (AI, moderation) made by the screens. */
+    async 'account.auth'() { const a = await loadAccount(); if (!a) throw new Error('Create a Meshron account (Settings) to use this'); return { username: a.username, authKey: a.authKey } },
+    async 'account.forget'() { await secrets.set('account', ''); emit('account', null); return { ok: true } },
+
+    /** Add-contact link for someone found in Reels. */
+    async 'reels.link'({ id, name }) {
+      if (!HEX64.test(id)) throw new Error('Unknown person')
+      return 'meshron://id/' + idOf(id) + '?name=' + encodeURIComponent(String(name || '').slice(0, 32)).replace(/%20/g, '+')
+    },
+    async 'reels.status'() {
+      return { on: !anon, ready: !!reelsCh, ch: reelsCh }
+    },
+    async 'reels.feed'({ kind = 'foryou', ch, offset = 0, limit = 12, sound }) {
+      needReels()
+      const r = await reelCmd({ cmd: 'reels-feed', kind, ch, offset, limit, sound })
+      return { items: r.items || [], more: !!r.more }
+    },
+    async 'reels.profile'({ ch }) {
+      needReels()
+      return (await reelCmd({ cmd: 'reels-profile', ch }, 20000)).profile
+    },
+    async 'reels.search'({ q }) {
+      needReels()
+      return (await reelCmd({ cmd: 'reels-search', q: String(q || '').slice(0, 40) }, 30000)).users || []
+    },
+    async 'reels.comments'({ ch, id }) {
+      needReels()
+      return (await reelCmd({ cmd: 'reel-comments', ch, id })).list || []
+    },
+    async 'reels.repost'({ ch, id, on, cid, quote }) { needReels(); await reelCmd({ cmd: 'reel-repost', ch, id, on: !!on, cid: cid || null, quote: quote || '' }) },
+    async 'reels.invite'({ id, who }) { needReels(); await reelCmd({ cmd: 'reel-invite', id, who }) },
+    async 'reels.collabAccept'({ ch, id }) { needReels(); await reelCmd({ cmd: 'reel-collab-accept', ch, id }) },
+    async 'reels.prefs'() { needReels(); return reelCmd({ cmd: 'reels-prefs' }) },
+    async 'reels.setPrefs'({ weights, words }) { needReels(); await reelCmd({ cmd: 'reels-prefs-set', weights, words }) },
+    async 'reels.notInterested'({ ch, id }) { needReels(); await reelCmd({ cmd: 'reel-notint', ch, id }) },
+    async 'reels.hideCreator'({ ch, on }) { needReels(); await reelCmd({ cmd: 'reel-hidech', ch, on: !!on }) },
+    async 'reels.setPrivate'({ id, on }) { needReels(); await reelCmd({ cmd: 'reel-private', id, on: !!on }) },
+    // Live: going live is written to my Reels channel; video/audio/chat go over the live link.
+    async 'reels.lives'() { needReels(); return (await reelCmd({ cmd: 'reels-lives' })).list },
+    async 'live.start'({ id, title }) { needReels(); await reelCmd({ cmd: 'reel-live', on: true, id, title }); cmd({ cmd: 'live-start', id, title }) },
+    async 'live.stop'({ id }) { cmd({ cmd: 'live-stop' }); if (reelsCh) await reelCmd({ cmd: 'reel-live', on: false, id }) },
+    async 'live.frame'({ kind, data }) { cmd({ cmd: 'live-frame', kind, data }) },
+    async 'live.watch'({ host, id }) { cmd({ cmd: 'live-watch', host, id, name: (S().identity || {}).username || '' }) },
+    async 'live.leave'({ host }) { cmd({ cmd: 'live-leave', host }) },
+    async 'live.chat'({ host, text }) { cmd({ cmd: 'live-chat', host: host || '', text }) },
+    async 'live.heart'({ host }) { cmd({ cmd: 'live-heart', host: host || '' }) },
+    async 'live.keyreq'({ host }) { cmd({ cmd: 'live-keyreq', host }) },
+    async 'reels.like'({ ch, id, on }) { needReels(); await reelCmd({ cmd: 'reel-like', ch, id, on: !!on }) },
+    async 'reels.fav'({ ch, id, on }) { needReels(); await reelCmd({ cmd: 'reel-fav', ch, id, on: !!on }) },
+    async 'reels.follow'({ ch, on }) { needReels(); await reelCmd({ cmd: 'reel-follow', ch, on: !!on }) },
+    async 'reels.comment'({ ch, id, text, re }) { needReels(); return (await reelCmd({ cmd: 'reel-comment', ch, id, text: String(text || ''), re: re || null })).cid },
+    /** Meshron AI's signed answer, posted under a comment (the worklet checks the signature). */
+    async 'reels.aiComment'({ ch, id, text, re, sig }) { needReels(); return (await reelCmd({ cmd: 'reel-comment', ch, id, text: String(text || ''), re, ai: sig })).cid },
+    /** Is this really Meshron AI's answer? (signed by its key) */
+    async 'ai.verify'({ ref, re, text, sig }) {
+      try { return sodium.crypto_sign_verify_detached(b4a.from(String(sig), 'hex'), b4a.from('meshron-ai-v1\n' + ref + '\n' + re + '\n' + text), b4a.from('1814b421f78a892ee898487af96ec45421cf50f996fae9ab4bf1f9754167824e', 'hex')) } catch { return false }
+    },
+    /** Following / followers / friends (people who follow each other). */
+    async 'reels.people'({ kind }) { needReels(); return reelCmd({ cmd: 'reels-people', kind }) },
+    /** Someone's Reels channel from their Meshron ID (to open their page). */
+    async 'reels.chOf'({ id }) { needReels(); return (await reelCmd({ cmd: 'reels-ch-of', id })).ch || null },
+    async 'reels.uncomment'({ ch, cid }) { needReels(); await reelCmd({ cmd: 'reel-uncomment', ch, cid }) },
+    async 'reels.delete'({ id }) {
+      needReels()
+      await reelCmd({ cmd: 'reel-delete', id })
+      try { fs.unlinkSync(reelFile(reelsCh, id)) } catch {}
+    },
+    /** Makes sure the video is on disk (downloading it from peers if needed); returns its size. */
+    async 'reels.load'({ ch, id }) {
+      needReels()
+      const file = reelFile(ch, id)
+      try { return { size: fs.statSync(file).size } } catch {}
+      if (!reelLoads.has(file)) {
+        reelLoads.set(file, (async () => {
+          const chunks = await reelCmd({ cmd: 'reel-get', ch, id }, 240000)
+          ensureDir(fs, reelsDir)
+          const tmp = file + '.part'
+          fs.writeFileSync(tmp, b4a.concat(chunks.map((d) => b4a.from(d, 'base64'))))
+          fs.renameSync(tmp, file)
+          trimReelCache()
+        })().finally(() => reelLoads.delete(file)))
+      }
+      await reelLoads.get(file)
+      return { size: fs.statSync(file).size }
+    },
+    async 'reels.read'({ ch, id, offset = 0, length = 1024 * 1024 }) {
+      const file = reelFile(ch, id)
+      const fd = fs.openSync(file, 'r')
+      try {
+        const buf = b4a.alloc(Math.min(Math.max(0, length | 0), 2 * 1024 * 1024))
+        const n = fs.readSync(fd, buf, 0, buf.byteLength, offset)
+        return { data: b4a.toString(buf.subarray(0, n), 'base64'), done: n < buf.byteLength }
+      } finally {
+        fs.closeSync(fd)
+      }
+    },
+    async 'reels.begin'() {
+      needReels()
+      const xfer = 'x' + ++reelSeq
+      cmd({ cmd: 'reel-begin', xfer })
+      return xfer
+    },
+    async 'reels.chunk'({ xfer, data }) {
+      cmd({ cmd: 'reel-chunk', xfer, data })
+    },
+    async 'reels.end'({ xfer, cap, dur, w, h, thumb, sound, title }) {
+      needReels()
+      const r = await reelCmd({ cmd: 'reel-end', xfer, cap, dur, w, h, thumb, sound, title }, 120000, xfer)
+      return { ch: r.ch, id: r.id }
+    },
+
     async init() {
       await load()
       startNetwork()
+      startSweep()
       return {
-        platform, identity: identityView(), contacts: contactsView(), groups: groupsView(), summaries: summaries(),
-        net, prefs: prefsView(), fileStatus, limits: { MAX_BODY, MAX_NAME, MAX_FILE }, stories: storiesView()
+        platform, anon, locked: !!S().lock, identity: identityView(), contacts: contactsView(), groups: groupsView(), summaries: summaries(),
+        net, prefs: prefsView(), fileStatus, limits: { MAX_BODY, MAX_NAME, MAX_FILE }, stories: storiesView(),
+        profiles: profilesView()
       }
+    },
+
+    /** My bio and/or photo (base64 JPEG; '' removes it; undefined keeps it). Contacts refresh it. */
+    async 'profile.set'({ bio, photo, link }) {
+      if (anon) throw new Error('Anonymous has no profile')
+      const p = myProfile()
+      if (typeof bio === 'string') p.bio = bio.trim().slice(0, 150)
+      if (typeof link === 'string') {
+        // A website on the profile: https only (like Android).
+        const t = link.trim()
+        const w = t && !/^https?:\/\//.test(t) ? 'https://' + t : t.replace(/^http:\/\//, 'https://')
+        if (w && !/^https:\/\/[^\s/]+\.[^\s]+$/.test(w)) throw new Error("That doesn't look like a website")
+        p.link = w.slice(0, 200)
+      }
+      if (typeof photo === 'string') {
+        if (photo.length > 120 * 1024 || !/^[A-Za-z0-9+/=]*$/.test(photo)) throw new Error('That photo is too big')
+        p.photo = photo
+      }
+      p.pv = (p.pv || 0) + 1
+      saveState()
+      cmd({ cmd: 'profile', ...p })
+      reelsMe()
+      emit('profiles', profilesView())
+      return profilesView()
     },
 
     async 'identity.create'({ name, handle }) {
@@ -993,14 +1454,17 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       S().identity.username = n
       saveState()
       cmd({ cmd: 'name', name: n })
+      reelsMe()
       emit('identity', identityView())
     },
     async 'identity.setHandle'({ handle }) {
+      if (anon) throw new Error('Anonymous has no username')
       const h = cleanHandle(handle)
-      if (h && !HANDLE.test(h)) throw new Error('Usernames are 3–20 letters, numbers or _')
+      if (h && !HANDLE.test(h)) throw new Error('Usernames are 3–24 letters, numbers or _')
       S().identity.handle = h
       saveState()
       cmd({ cmd: 'handle', handle: h })
+      reelsMe()
       emit('identity', identityView())
     },
     async 'identity.recoveryKey'() {
@@ -1109,8 +1573,9 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       sendRow(conv, JSON.stringify({ id: m.id, e: String(e || '').slice(0, 16) }), 'react')
     },
     /** "typing…" for the other person in a 1:1 chat (live only). */
-    async 'chat.typing'({ conv }) {
-      if (net.status === 'online' && HEX64.test(conv)) cmd({ cmd: 'typing', key: conv })
+    async 'chat.typing'({ conv, what }) {
+      if (anon) return
+      if (net.status === 'online' && HEX64.test(conv)) cmd({ cmd: 'typing', key: conv, what: what === 'recording' ? 'recording' : 'typing' })
     },
     async 'stories.list'() {
       sweepStories()
@@ -1188,6 +1653,50 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       changed(conv)
     },
 
+    // ---- Moderation, badges, verification (the screens call the account server; only
+    // the signature is made here, because this is where the identity key lives) ----
+    async 'mod.sign'({ path: p, body }) {
+      if (anon) throw new Error('Not available in anonymous mode')
+      if (typeof p !== 'string' || !p.startsWith('/v1/') || typeof body !== 'string' || body.length > 1200000) throw new Error('Bad request')
+      const seed = await secrets.get('seed')
+      if (!seed || !HEX64.test(seed)) throw new Error('The private key is missing from this device')
+      const pk = b4a.alloc(sodium.crypto_sign_PUBLICKEYBYTES)
+      const sk = b4a.alloc(sodium.crypto_sign_SECRETKEYBYTES)
+      sodium.crypto_sign_seed_keypair(pk, sk, b4a.from(seed, 'hex'))
+      const ts = now()
+      const digest = b4a.alloc(sodium.crypto_hash_sha256_BYTES)
+      sodium.crypto_hash_sha256(digest, b4a.from(body))
+      const sig = b4a.alloc(sodium.crypto_sign_BYTES)
+      sodium.crypto_sign_detached(sig, b4a.from('meshron-mod-v1\n' + p + '\n' + ts + '\n' + hex(digest)), sk)
+      sk.fill(0)
+      return { id: hex(pk), ts, sig: hex(sig), p: body }
+    },
+    /** Who may comment on my reels: everyone / followers / friends / off. */
+    async 'reels.cmFrom'({ v }) { needReels(); await reelCmd({ cmd: 'reel-cmfrom', v }) },
+
+    async 'group.info'({ id, name, bio, icon }) { groupMeta(id, { op: 'info', name: String(name || '').slice(0, 48), bio: String(bio || '').slice(0, 200), icon: String(icon || '').slice(0, 24000) }) },
+    async 'group.admin'({ id, who, on }) { groupMeta(id, { op: 'admin', who, on: !!on }) },
+    async 'group.remove'({ id, who }) { groupMeta(id, { op: 'remove', who }) },
+    async 'group.owner'({ id, who }) { groupMeta(id, { op: 'owner', who }) },
+    async 'group.leave'({ id }) {
+      const g = S().groups.find((x) => x.id === id)
+      if (g && ownerOf(g) === myKey && g.members.length > 1) throw new Error('Make someone else the owner first')
+      groupMeta(id, { op: 'leave' })
+    },
+    async 'group.add'({ id, members }) {
+      const g = S().groups.find((x) => x.id === id)
+      if (!g) throw new Error('No such group')
+      const fresh = [...new Set((members || []).filter((k) => HEX64.test(k) && !g.members.includes(k)))]
+      if (!fresh.length) return
+      groupMeta(id, { op: 'add', who: fresh })
+      const inv = inviteJson(g)
+      for (const m of fresh) sendRow(m, inv, 'invite')
+    },
+    async 'group.deleteForEveryone'({ conv, id }) {
+      if (!isGroup(conv)) throw new Error('Not a group')
+      groupMeta(conv.slice(GROUP.length), { op: 'del', id })
+    },
+
     async 'group.create'({ name, members }) {
       const keys = [...new Set((members || []).filter((k) => HEX64.test(k) && k !== myKey))]
       const g = { id: randomHex(16), name: String(name || '').trim().slice(0, 48) || 'Group', secret: randomHex(32), creatorKey: myKey, members: [myKey, ...keys], createdAt: now() }
@@ -1195,7 +1704,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       saveState()
       emit('groups', groupsView())
       if (net.status === 'online') openGroup(g)
-      const invite = JSON.stringify({ id: g.id, name: g.name, secret: g.secret, creator: g.creatorKey, members: g.members })
+      const invite = inviteJson(g)
       for (const m of keys) sendRow(m, invite, 'invite')
       return GROUP + g.id
     },
@@ -1241,6 +1750,44 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     },
     async 'file.retry'() {
       retryDownloads()
+    },
+
+    /** Switches between the public and the anonymous identity; the app then restarts. */
+    async 'mode.switch'({ anon: to }) {
+      ensureDir(fs, rootDir)
+      fs.writeFileSync(modeFile, JSON.stringify({ anon: !!to }))
+      if (state) state.flush()
+      for (const c of chats.values()) if (c.file.timer) c.file.flush()
+      setTimeout(() => emit('restart', { anon: !!to }), 50)
+      return true
+    },
+    /**
+     * Log out · switch account: clears this device (chats, files, keys, settings, both identities)
+     * and starts again at the welcome screen. The Meshron account itself stays on the server.
+     */
+    async 'app.logout'() {
+      for (const n of ['seed', 'storage-key', 'account']) { await baseSecrets.set(n, ''); await baseSecrets.set('anon.' + n, '') }
+      ensureDir(fs, rootDir)
+      fs.writeFileSync(wipeFile, '1')
+      setTimeout(() => emit('restart', { anon: false, logout: true }), 50)
+      return true
+    },
+    /** App lock: a 6-digit PIN asked for when Meshron opens. '' removes it. */
+    async 'lock.set'({ pin }) {
+      if (!pin) delete S().lock
+      else {
+        if (!/^[0-9]{6}$/.test(pin)) throw new Error('The PIN is 6 digits')
+        const salt = randomHex(16)
+        S().lock = salt + ':' + pinHash(salt, pin)
+      }
+      state.flush()
+      return !!S().lock
+    },
+    async 'lock.check'({ pin }) {
+      const l = S().lock
+      if (!l) return true
+      const [salt, h] = l.split(':')
+      return pinHash(salt, String(pin || '')) === h
     },
 
     async 'prefs.set'({ key, value }) {

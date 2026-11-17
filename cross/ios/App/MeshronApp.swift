@@ -21,6 +21,7 @@ struct MeshronApp: App {
       switch phase {
       case .background: bridge.enterBackground()
       case .active: bridge.enterForeground()
+      case .inactive: bridge.resignActive()
       default: break
       }
     }

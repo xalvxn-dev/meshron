@@ -1,5 +1,7 @@
 package com.xalvxnlab.meshron.ui.components
 
+import androidx.compose.ui.draw.clip
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.widthIn
@@ -46,6 +48,9 @@ fun initials(name: String): String {
  * A gradient circle (rounded square for groups) with initials. Online shows a green dot;
  * [ring] draws the brand-gradient "story" ring around it instead (used in Active now).
  */
+/** Profile photos by key (hex); Avatar shows one when there is one for its seed. */
+val LocalPhotos = androidx.compose.runtime.staticCompositionLocalOf<(String) -> androidx.compose.ui.graphics.ImageBitmap?> { { null } }
+
 @Composable
 fun Avatar(
     name: String,
@@ -55,7 +60,9 @@ fun Avatar(
     online: Boolean = false,
     @Suppress("UNUSED_PARAMETER") showOffline: Boolean = false,
     ring: Boolean = false,
+    image: androidx.compose.ui.graphics.ImageBitmap? = null,
 ) {
+    // Meshron's signature: soft squares for people, tighter tiles for groups (no circles).
     val shape = if (group) RoundedCornerShape(size * 0.3f) else CircleShape
     Box {
         Box(
@@ -67,13 +74,22 @@ fun Avatar(
                 .background(MeshColors.avatarBrush(seed), shape),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                initials(name),
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = (size.value * (if (ring) 0.32f else 0.38f)).sp,
-                letterSpacing = 0.sp,
-            )
+            val photo = image ?: if (group) null else LocalPhotos.current(seed)
+            if (photo != null) {
+                androidx.compose.foundation.Image(
+                    photo, contentDescription = name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.matchParentSize().clip(shape),
+                )
+            } else {
+                Text(
+                    initials(name),
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = (size.value * (if (ring) 0.32f else 0.38f)).sp,
+                    letterSpacing = 0.sp,
+                )
+            }
         }
         if (online && !ring) {
             val dot = (size * 0.27f).coerceAtLeast(10.dp)

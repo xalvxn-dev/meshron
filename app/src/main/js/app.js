@@ -56,7 +56,7 @@ const MAX_BODY = 4000
 // (or with e = '' clears) the sender's reaction to any message. Replies are plain text that
 // starts with '↩ <quote>' on its own line, so older versions still show them.
 const DM_KINDS = ['text', 'invite', 'file', 'story', 'seen', 'edit', 'unsend', 'react']
-const GROUP_KINDS = ['text', 'members', 'file', 'edit', 'unsend', 'react']
+const GROUP_KINDS = ['text', 'members', 'file', 'edit', 'unsend', 'react', 'gmeta']
 const MAX_FILE = 25 * 1024 * 1024
 const HEX64 = /^[0-9a-f]{64}$/
 
@@ -70,12 +70,26 @@ const URGENT_MS = 48 * 60 * 60 * 1000
 const URGENT_MAX = 100
 
 let swarm = null // only while internet is on
+const createReels = require('./reels')
+const createLive = require('./live')
+let reels = null // short public videos (reels.js)
+let live = null // live video (live.js)
+let reelsTopic = null
 let store = null
 let keyPair = null
 let mySkCurve = null // X25519 secret derived from the identity key (for chat keys)
 let myName = ''
 let myHandle = '' // @username, announced on the DHT so people can find us by it
-const HANDLE_RE = /^[a-z0-9_]{3,20}$/
+// Profile: bio + small photo (JPEG, base64). Peers learn its version from hello and ask for
+// it only when theirs is out of date, so photos aren't resent on every connection.
+let myProfile = { pv: 0, bio: '', photo: '' }
+const MAX_PHOTO_B64 = 120 * 1024
+const cleanProfile = (p) => ({
+  pv: Number.isInteger(p && p.pv) && p.pv >= 0 ? p.pv : 0,
+  bio: typeof (p && p.bio) === 'string' ? p.bio.slice(0, 300) : '',
+  photo: typeof (p && p.photo) === 'string' && p.photo.length <= MAX_PHOTO_B64 && /^[A-Za-z0-9+/=]*$/.test(p.photo) ? p.photo : ''
+})
+const HANDLE_RE = /^[a-z0-9_]{3,24}$/
 let identitySecret = null // 32-byte seed, kept in worklet memory only
 let started = false
 let carryEnabled = true
@@ -193,7 +207,11 @@ async function handle(cmd) {
     }
     case 'typing':
       // Live only: 'is typing…' for a contact who's connected right now. Never stored.
-      if (trusted.has(cmd.key)) sendToPeer(cmd.key, { t: 'typing' })
+      if (trusted.has(cmd.key)) sendToPeer(cmd.key, { t: 'typing', what: cmd.what === 'recording' ? 'recording' : 'typing' })
+      return
+    case 'read':
+      // Live only: "Seen" for the messages of theirs I've looked at (below length).
+      if (trusted.has(cmd.key) && Number.isInteger(cmd.length) && cmd.length > 0) sendToPeer(cmd.key, { t: 'read', length: cmd.length })
       return
     case 'call-send':
       return callSend(cmd)
@@ -257,16 +275,27 @@ async function handle(cmd) {
       myName = String(cmd.name || '')
       for (const peer of peers.keys()) sendHello(peer).catch(report)
       return
+    case 'profile':
+      // My profile changed: tell everyone connected (they fetch it if they want it).
+      myProfile = cleanProfile(cmd)
+      for (const peer of peers.keys()) sendHello(peer).catch(report)
+      return
+    case 'profile-get':
+      if (typeof cmd.key === 'string' && HEX64.test(cmd.key)) sendToPeer(cmd.key, { t: 'profile-req' })
+      return
     case 'suspend':
       if (swarm && swarm.suspend) await swarm.suspend()
       return
     case 'resume':
       if (swarm && swarm.resume) await swarm.resume()
       return
+    default:
+      if (reels && typeof cmd.cmd === 'string' && cmd.cmd.startsWith('reel')) return reels.handle(cmd)
+      if (live && typeof cmd.cmd === 'string' && cmd.cmd.startsWith('live-')) return live.handle(cmd)
   }
 }
 
-async function start({ seed, name, handle, storage, cursors: initial, internet, carry, carried, relays: pinned, forceRelay: force }) {
+async function start({ seed, name, handle, profile, storage, cursors: initial, internet, carry, carried, relays: pinned, forceRelay: force }) {
   pinnedRelays = (Array.isArray(pinned) ? pinned : []).filter((k) => HEX64.test(k))
   forceRelay = !!force
   if (started) return
@@ -274,6 +303,7 @@ async function start({ seed, name, handle, storage, cursors: initial, internet, 
   started = true
   myName = String(name || '')
   myHandle = HANDLE_RE.test(handle) ? handle : ''
+  myProfile = cleanProfile(profile)
   identitySecret = b4a.from(seed, 'hex')
   keyPair = crypto.keyPair(identitySecret)
   mySkCurve = b4a.alloc(32)
@@ -290,6 +320,28 @@ async function start({ seed, name, handle, storage, cursors: initial, internet, 
   for (const r of Array.isArray(carried) ? carried : []) {
     if (r && HEX64.test(r.k) && HEX64.test(r.t)) await carryLog(r.k, r.t, false, (Number(r.u) || 0) > Date.now())
   }
+
+  reels = createReels({
+    b4a, crypto, sodium, Hyperblobs, c, send, log, report,
+    store: () => store, swarm: () => swarm, keyPair: () => keyPair, seed: () => identitySecret, name: () => myName,
+    isKnown: (k) => trusted.has(k) || requested.has(k) || dialled.has(k),
+    isFriend: (k) => trusted.has(k),
+    quiet: (conn) => {
+      conn.reelsLink = true
+      if (conn.pendingAnnounce) { clearTimeout(conn.pendingAnnounce); conn.pendingAnnounce = null }
+    },
+    onTopic: (t) => { reelsTopic = t; if (swarm) swarm.join(t, { server: true, client: true }) },
+    lookupHandle: lookupHandleKeys
+  })
+
+  live = createLive({
+    b4a, c, send, log, swarm: () => swarm, name: () => myName,
+    isKnown: (k) => trusted.has(k) || requested.has(k) || dialled.has(k),
+    quiet: (conn) => {
+      conn.reelsLink = true
+      if (conn.pendingAnnounce) { clearTimeout(conn.pendingAnnounce); conn.pendingAnnounce = null }
+    }
+  })
 
   // Ready before going online: nearby links and local sending work without internet.
   send({ ev: 'ready', publicKey: me() })
@@ -333,6 +385,9 @@ async function setInternet(on) {
     s.on('connection', (conn, info) => {
       // A carrier that found the recipient through an urgent log's topic (we dialled them).
       conn.carrierLink = !!(info && info.topics && info.topics.some((t) => urgentTopics.has(hex(t))))
+      // Found through Reels (the topic, or an author we looked up): not a contact.
+      conn.reelsLink = !!(reels && info && info.topics && info.topics.some((t) => reels.isTopic(t))) ||
+        !!(reels && reels.dialled(hex(conn.remotePublicKey))) || !!(live && live.isWatching(hex(conn.remotePublicKey)))
       if (conn.carrierLink) log('Found the recipient of an urgent message I carry; handing it over')
       onconnection(conn, 'internet')
     })
@@ -340,6 +395,8 @@ async function setInternet(on) {
     listenForUrgent(s)
     for (const k of dialled) s.joinPeer(b4a.from(k, 'hex'))
     for (const g of groups.values()) s.join(g.topic, { server: true, client: true })
+    if (reelsTopic) s.join(reelsTopic, { server: true, client: true })
+    if (reels && reels.nearTopic()) s.join(reels.nearTopic(), { server: true, client: true })
     if (myHandle) s.join(handleTopic(myHandle), { server: true, client: false })
     log('Joining the DHT…')
     // Announce our own public key on the DHT so contacts can find us by ID.
@@ -633,6 +690,8 @@ async function setTrust({ added, requests }) {
   recomputeTags()
   // My outbox for every contact, so it can be offered to carriers even before we meet.
   for (const peer of trusted) outbox(peer).catch(report)
+  // Someone met through Reels just became a contact: show them now.
+  for (const [peer, p] of peers) if (!p.announced && p.current && (trusted.has(peer) || requested.has(peer))) announcePeer(peer, p.current)
   for (const [peer, hello] of pendingHellos) {
     if (inboxLimit(peer) > 0) {
       pendingHellos.delete(peer)
@@ -872,7 +931,9 @@ function onconnection(conn, via) {
   // A stranger over the internet: wait for their hello to learn whether they're a carrier
   // (then they're not shown as a contact request).
   const known = trusted.has(key) || requested.has(key)
-  if (via !== 'internet' || known || conn.carrierLink) announcePeer(key, conn)
+  if (conn.reelsLink && !known) {
+    // Reels only: no hello, no contact request, nothing shown.
+  } else if (via !== 'internet' || known || conn.carrierLink) announcePeer(key, conn)
   else conn.pendingAnnounce = setTimeout(() => { conn.pendingAnnounce = null; announcePeer(key, conn) }, 4000)
 
   conn.on('error', () => {})
@@ -886,16 +947,19 @@ function onconnection(conn, via) {
     if (next) return announcePeer(key, next)
     peers.delete(key)
     pendingHellos.delete(key)
-    send({ ev: 'peer', key, state: 'disconnected' })
+    if (p.announced) send({ ev: 'peer', key, state: 'disconnected' })
   })
 
   // Hypercore replication and our own channel share one Protomux on the stream.
   store.replicate(conn)
   const mux = Protomux.from(conn)
+  if (reels) reels.attach(conn, key, mux)
+  if (live) live.attach(conn, key, mux)
   const channel = mux.createChannel({
     protocol: 'meshron/dm/1',
     onopen() {
-      sendHello(key).catch(report)
+      // Strangers get our hello once they've introduced themselves (see announcePeer).
+      if (p.announced) sendHello(key).catch(report)
       for (const g of groups.values()) if (g.members.has(key)) sendGroupHello(key, g)
       sendMesh(conn)
     }
@@ -999,6 +1063,10 @@ function callVideo({ key, data }) {
 }
 
 function announcePeer(key, conn, carrier = false) {
+  const p = peers.get(key)
+  const first = !!p && !p.announced
+  if (p) p.announced = true
+  if (first && conn.chan && conn.chan.channel.opened) sendHello(key).catch(report)
   const raw = conn.rawStream
   const internet = conn.via === 'internet'
   send({
@@ -1180,10 +1248,12 @@ async function groupPump(g, member, entry) {
 }
 
 async function sendHello(peerHex) {
+  const known = peers.get(peerHex)
+  if (!known || !known.announced) return
   const core = await outbox(peerHex)
   const p = peers.get(peerHex)
   const carrier = !!(p && p.current && p.current.carrierLink)
-  sendToPeer(peerHex, { t: 'hello', v: PROTOCOL_VERSION, name: myName, handle: myHandle, outbox: hex(core.key), carrier })
+  sendToPeer(peerHex, { t: 'hello', v: PROTOCOL_VERSION, name: myName, handle: myHandle, outbox: hex(core.key), carrier, pv: myProfile.pv })
 }
 
 async function onpeermessage(peerHex, msg) {
@@ -1196,16 +1266,26 @@ async function onpeermessage(peerHex, msg) {
       c.pendingAnnounce = null
       announcePeer(peerHex, c, msg.carrier === true)
     }
+    // Met through Reels (a quiet link), but they added me: now it's a chat request.
+    else if (c && c.reelsLink && p && !p.announced) announcePeer(peerHex, c, msg.carrier === true)
     if (typeof msg.name === 'string') {
       const handle = typeof msg.handle === 'string' && HANDLE_RE.test(msg.handle) ? msg.handle : ''
-      send({ ev: 'hello', key: peerHex, name: msg.name.slice(0, 64), handle, v: msg.v | 0 })
+      send({ ev: 'hello', key: peerHex, name: msg.name.slice(0, 64), handle, v: msg.v | 0, pv: Number.isInteger(msg.pv) ? msg.pv : 0 })
     }
     if (inboxLimit(peerHex) > 0) await onHello(peerHex, msg)
     else pendingHellos.set(peerHex, msg)
   } else if (msg.t === 'ack' && Number.isInteger(msg.length) && msg.length >= 0) {
     send({ ev: 'delivered', key: peerHex, length: msg.length })
+  } else if (msg.t === 'profile-req') {
+    // Contacts (and people with a pending request) may see my bio and photo.
+    if (trusted.has(peerHex) || requested.has(peerHex)) sendToPeer(peerHex, { t: 'profile', ...myProfile })
+  } else if (msg.t === 'profile') {
+    const p = cleanProfile(msg)
+    send({ ev: 'profile', key: peerHex, pv: p.pv, bio: p.bio, photo: p.photo })
   } else if (msg.t === 'typing') {
-    send({ ev: 'typing', key: peerHex })
+    send({ ev: 'typing', key: peerHex, what: msg.what === 'recording' ? 'recording' : 'typing' })
+  } else if (msg.t === 'read' && Number.isInteger(msg.length) && msg.length > 0) {
+    send({ ev: 'read', key: peerHex, length: msg.length })
   } else if (msg.t === 'mesh') {
     await onMesh(msg.recs)
   } else if (msg.t === 'ghello') {
@@ -1251,6 +1331,11 @@ async function setHandle(h) {
 async function findHandle({ req, handle }) {
   if (!HANDLE_RE.test(handle)) return send({ ev: 'handle-found', req, keys: [], error: 'invalid' })
   if (!swarm) return send({ ev: 'handle-found', req, keys: [], error: 'offline' })
+  send({ ev: 'handle-found', req, keys: await lookupHandleKeys(handle) })
+}
+
+async function lookupHandleKeys(handle) {
+  if (!swarm || !HANDLE_RE.test(handle)) return []
   const keys = new Set()
   const stream = swarm.dht.lookup(handleTopic(handle))
   const timer = setTimeout(() => stream.destroy(), 8000)
@@ -1262,7 +1347,8 @@ async function findHandle({ req, handle }) {
   } catch {}
   clearTimeout(timer)
   stream.destroy()
-  send({ ev: 'handle-found', req, keys: [...keys] })
+  keys.delete(me())
+  return [...keys]
 }
 
 // ---- Helpers ----------------------------------------------------------------

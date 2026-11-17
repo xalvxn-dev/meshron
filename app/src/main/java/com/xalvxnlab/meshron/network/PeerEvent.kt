@@ -27,6 +27,8 @@ sealed interface PeerEvent {
 
     /** The peer has stored every entry of our outbox below [length]. */
     data class Delivered(val key: String, val length: Long) : PeerEvent
+    /** The peer has seen my 1:1 messages below [length]. */
+    data class Read(val key: String, val length: Long) : PeerEvent
 
     /** Entry [seq] of member [from]'s log in [group], signature verified. */
     data class GroupMessage(

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.xalvxnlab.meshron.ui.theme.MeshColors
 import com.xalvxnlab.meshron.ui.components.MeshronLogo
 
 /** Version, privacy policy and open-source licenses (all bundled, works offline). */
@@ -36,7 +37,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
         val file = when (page) { 1 -> "privacy.txt"; 2 -> "licenses.txt"; else -> null }
         file?.let { runCatching { context.assets.open(it).bufferedReader().readText() }.getOrDefault("") }
     }
-    AlertDialog(
+    com.xalvxnlab.meshron.ui.components.PageDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -54,13 +55,35 @@ fun AboutDialog(onDismiss: () -> Unit) {
                     Spacer(Modifier.width(8.dp))
                     FilterChip(selected = page == 2, onClick = { page = 2 }, label = { Text("Licenses") })
                 }
-                Spacer(Modifier.height(12.dp))
-                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-                    Text(
-                        text ?: "Private messages and calls, phone to phone. No accounts, nothing stored on servers, works without internet.\n\n" +
-                            "Made by xalvxnLab.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                Spacer(Modifier.height(16.dp))
+                when (page) {
+                    // The same Privacy Policy as Settings → Your data & legal.
+                    1 -> {
+                        val d = com.xalvxnlab.meshron.ui.legal.PRIVACY
+                        Text("Last updated " + d.updated, color = MeshColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.height(8.dp))
+                        Text(d.intro, style = MaterialTheme.typography.bodyLarge)
+                        for ((h, b) in d.sections) {
+                            Spacer(Modifier.height(16.dp))
+                            Text(h, style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(4.dp))
+                            Text(b, color = MeshColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    2 -> Text(text.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MeshColors.TextSecondary)
+                    else -> Column {
+                        Text("Private chats, calls, moments and videos, device to device.", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Chats and calls are end-to-end encrypted and travel straight between phones, over the internet, the same Wi-Fi or Bluetooth. " +
+                                "Meshron's server only handles public accounts (sign-in on new phones), moderation and verification.",
+                            color = MeshColors.TextSecondary,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text("Founded by Alvin Nana Kojo Pieterson (CEO) and Clement Kofi Yeboah (co-CEO).", color = MeshColors.TextSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Made by xalvxnLab.", color = MeshColors.TextSecondary)
+                    }
                 }
             }
         },

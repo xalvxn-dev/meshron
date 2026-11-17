@@ -14,14 +14,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private val Context.contactsStore by preferencesDataStore(name = "contacts")
+private val Context.contactsStoreAnon by preferencesDataStore(name = "contacts_anon")
 
 /**
  * Small contact list kept on the device. Stored encrypted with an Android Keystore key
  * (who you talk to is sensitive too); a list saved before Phase 7 is re-saved encrypted.
  */
 class ContactsRepository(context: Context) {
-    private val store = context.applicationContext.contactsStore
-    private val cipher = KeystoreCipher("meshron.contacts.wrap.v1")
+    private val store = if (com.xalvxnlab.meshron.identity.Mode.anon) context.applicationContext.contactsStoreAnon else context.applicationContext.contactsStore
+    private val cipher = KeystoreCipher(if (com.xalvxnlab.meshron.identity.Mode.anon) "meshron.contacts.wrap.anon" else "meshron.contacts.wrap.v1")
 
     // Decrypting goes through the Keystore, so remember the last result.
     @Volatile private var cache: Pair<String, List<Contact>>? = null

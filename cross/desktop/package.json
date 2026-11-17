@@ -2,7 +2,7 @@
   "private": true,
   "name": "meshron-desktop",
   "productName": "Meshron",
-  "version": "1.5.2",
+  "version": "1.6.2",
   "description": "Private messages, device to device",
   "author": "xalvxnLab <baxxkid@gmail.com>",
   "homepage": "https://github.com/xalvxn-dev/meshron",
@@ -44,7 +44,12 @@
       "preload.js",
       "bundle/**/*",
       "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**/prebuilds/{android,darwin,ios,linux}*/**",
+      "!node_modules/**/prebuilds/win32-{arm64,ia32}/**",
+      "!node_modules/**/{test,tests,example,examples,docs,.github,benchmark,bench}/**",
+      "!node_modules/**/*.{md,markdown,map,ts,tsbuildinfo}",
+      "!node_modules/**/{CHANGELOG,HISTORY,AUTHORS}*"
     ],
     "asarUnpack": [
       "**/*.node",
@@ -71,6 +76,10 @@
       "createDesktopShortcut": true,
       "shortcutName": "Meshron",
       "deleteAppDataOnUninstall": false
-    }
+    },
+    "electronLanguages": [
+      "en-US"
+    ],
+    "compression": "maximum"
   }
 }

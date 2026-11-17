@@ -26,6 +26,14 @@ const secrets = {
 
 const clients = new Set()
 const emit = (ev, data) => {
+  // Public <-> anonymous: start again as a fresh process (like the apps do).
+  if (ev === 'restart') {
+    setTimeout(() => {
+      host.flush()
+      require('child_process').spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: 'inherit' }).unref()
+      process.exit(0)
+    }, 200)
+  }
   const line = 'data: ' + JSON.stringify({ ev, data }) + '\n\n'
   for (const res of clients) res.write(line)
 }
@@ -37,7 +45,7 @@ const host = startNodeHost({
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
   if (url.pathname === '/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
@@ -67,7 +75,10 @@ http.createServer(async (req, res) => {
   }
   res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' })
   fs.createReadStream(file).pipe(res)
-}).listen(port, '127.0.0.1', () => console.log('Meshron dev server: http://127.0.0.1:' + port + '  data: ' + dataDir))
+})
+// After a restart the old process may still hold the port for a moment.
+server.on('error', (e) => { if (e.code === 'EADDRINUSE') setTimeout(() => server.listen(port, '127.0.0.1'), 300); else throw e })
+server.listen(port, '127.0.0.1', () => console.log('Meshron dev server: http://127.0.0.1:' + port + '  data: ' + dataDir))
 
 const stop = () => { host.flush(); process.exit(0) }
 process.on('SIGINT', stop)

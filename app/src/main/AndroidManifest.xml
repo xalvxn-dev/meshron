@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -35,9 +36,18 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Lets the reel share sheet show the apps that can receive a link, with their own icons. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
     <!-- Backups are off: the wrapped private key is useless without this device's
          Keystore key, and chats must not be copied to cloud backups. -->
     <application
+        android:networkSecurityConfig="@xml/network_security_config"
         android:name=".MeshronApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -50,6 +60,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -71,10 +82,22 @@
             android:name=".background.CallService"
             android:exported="false"
             android:foregroundServiceType="microphone|camera" />
+        <service
+            android:name=".background.ScreenLiveService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|microphone" />
 
         <receiver
             android:name=".background.CallActionReceiver"
             android:exported="false" />
+
+        <!-- Switching public / anonymous restarts the app through this (its own process). -->
+        <activity
+            android:name=".identity.Mode$Restarter"
+            android:exported="false"
+            android:process=":restart"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" />
 
         <!-- Start "Stay connected" again after a restart or an update. -->
         <receiver

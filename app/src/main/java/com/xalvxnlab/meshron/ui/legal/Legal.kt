@@ -1,0 +1,170 @@
+package com.xalvxnlab.meshron.ui.legal
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.xalvxnlab.meshron.ui.theme.MeshColors
+
+/** Bump when the documents change in a way people must agree to again. */
+const val LEGAL_VERSION = 1
+
+/** Where people reach Meshron about legal, privacy and safety questions. Shown in the documents. */
+const val LEGAL_CONTACT = "xalvxn@gmail.com"
+
+class LegalDoc(val title: String, val updated: String, val intro: String, val sections: List<Pair<String, String>>)
+
+val TERMS = LegalDoc(
+    "Terms of Service", "16 November 2026",
+    "These terms are an agreement between you and Meshron. By using Meshron you agree to them, to the Privacy Policy and to the Community Guidelines.",
+    listOf(
+        "Who can use Meshron" to "You must be at least 13 years old, or the minimum age to use online services in your country if that is higher. If you are under 18, you confirm a parent or guardian agrees to these terms. You may not use Meshron if you have been suspended from it, or if the law forbids you to.",
+        "How Meshron works" to "Meshron is peer-to-peer. Chats travel directly between devices (or through other devices carrying them, still encrypted) and are stored on the devices of the people in the chat, not on Meshron's servers. Public videos (Reels) are shared from people's devices to the people who watch them. Meshron's servers only handle public accounts (username, sign-in, email codes), moderation, verification, and optional AI features.",
+        "Your account" to "Keep your password, PIN and recovery key safe: they protect your identity, and Meshron cannot read your chats or recover them for you. You are responsible for what happens under your account. Anonymous mode is a separate identity on your device; the same rules apply to it.",
+        "Your content" to "You own what you post. By posting a public video, comment or profile, you give Meshron and the people who see it a worldwide, non-exclusive, royalty-free licence to store, copy, show and share it inside Meshron (for example in feeds, reposts, collaborations and shares), until you delete it. Others may already have a copy of something before you delete it. Only post content you have the rights to, including music.",
+        "What you must not do" to "Follow the Community Guidelines. Do not break the law; harass, threaten or exploit anyone; post sexual content involving minors (it is reported to authorities); impersonate others; spread scams, malware or spam; collect other people's data without permission; or try to break, overload or get around Meshron's security and moderation.",
+        "Moderation" to "People can report content and accounts. An automated moderator reviews reports first and Meshron's moderators review its decisions. We may hide content, limit features, warn, suspend or ban accounts that break these terms or the guidelines. Hidden content is not deleted: you can appeal from Activity, and if you win it comes back as it was. Repeated or serious violations lead to a permanent ban.",
+        "AI features" to "Meshron AI (helper, captions, smart replies, translation) sends the text you choose to an AI service to get an answer. Answers can be wrong: do not rely on them for medical, legal, financial or safety decisions.",
+        "Safety features" to "SOS and nearby features help you reach people, but Meshron is not an emergency service and cannot guarantee delivery. Always contact local emergency services when you are in danger.",
+        "Availability and changes" to "Meshron is provided as it is. Because it runs on people's devices and networks, messages and videos may be delayed or lost. We may change or stop features. If these terms change in an important way we will ask you to agree again in the app.",
+        "Liability" to "To the extent the law allows, Meshron is not liable for indirect or consequential losses, for content posted by users, or for losses caused by devices, networks or people outside our control. Nothing in these terms limits rights you have under consumer law that cannot be limited.",
+        "Ending" to "You can stop using Meshron and delete your account at any time in Settings. We may suspend or end access for violations, with a chance to appeal.",
+        "Contact" to "Questions about these terms: $LEGAL_CONTACT.",
+    ),
+)
+
+val PRIVACY = LegalDoc(
+    "Privacy Policy", "16 November 2026",
+    "Meshron is built so we hold as little about you as possible. This explains what is collected, why, and your choices.",
+    listOf(
+        "Chats, calls and moments" to "End-to-end encrypted between the people in the chat and stored only on their devices (in an encrypted database). Meshron's servers never receive them. Devices that carry messages for others only ever hold locked copies they cannot read.",
+        "Public account" to "If you make a public account, our server stores your username, your email address (for codes and account recovery), a one-way hash of a key made from your password (never the password), your public ID, and a locked copy of your identity that only your password can open. Anonymous mode never uses the server.",
+        "Reels and your profile" to "Your name, @username, photo, bio, public videos, likes, comments, follows and reposts are public and shared peer-to-peer with people who view them. Saved and liked lists stay on your device.",
+        "Nearby suggestions" to "Off unless you turn it on. When on, your device shares a rough area (a square of about 5 km), never your exact location, with Meshron users in the same area.",
+        "Reports and moderation" to "When you report something, we receive your report, what you were looking at, the content in question, and any screenshot you attach. Reports are reviewed by an automated moderator and by Meshron's moderators, and are emailed to the moderation team. We keep moderation records (hidden items, warnings, suspensions, appeals) to enforce the rules.",
+        "AI features" to "Only when you use them: the text you send is passed to an AI provider to answer, and is not used by Meshron to build profiles. A daily limit is counted per account.",
+        "Verification" to "If you ask for verification, we receive the name, category, reasons and links you provide, and keep the decision.",
+        "What we don't do" to "No ads, no selling or renting your data, no tracking across apps, and no reading of your private messages.",
+        "How long we keep things" to "Account data until you delete your account. Email codes expire in 10 minutes. Moderation notices after 90 days; reports and decisions as long as needed to keep Meshron safe and meet legal duties. Messages follow your own settings (for example disappearing messages).",
+        "Your rights" to "You can download your data (Settings → Your data), correct your profile, and delete your account and everything on your device. Depending on where you live you may have more rights (such as access, objection or complaint to a data-protection authority); contact us to use them.",
+        "Children" to "Meshron is not for children under 13. If we learn an account belongs to someone under 13 we will remove it.",
+        "Security" to "We use strong encryption and keep server data small, but no system is perfect. Protect your device with a screen lock and keep your recovery key private.",
+        "Changes and contact" to "We will tell you in the app about important changes. Privacy questions: $LEGAL_CONTACT.",
+    ),
+)
+
+val GUIDELINES = LegalDoc(
+    "Community Guidelines", "16 November 2026",
+    "Meshron should feel safe and fun for everyone. These rules apply to everything: chats you report, videos, comments, lives, moments, profiles and groups.",
+    listOf(
+        "Be kind" to "No bullying, harassment, threats, doxxing, or encouraging others to target someone.",
+        "No hate" to "No attacks on people for who they are: race, ethnicity, nationality, religion, caste, gender, sexual orientation, disability, or serious illness.",
+        "Keep it safe for minors" to "Zero tolerance for sexual content involving anyone under 18, grooming, or sexualising minors. Accounts are banned and reported to authorities.",
+        "No sexual content or nudity" to "No pornography or sexual services in public content.",
+        "No violence or dangerous acts" to "No threats, glorifying violence, terrorism, or dangerous challenges. Self-harm and suicide content must not promote or instruct; we point people to help.",
+        "Be real" to "No impersonation, fake accounts to mislead, fake verification, or coordinated manipulation.",
+        "No scams or spam" to "No fraud, phishing, pyramid schemes, fake giveaways, malware, or repetitive unwanted messages.",
+        "Respect others' rights" to "Only post what you have the rights to. No sharing private information or intimate images without consent.",
+        "No harmful misinformation" to "No false information likely to cause real harm (for example about health, elections or emergencies).",
+        "Enforcement" to "Content that breaks these rules is hidden, and accounts can be warned, limited, suspended or banned. You can appeal any decision from Activity → From Meshron. Report anything that breaks the rules: it's private and helps everyone.",
+    ),
+)
+
+/** Full-screen reader for one document. */
+@Composable
+fun LegalDocScreen(doc: LegalDoc, onBack: () -> Unit) {
+    Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        BackHandler(onBack = onBack)
+        Column(Modifier.fillMaxSize().background(MeshColors.Bg).statusBarsPadding().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                Text(doc.title, style = MaterialTheme.typography.titleLarge)
+            }
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Last updated " + doc.updated, color = MeshColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(10.dp))
+                Text(doc.intro, style = MaterialTheme.typography.bodyLarge)
+                for ((h, b) in doc.sections) {
+                    Spacer(Modifier.height(18.dp))
+                    Text(h, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(b, color = MeshColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(40.dp))
+            }
+        }
+    }
+}
+
+/** Shown once (and again when the documents change): confirm age and agree before using Meshron. */
+@Composable
+fun LegalGate(onAccept: () -> Unit) {
+    var age by remember { mutableStateOf(false) }
+    var agree by remember { mutableStateOf(false) }
+    var reading by remember { mutableStateOf<LegalDoc?>(null) }
+    Column(Modifier.fillMaxSize().background(MeshColors.Bg).statusBarsPadding().navigationBarsPadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
+        Text("Welcome to Meshron", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Private chats, moments and videos, phone to phone. Before you start:", color = MeshColors.TextSecondary)
+        Spacer(Modifier.height(24.dp))
+        Tick(age, "I'm 13 or older (or the minimum age in my country)") { age = !age }
+        Spacer(Modifier.height(12.dp))
+        Tick(agree, "I agree to the Terms of Service and Community Guidelines, and I've read the Privacy Policy") { agree = !agree }
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            for (d in listOf(TERMS, PRIVACY, GUIDELINES)) Text(d.title, color = MeshColors.Accent, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { reading = d }.padding(vertical = 4.dp))
+        }
+        Spacer(Modifier.height(28.dp))
+        Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(50)).background(if (age && agree) MeshColors.TextPrimary else MeshColors.Surface3)
+            .clickable(enabled = age && agree, onClick = onAccept), contentAlignment = Alignment.Center) {
+            Text("Continue", color = if (age && agree) MeshColors.Bg else MeshColors.TextTertiary, fontWeight = FontWeight.Bold)
+        }
+    }
+    reading?.let { LegalDocScreen(it) { reading = null } }
+}
+
+@Composable
+private fun Tick(on: Boolean, label: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).background(MeshColors.Surface1).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)).background(if (on) MeshColors.AccentStrong else MeshColors.Surface3), contentAlignment = Alignment.Center) {
+            if (on) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.size(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}

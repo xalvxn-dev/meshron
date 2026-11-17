@@ -15,6 +15,9 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
   private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
   private var inBackground = false
   private var queuedLink: String?
+  /// Anonymous mode: the screens are covered in the app switcher and while the screen is recorded.
+  private var privacy = false
+  private var cover: UIView?
   weak var webView: WKWebView?
 
   override init() {
@@ -75,6 +78,11 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
       return
     }
     if let ev = m["ev"] as? String {
+      // Switched between public and anonymous: start the worklet again as the other identity.
+      if ev == "restart" {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.restartWorklet() }
+        return
+      }
       if ev == "incoming", inBackground, let data = m["data"] as? [String: Any] { notify(data) }
       if ev == "summaries", let list = m["data"] as? [[String: Any]] {
         let total = list.reduce(0) { $0 + (($1["unread"] as? Int) ?? 0) }
@@ -153,6 +161,17 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
       // Calls: the screen stays on until the call ends.
       UIApplication.shared.isIdleTimerDisabled = (args["on"] as? Bool) ?? false
       done(true)
+    case "native.privacy":
+      privacy = (args["on"] as? Bool) ?? false
+      if privacy {
+        NotificationCenter.default.addObserver(
+          forName: UIScreen.capturedDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+          Task { @MainActor in self?.setCover(UIScreen.main.isCaptured) }
+        }
+        setCover(UIScreen.main.isCaptured)
+      }
+      done(true)
     case "native.badge":
       UNUserNotificationCenter.current().setBadgeCount(args["count"] as? Int ?? 0)
       done(true)
@@ -169,6 +188,44 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
     while let next = top.presentedViewController { top = next }
     top.present(sheet, animated: true)
   }
+
+  // MARK: Anonymous mode
+
+  private func restartWorklet() {
+    worklet?.terminate()
+    worklet = nil
+    ipc = nil
+    pending = Data()
+    privacy = false
+    setCover(false)
+    startWorklet()
+    webView?.reload()
+  }
+
+  /// A blurred cover with a lock over the screens (anonymous mode only).
+  func setCover(_ show: Bool) {
+    if !show || !privacy {
+      cover?.removeFromSuperview()
+      cover = nil
+      return
+    }
+    guard cover == nil, let window = webView?.window else { return }
+    let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterialDark))
+    blur.frame = window.bounds
+    blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    let lock = UIImageView(image: UIImage(systemName: "lock.fill"))
+    lock.tintColor = UIColor(red: 94 / 255, green: 234 / 255, blue: 212 / 255, alpha: 1)
+    lock.contentMode = .scaleAspectFit
+    lock.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+    lock.center = CGPoint(x: window.bounds.midX, y: window.bounds.midY)
+    lock.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin, .flexibleTopMargin, .flexibleBottomMargin]
+    blur.contentView.addSubview(lock)
+    window.addSubview(blur)
+    cover = blur
+  }
+
+  /// Leaving the screen (app switcher, notification centre): hide the content when anonymous.
+  func resignActive() { setCover(true) }
 
   // MARK: Lifecycle
 
@@ -200,6 +257,7 @@ final class Bridge: NSObject, ObservableObject, WKScriptMessageHandler {
 
   func enterForeground() {
     inBackground = false
+    setCover(UIScreen.main.isCaptured)
     KeepAlive.shared.stop()
     worklet?.resume()
     writeToWorklet(["lifecycle": "resume"])

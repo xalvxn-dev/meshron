@@ -70,6 +70,18 @@ class Notifier(private val context: Context) {
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .build()
 
+    /** While streaming the screen to a live. */
+    fun ongoingLive(title: String, stop: android.app.PendingIntent): Notification =
+        NotificationCompat.Builder(context, CALLS)
+            .setSmallIcon(android.R.drawable.presence_video_online)
+            .setContentTitle("You're live")
+            .setContentText(title.ifBlank { "Sharing your screen" })
+            .setContentIntent(openApp())
+            .addAction(0, "End live", stop)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+
     @SuppressLint("MissingPermission") // checked in canNotify()
     fun missedCall(name: String) {
         if (!canNotify()) return
@@ -137,6 +149,7 @@ class Notifier(private val context: Context) {
         const val MESSAGE_ID = 2
         const val CALLS = "calls"
         const val CALL_ID = 3
+        const val LIVE_ID = 9
         const val INCOMING_ID = 4
         const val MISSED_ID = 5
     }

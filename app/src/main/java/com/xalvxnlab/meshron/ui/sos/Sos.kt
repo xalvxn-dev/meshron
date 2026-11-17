@@ -186,7 +186,7 @@ fun SosScreen(onClose: () -> Unit) {
                                 val n = app.messagingService.sendSos(sosBody(text, location))
                                 sending = false
                                 sentTo = n
-                                if (n == 0) Toast.makeText(context, "You have no contacts yet. Use the call or SMS buttons below.", Toast.LENGTH_LONG).show()
+                                if (n == 0) com.xalvxnlab.meshron.ui.components.Toasts.show(context, "You have no contacts yet. Use the call or SMS buttons below.", long = true)
                             }
                         },
                         contentAlignment = Alignment.Center,
@@ -215,7 +215,7 @@ fun SosScreen(onClose: () -> Unit) {
                     Route(Icons.Filled.Sms, "Send as a text (SMS)", "Needs a little phone signal, not data") {
                         val sms = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).putExtra("sms_body", sosBody(text, location))
                         runCatching { context.startActivity(sms.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                            .onFailure { Toast.makeText(context, "No texting app on this phone", Toast.LENGTH_SHORT).show() }
+                            .onFailure { com.xalvxnlab.meshron.ui.components.Toasts.show(context, "No texting app on this phone") }
                     }
                     val wifi = openWifi
                     Route(

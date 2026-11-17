@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.MeshronMod" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/mod_bg</item>
+        <item name="android:statusBarColor">@color/mod_bg</item>
+        <item name="android:navigationBarColor">@color/mod_bg</item>
+    </style>
+    <color name="mod_bg">#FF0B0D14</color>
+</resources>

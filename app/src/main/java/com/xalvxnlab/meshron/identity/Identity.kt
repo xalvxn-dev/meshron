@@ -26,7 +26,7 @@ class Identity(
 
         fun isValidName(raw: String): Boolean = cleanName(raw).length in 1..MAX_NAME_LENGTH
 
-        private val HANDLE = Regex("^[a-z0-9_]{3,20}$")
+        private val HANDLE = Regex("^[a-z0-9_]{3,24}$")
 
         /** "@Bob_1 " -> "bob_1". */
         fun cleanHandle(raw: String): String = raw.trim().removePrefix("@").lowercase()

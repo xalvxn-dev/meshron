@@ -2,4 +2,7 @@
 <!-- Only chat files are shareable with other apps (to open them); never the logs or keys. -->
 <paths>
     <files-path name="chatfiles" path="chatfiles/" />
+    <files-path name="chatfiles_anon" path="chatfiles_anon/" />
+    <!-- Profile cards made for sharing (cache, short-lived). -->
+    <cache-path name="share" path="share/" />
 </paths>
