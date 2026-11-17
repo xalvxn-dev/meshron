@@ -22,7 +22,8 @@ function copyDir(from, to, skip = () => false) {
 copyDir(path.join(here, '..', 'core'), path.join(out, 'core'), (n) => n === 'dev-server.js' || n === 'boot-bare.js')
 copyDir(path.join(here, '..', 'ui'), path.join(out, 'ui'))
 fs.mkdirSync(path.join(out, 'worklet'), { recursive: true })
-fs.copyFileSync(path.join(here, '..', '..', 'app', 'src', 'main', 'js', 'app.js'), path.join(out, 'worklet', 'app.js'))
+// Every worklet file (app.js requires ./reels and ./live).
+for (const f of fs.readdirSync(path.join(here, '..', '..', 'app', 'src', 'main', 'js'))) if (f.endsWith('.js')) fs.copyFileSync(path.join(here, '..', '..', 'app', 'src', 'main', 'js', f), path.join(out, 'worklet', f))
 
 const icon = path.join(here, 'build', 'icon.png')
 if (!fs.existsSync(icon)) {
