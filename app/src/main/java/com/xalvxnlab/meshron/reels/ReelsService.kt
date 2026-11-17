@@ -259,6 +259,13 @@ class ReelsService(
         return List(arr.length()) { reel(arr.getJSONObject(it)) }
     }
 
+    /** People active on Meshron lately (not me), newest first. */
+    suspend fun active(limit: Int = 40): List<ReelAuthor> {
+        need()
+        val arr = call(JSONObject().put("cmd", "reels-active").put("limit", limit), 20_000).optJSONArray("users") ?: JSONArray()
+        return List(arr.length()) { author(arr.getJSONObject(it)) }
+    }
+
     suspend fun search(q: String): List<ReelAuthor> {
         need()
         val arr = call(JSONObject().put("cmd", "reels-search").put("q", q.take(40)), 30_000).optJSONArray("users") ?: JSONArray()

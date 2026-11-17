@@ -69,8 +69,14 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
     var filter by remember { mutableStateOf("all") }
     var refreshing by remember { mutableStateOf(false) }
     var appealing by remember { mutableStateOf<com.xalvxnlab.meshron.moderation.ModerationService.Notice?>(null) }
+    // People active on Meshron lately, to make friends with (not already contacts, not dismissed).
+    var active by remember { mutableStateOf<List<com.xalvxnlab.meshron.reels.ReelAuthor>>(emptyList()) }
+    var hiddenActive by remember { mutableStateOf(setOf<String>()) }
+    suspend fun loadActive() { if (!anon) runCatching { app.reels.active(40) }.onSuccess { active = it } }
+    LaunchedEffect(Unit) { loadActive() }
     fun refresh() = scope.launch {
         refreshing = true
+        loadActive()
         runCatching { app.moderation.refresh() }
         runCatching { app.suggestions.refresh() }
         kotlinx.coroutines.delay(600)
@@ -141,6 +147,19 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
                 Pill("Accept", primary = true) { scope.launch { contactsRepo.add(c.keyHex, name) } }
                 Spacer(Modifier.width(6.dp))
                 Pill("Ignore") { scope.launch { contactsRepo.remove(c.keyHex) } }
+            }
+        }
+        val known = contacts.map { it.keyHex }.toSet()
+        val activeShown = active.filter { it.id.length == 64 && it.id !in known && it.id !in hiddenActive && suggestions.none { s -> s.key == it.id } }
+        if (!anon && show("people") && activeShown.isNotEmpty()) {
+            item { Section("Active on Meshron") }
+            items(activeShown, key = { "a" + it.id }) { a ->
+                val label = a.name.ifBlank { if (a.handle.isNotEmpty()) "@" + a.handle else "Someone" }
+                Person(label, a.id, listOfNotNull(if (a.handle.isNotEmpty()) "@" + a.handle else null, if (a.followers > 0) "${a.followers} followers" else null, "active recently").joinToString(" · "), onClick = { app.openProfileRequests.tryEmit(a.id) }) {
+                    Pill("Add", primary = true) { scope.launch { contactsRepo.add(a.id, label); hiddenActive = hiddenActive + a.id } }
+                    Spacer(Modifier.width(6.dp))
+                    Pill("Remove") { hiddenActive = hiddenActive + a.id }
+                }
             }
         }
         if (!anon && show("people") && (filter == "people" || suggestions.isNotEmpty())) {

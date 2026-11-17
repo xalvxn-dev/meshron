@@ -1324,6 +1324,11 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       needReels()
       return (await reelCmd({ cmd: 'reels-profile', ch }, 20000)).profile
     },
+    /** People active on Meshron lately (not me), newest first: for making friends. */
+    async 'reels.active'({ limit }) {
+      needReels()
+      return (await reelCmd({ cmd: 'reels-active', limit: Math.min(Number(limit) || 40, 100) }, 20000)).users || []
+    },
     async 'reels.search'({ q }) {
       needReels()
       return (await reelCmd({ cmd: 'reels-search', q: String(q || '').slice(0, 40) }, 30000)).users || []

@@ -637,6 +637,26 @@
       kids.push(h('div', { class: 'row action', onClick: shareMe }, h('div', { class: 'action-circle' }, icon('share')),
         h('div', { class: 'grow' }, h('div', { class: 'name' }, 'Invite friends'), h('div', { class: 'sub ellipsis' }, st.me.handle ? `Send your link, or tell them @${st.me.handle}` : 'Send them your Meshron link'))))
     }
+    // Active on Meshron: people using Meshron lately, to make friends with.
+    if (!q && !st.anon) {
+      const box = h('div', {})
+      kids.push(box)
+      st.hiddenActive = st.hiddenActive || new Set()
+      M.call('reels.active', { limit: 40 }).then((users) => {
+        const known = new Set(st.contacts.map((c) => c.keyHex))
+        const people = (users || []).filter((u) => /^[0-9a-f]{64}$/.test(u.id || '') && !known.has(u.id) && !st.hiddenActive.has(u.id)).slice(0, 20)
+        if (!people.length || !box.isConnected) return
+        box.replaceChildren(h('div', { class: 'section' }, 'Active on Meshron'), ...people.map((u) => {
+          const name = u.name || (u.handle ? '@' + u.handle : 'Someone')
+          return h('div', { class: 'row', onClick: () => window.MeshronReels && window.MeshronReels.openProfile(u.ch) },
+            avatar(name, u.id, 48),
+            h('div', { class: 'grow' }, h('div', { class: 'top' }, h('span', { class: 'name ellipsis' }, name), verifiedBadge(u.id)),
+              h('div', { class: 'sub ellipsis' }, [u.handle ? '@' + u.handle : null, u.followers ? u.followers + ' followers' : null, 'active recently'].filter(Boolean).join(' · '))),
+            h('button', { class: 'icon-btn', title: 'Remove', onClick: (e) => { e.stopPropagation(); st.hiddenActive.add(u.id); e.currentTarget.closest('.row').remove() } }, icon('x', 20)),
+            h('button', { class: 'btn primary small', onClick: async (e) => { e.stopPropagation(); await M.call('contacts.add', { key: u.id, name }).catch(oops); st.hiddenActive.add(u.id); toast('Added ' + name) } }, 'Add'))
+        }))
+      }).catch(() => {})
+    }
     if (requests.length) {
       kids.push(h('div', { class: 'section' }, 'Waiting for you'))
       for (const c of requests) {

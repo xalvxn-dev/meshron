@@ -169,9 +169,10 @@ module.exports = function createReels (x) {
       core = x.store().get({ key: b4a.from(chHex, 'hex') })
       await core.ready()
     }
-    c = { key: chHex, core, seq: 0, profile: null, reels: new Map(), likes: new Map(), comments: new Map(), followers: new Set(), views: new Map(), reposts: new Map(), collabs: new Map(), reposted: new Map(), claims: new Set(), reading: false }
+    c = { key: chHex, core, seq: 0, profile: null, reels: new Map(), likes: new Map(), comments: new Map(), followers: new Set(), views: new Map(), reposts: new Map(), collabs: new Map(), reposted: new Map(), claims: new Set(), reading: false, active: 0 }
     chans.set(chHex, c)
-    core.on('append', () => read(c).catch(report))
+    // Something new arrived from them right now: they're active on Meshron.
+    core.on('append', () => { c.active = now(); read(c).catch(report) })
     read(c).catch(report)
     if (core !== (mine && mine.ch)) core.update({ wait: true }).then(() => read(c), () => {})
     return c
@@ -655,6 +656,20 @@ module.exports = function createReels (x) {
     return out.sort((a, b) => b.followers - a.followers).slice(0, 30)
   }
 
+  /** People active on Meshron lately (newest activity first): for making friends. */
+  function active (limit) {
+    const out = []
+    const meCh = mine && mine.chKey
+    for (const c of chans.values()) {
+      if (!c.profile || c.key === meCh || !c.profile.id) continue
+      let last = c.active || 0
+      for (const r of c.reels.values()) if ((r.ts || 0) > last) last = r.ts
+      if (!last) continue
+      out.push({ ...author(c), followers: c.followers.size, reels: c.reels.size, active: last })
+    }
+    return out.sort((a, b) => b.active - a.active).slice(0, Math.min(Number(limit) || 40, 100))
+  }
+
   /** @username not met yet: find them on the DHT, ask for their channel. */
   async function findHandle (handle) {
     const s = x.swarm()
@@ -863,6 +878,8 @@ module.exports = function createReels (x) {
           }).sort((a, b) => (b.likes + b.views / 10) - (a.likes + a.views / 10) || b.ts - a.ts)
           return reply('reels-feed', { items: hits.slice(0, 60), more: false })
         }
+        case 'reels-active':
+          return reply('reels-search', { users: active(cmd.limit) })
         case 'reels-search': {
           let users = search(cmd.q)
           const h = String(cmd.q || '').toLowerCase().replace(/^@/, '').trim()
