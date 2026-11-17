@@ -775,5 +775,5 @@
     if (!it) { toast("This video isn't available right now"); return }
     openPlayer([it], 0)
   }
-  window.MeshronReels = { show, hide, openProfile, openReel, transcode, grabThumb, videoUrl }
+  window.MeshronReels = { show, hide, openProfile, openReel, openCreate, transcode, grabThumb, videoUrl, imgSrc }
 })()

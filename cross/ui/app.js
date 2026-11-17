@@ -33,6 +33,8 @@
   }
 
   const ICONS = {
+    grid: '<rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     play: '<polygon points="6 3 20 12 6 21 6 3"/>',
     flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
     doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>',
@@ -138,7 +140,8 @@
 
   // ---- Formatting ----------------------------------------------------------------
 
-  const AVATARS = [['#6366F1', '#A855F7'], ['#14B8A6', '#3B82F6'], ['#EC4899', '#F97316'], ['#F59E0B', '#EF4444'], ['#8B5CF6', '#EC4899'], ['#06B6D4', '#6366F1'], ['#22C55E', '#0EA5E9'], ['#F43F5E', '#A855F7']]
+  // Same pairs as Android (MeshColors.avatars).
+  const AVATARS = [['#5B67FF', '#22D3C5'], ['#14B8A6', '#84CC16'], ['#F97316', '#F43F5E'], ['#F59E0B', '#EF4444'], ['#8B5CF6', '#5B67FF'], ['#06B6D4', '#3B82F6'], ['#22C55E', '#0EA5E9'], ['#EC4899', '#8B5CF6']]
   // Same as Kotlin's String.hashCode, so a person has the same colours on every platform.
   function javaHash(s) {
     let x = 0
@@ -407,7 +410,7 @@
 
   // ---- Shell: rail -----------------------------------------------------------------
 
-  const ALL_TABS = [['chats', 'Chats', 'chat'], ['contacts', 'Contacts', 'users'], ['reels', 'Reels', 'play'], ['me', 'Me', 'user']]
+  const ALL_TABS = [['chats', 'Chats', 'chat'], ['reels', 'Discover', 'play'], ['contacts', 'Activity', 'bell'], ['me', 'Me', 'user']]
   // Reels are public, so the anonymous identity doesn't have them.
   const TABS = { find: (f) => ALL_TABS.find(f), map: (f) => ALL_TABS.filter((t) => !(st.anon && t[0] === 'reels')).map(f) }
   const unreadTotal = () => st.summaries.reduce((n, s) => n + (st.prefs.muted.includes(s.conv) ? 0 : s.unread), 0)
@@ -426,18 +429,34 @@
     const [label, cls] = netLabel()
     $('#rail').replaceChildren(
       h('div', { class: 'logo' }, icon('logo', 24)),
+      h('button', { class: 'rail-sos desk-only', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
       ...TABS.map(([id, text, ic]) => {
         const n = id === 'chats' ? unreadTotal() : id === 'contacts' ? requestCount() : 0
         return h('button', { class: 'rail-btn' + (st.tab === id ? ' on' : ''), title: text, onClick: () => setTab(id) },
           icon(ic, 24), h('span', { class: 'label' }, text), n && st.tab !== id ? h('span', { class: 'badge' }, n > 99 ? '99+' : n) : null)
       }),
+      h('button', { class: 'rail-btn desk-create', title: 'Create', onClick: (e) => showCreate(e) }, icon('plus', 24), h('span', { class: 'label' }, 'Create')),
       h('div', { class: 'rail-spacer' }),
       h('button', { class: 'rail-btn rail-net', title: label, onClick: showConnection }, h('span', { class: 'net-dot ' + cls }), h('span', { class: 'label' }, label)))
+    // The round create button next to the tabs (phones).
+    if (!$('#create-btn')) $('#shell').appendChild(h('button', { id: 'create-btn', title: 'Create', onClick: (e) => showCreate(e) }, h('span', {}, h('span', {}, icon('plus', 30)))))
     const pill = $('#status-pill')
     if (pill) pill.replaceChildren(h('span', { class: 'net-dot ' + cls }), label)
     const total = unreadTotal()
     document.title = (total ? `(${total}) ` : '') + 'Meshron'
     if (M.native.badge) try { M.native.badge(total) } catch {}
+  }
+
+  /** Create: a video, a moment, a chat or a group (the round + button). */
+  function showCreate(e) {
+    const r = e && e.currentTarget ? e.currentTarget.getBoundingClientRect() : { left: innerWidth - 40, top: innerHeight - 80 }
+    menu(r.left, r.top, [
+      st.anon ? null : { icon: 'play', label: 'Post a video', onClick: () => { setTab('reels'); setTimeout(() => window.MeshronReels.openCreate(), 50) } },
+      { icon: 'plus', label: 'Share a moment', onClick: () => openComposer() },
+      { icon: 'edit', label: 'New chat', onClick: showNewChat },
+      { icon: 'users', label: 'New group', onClick: showNewGroup },
+      { icon: 'userPlus', label: 'Add a friend', onClick: () => showAddContact() }
+    ].filter(Boolean))
   }
 
   function setTab(id) {
@@ -457,17 +476,27 @@
   function buildSide() {
     const side = $('#side')
     const title = TABS.find((t) => t[0] === st.tab)[1]
-    const head = h('div', { class: 'side-head' },
-      h('h1', { class: 't-h1' }, title),
-      st.anon ? h('span', { class: 'anon-chip', title: 'Anonymous identity' }, icon('eyeOff', 13), 'ANONYMOUS') : null,
-      h('button', { class: 'sos-pill', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
-      h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
-      st.tab === 'chats' ? h('button', { class: 'icon-btn desk-only', title: 'New chat (Ctrl+N)', onClick: showNewChat }, icon('edit')) : null,
-      st.tab === 'chats' ? h('button', { class: 'icon-btn', title: 'New group', onClick: showNewGroup }, icon('users')) : null,
-      st.tab !== 'me' ? h('button', { class: 'icon-btn', title: 'Add contact', onClick: () => showAddContact() }, icon('userPlus')) : null)
+    const anonChip = st.anon ? h('span', { class: 'anon-chip', title: 'Anonymous identity' }, icon('eyeOff', 13), 'ANONYMOUS') : null
+    let head
+    if (st.tab === 'chats') {
+      head = h('div', { class: 'side-head' },
+        h('div', { class: 'brand' }, h('span', { class: 'm' }, 'M'), h('h1', { class: 't-h1' }, 'Meshron'), anonChip),
+        h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
+        h('button', { class: 'sos-pill', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
+        h('button', { class: 'circ', title: 'Search', onClick: () => { st.searchOpen = !st.searchOpen; if (!st.searchOpen) { st.query = ''; st.hits = [] } buildSide(); if (st.searchOpen) setTimeout(() => { const i = $('#search'); if (i) i.focus() }, 30) } }, icon(st.searchOpen ? 'x' : 'search', 22)))
+    } else if (st.tab === 'contacts') {
+      head = h('div', { class: 'side-head' }, h('h1', { class: 't-h1', style: { fontSize: '32px' } }, 'Activity'), anonChip,
+        h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
+        h('button', { class: 'circ', title: 'Add a friend', onClick: () => showAddContact() }, icon('userPlus', 22)))
+    } else {
+      head = h('div', { class: 'side-head' }, h('h1', { class: 't-h1', style: { flex: 1 } }, st.me.handle ? '@' + st.me.handle : st.me.username), anonChip,
+        h('button', { class: 'circ', title: 'QR code', onClick: showQr }, icon('qr', 22)),
+        h('button', { class: 'circ', title: 'Share', onClick: shareMe }, icon('share', 22)),
+        h('button', { class: 'circ', title: 'Settings', onClick: showSettings }, icon('gear', 22)))
+    }
     const kids = [head]
-    if (st.tab !== 'me') {
-      const input = h('input', { id: 'search', placeholder: st.tab === 'chats' ? 'Search chats and messages' : 'Search contacts', autocomplete: 'off', spellcheck: 'false' })
+    if (st.tab === 'chats' && (st.searchOpen || st.query)) {
+      const input = h('input', { id: 'search', placeholder: 'Search chats and messages', autocomplete: 'off', spellcheck: 'false', value: st.query || '' })
       const clear = h('button', { class: 'icon-btn clear', hidden: true, onClick: () => { input.value = ''; input.dispatchEvent(new Event('input')); input.focus() } }, icon('x', 18))
       let timer = null
       input.addEventListener('input', () => {
@@ -488,7 +517,6 @@
     const bodyEl = h('div', { class: 'side-body enter', id: 'side-body' })
     setTimeout(() => bodyEl.classList.remove('enter'), 700)
     kids.push(bodyEl)
-    if (st.tab === 'chats') kids.push(h('button', { class: 'fab', onClick: showNewChat }, icon('edit', 20), 'New chat'))
     side.replaceChildren(...kids)
     renderRail()
     renderSide()
@@ -573,13 +601,19 @@
 
   function renderChats(body) {
     const q = st.query.trim().toLowerCase()
-    const rows = chatRows().filter((r) => !q || r.title.toLowerCase().includes(q))
+    const f = st.chatFilter || 'all'
+    const rows = chatRows().filter((r) => !q || r.title.toLowerCase().includes(q)).filter((r) =>
+      f === 'unread' ? r.s && r.s.unread > 0 : f === 'groups' ? r.group : f === 'requests' ? (!r.group && (contact(r.conv) || {}).status === 'REQUEST') : true)
     const added = st.contacts.filter((c) => c.status === 'ADDED')
     const kids = []
+    const chips = !q ? h('div', { class: 'chips' }, ...[['all', 'All'], ['unread', 'Unread'], ['groups', 'Groups'], ['requests', 'Requests']].map(([id, label]) =>
+      h('button', { class: 'chip' + (f === id ? ' on' : ''), onClick: () => { st.chatFilter = id; renderSide() } }, label))) : null
     if (!q && !st.anon) kids.push(h('button', { class: 'ai-entry', onClick: () => window.MeshronAI.openChat(), style: { display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 24px)', margin: '4px 12px 10px', padding: '12px 14px', borderRadius: '18px', border: 'none', background: 'rgba(110,130,255,0.14)', color: 'inherit', textAlign: 'left', cursor: 'pointer' } },
       window.MeshronAI.aiAvatar(40), h('div', {}, h('div', { style: { fontWeight: 700 } }, 'Meshron AI'), h('div', { class: 'dim', style: { fontSize: '13px' } }, 'Ask anything, plan, write, translate'))))
     if (!q) kids.push(storiesStrip(added))
-    if (!rows.length && !q) {
+    if (chips) kids.push(chips)
+    if (!rows.length && !q && f !== 'all') kids.push(h('p', { class: 'dim', style: { padding: '24px', textAlign: 'center' } }, f === 'unread' ? "You're all caught up." : f === 'groups' ? 'No groups yet. Tap + to make one.' : 'No chat requests.'))
+    if (!rows.length && !q && f === 'all') {
       kids.push(h('div', { class: 'empty' },
         h('div', { class: 'orb' }, icon('chat', 36)),
         h('div', { class: 't-h2' }, 'No chats yet'),
@@ -625,20 +659,43 @@
   }
 
   function renderContacts(body) {
+    const af = st.activityFilter || 'all'
+    const show = (what) => af === 'all' || af === what
+    const chipRow = h('div', { class: 'chips' }, ...[['all', 'All'], ['requests', 'Requests'], ['suggestions', 'Suggestions'], ['meshron', 'From Meshron'], ['contacts', 'Contacts']].map(([id, label]) =>
+      h('button', { class: 'chip' + (af === id ? ' on' : ''), onClick: () => { st.activityFilter = id; renderSide() } }, label)))
+    // From Meshron: moderators' and Meshron AI's notices, right here.
+    const fromMeshron = h('div', {})
+    if (!st.anon && show('meshron') && window.MeshronMod && window.MeshronMod.notices) {
+      const paint = (list, banned) => {
+        if (!fromMeshron.isConnected && fromMeshron.parentNode) return
+        const rows = (list || []).slice(0, af === 'meshron' ? 50 : 5)
+        if (!rows.length && !banned) { if (af === 'meshron') fromMeshron.replaceChildren(h('p', { class: 'dim', style: { padding: '24px', textAlign: 'center' } }, 'Updates from Meshron show up here.')); return }
+        fromMeshron.replaceChildren(...[h('div', { class: 'section big' }, 'From Meshron'),
+          banned ? h('div', { class: 'note-row' }, h('div', { class: 'ic', style: { color: 'var(--danger)' } }, icon('warn', 24)), h('div', { class: 'grow' }, h('div', { class: 't-title' }, 'Your account is suspended'), h('div', { class: 'dim' }, banned.reason || ''))) : null,
+          ...rows.map((n) => h('div', { class: 'note-row', onClick: () => { if (n.action === 'hide' || n.action === 'ban') window.MeshronMod.appeal(n) } },
+            h('div', { class: 'ic' }, icon('shield', 24)),
+            h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { display: 'flex', gap: '8px' } }, h('div', { class: 't-title', style: { flex: 1 } }, n.title), h('span', { class: 'when' }, friendlyTime(n.ts))),
+              h('div', { class: 'dim' }, n.text),
+              (n.action === 'hide' || n.action === 'ban') ? h('div', { style: { color: 'var(--accent)', fontWeight: 700, marginTop: '6px' } }, 'Appeal') : null)))].filter(Boolean))
+      }
+      if (st.noticeCache) paint(st.noticeCache.list, st.noticeCache.banned)
+      window.MeshronMod.notices().then((r) => { st.noticeCache = r; paint(r.list, r.banned) }).catch(() => {})
+    }
     const q = st.query.trim().toLowerCase().replace(/^@/, '')
     const list = st.contacts.filter((c) => !q || c.displayName.toLowerCase().includes(q) || (c.handle || '').includes(q))
     const requests = list.filter((c) => c.status === 'REQUEST')
     const blocked = list.filter((c) => c.status === 'BLOCKED')
     const added = list.filter((c) => c.status === 'ADDED').sort((a, b) => a.displayName.localeCompare(b.displayName))
-    const kids = []
-    if (!q) {
+    const kids = [chipRow]
+    if (show('meshron')) kids.push(fromMeshron)
+    if (!q && af === 'contacts') {
       kids.push(h('div', { class: 'row action', onClick: () => showAddContact() }, h('div', { class: 'action-circle' }, icon('userPlus')),
         h('div', { class: 'grow' }, h('div', { class: 'name' }, 'Add contact'), h('div', { class: 'sub' }, 'By @username, ID or link'))))
       kids.push(h('div', { class: 'row action', onClick: shareMe }, h('div', { class: 'action-circle' }, icon('share')),
         h('div', { class: 'grow' }, h('div', { class: 'name' }, 'Invite friends'), h('div', { class: 'sub ellipsis' }, st.me.handle ? `Send your link, or tell them @${st.me.handle}` : 'Send them your Meshron link'))))
     }
     // Active on Meshron: people using Meshron lately, to make friends with.
-    if (!q && !st.anon) {
+    if (!q && !st.anon && show('suggestions')) {
       const box = h('div', {})
       kids.push(box)
       st.hiddenActive = st.hiddenActive || new Set()
@@ -646,19 +703,19 @@
         const known = new Set(st.contacts.map((c) => c.keyHex))
         const people = (users || []).filter((u) => /^[0-9a-f]{64}$/.test(u.id || '') && !known.has(u.id) && !st.hiddenActive.has(u.id)).slice(0, 20)
         if (!people.length || !box.isConnected) return
-        box.replaceChildren(h('div', { class: 'section' }, 'Active on Meshron'), ...people.map((u) => {
+        box.replaceChildren(h('div', { class: 'section big' }, 'Active on Meshron'), ...people.map((u) => {
           const name = u.name || (u.handle ? '@' + u.handle : 'Someone')
           return h('div', { class: 'row', onClick: () => window.MeshronReels && window.MeshronReels.openProfile(u.ch) },
             avatar(name, u.id, 48),
             h('div', { class: 'grow' }, h('div', { class: 'top' }, h('span', { class: 'name ellipsis' }, name), verifiedBadge(u.id)),
               h('div', { class: 'sub ellipsis' }, [u.handle ? '@' + u.handle : null, u.followers ? u.followers + ' followers' : null, 'active recently'].filter(Boolean).join(' · '))),
-            h('button', { class: 'icon-btn', title: 'Remove', onClick: (e) => { e.stopPropagation(); st.hiddenActive.add(u.id); e.currentTarget.closest('.row').remove() } }, icon('x', 20)),
-            h('button', { class: 'btn primary small', onClick: async (e) => { e.stopPropagation(); await M.call('contacts.add', { key: u.id, name }).catch(oops); st.hiddenActive.add(u.id); toast('Added ' + name) } }, 'Add'))
+            h('button', { class: 'btn light small', onClick: async (e) => { e.stopPropagation(); await M.call('contacts.add', { key: u.id, name }).catch(oops); st.hiddenActive.add(u.id); toast('Added ' + name) } }, 'Add'),
+            h('button', { class: 'btn dark small', onClick: (e) => { e.stopPropagation(); st.hiddenActive.add(u.id); e.currentTarget.closest('.row').remove() } }, 'Remove'))
         }))
       }).catch(() => {})
     }
-    if (requests.length) {
-      kids.push(h('div', { class: 'section' }, 'Waiting for you'))
+    if (requests.length && show('requests')) {
+      kids.push(h('div', { class: 'section big' }, 'Chat requests'))
       for (const c of requests) {
         kids.push(h('div', { class: 'row', onClick: () => openChat(c.keyHex) },
           avatar(c.displayName, c.keyHex, 48),
@@ -682,14 +739,16 @@
         kids.push(el)
       }
     }
-    section('Online', added.filter((c) => isOnline(c.keyHex)))
-    section('Offline', added.filter((c) => !isOnline(c.keyHex)))
-    if (!added.length && !requests.length) {
+    if (af === 'contacts' || q) {
+      section('Online', added.filter((c) => isOnline(c.keyHex)))
+      section('Offline', added.filter((c) => !isOnline(c.keyHex)))
+    }
+    if (af === 'contacts' && !added.length && !requests.length) {
       kids.push(h('div', { class: 'empty' }, h('div', { class: 'orb' }, icon('users', 36)),
         h('div', { class: 't-h2' }, q ? 'No match' : 'No contacts yet'),
         h('p', {}, q ? `Nobody in your contacts matches “${st.query.trim()}”.` : 'Add a friend by their @username or ID, or send them your link.')))
     }
-    if (blocked.length) {
+    if (blocked.length && af === 'contacts') {
       kids.push(h('div', { class: 'section' }, 'Blocked'))
       for (const c of blocked) {
         kids.push(h('div', { class: 'row', style: { cursor: 'default' } }, avatar(c.displayName, c.keyHex, 48),
@@ -834,16 +893,54 @@
     o.checked != null ? h('div', { class: 'switch' + (o.checked ? ' on' : '') }) : h('span', { class: 'dimmer' }, icon('right', 18)))
 
   function renderMe(body) {
+    const kinds = st.anon ? [] : [['user', 'grid', 'Videos'], ['private', 'lock', 'Private'], ['reposts', 'share', 'Reposts'], ['favourites', 'bookmark', 'Saved'], ['liked', 'heart', 'Liked']]
+    st.meTab = st.meTab || 'user'
+    const grid = h('div', { class: 'me-grid' })
+    const tabs = h('div', { class: 'me-tabs' }, ...kinds.map(([id, ic, label]) => h('button', { class: st.meTab === id ? 'on' : '', title: label, onClick: () => { st.meTab = id; renderSide() } }, icon(ic, 24))))
+    body.replaceChildren(window.MeshronProfile.head(), kinds.length ? tabs : null, grid)
+    if (!kinds.length) return
+    st.meCache = st.meCache || {}
+    const tile = (it) => h('div', { class: 'tile-v', onClick: () => { setTab('reels'); setTimeout(() => window.MeshronReels.openReel(it.ch, it.id), 60) } },
+      it.thumb ? h('img', { src: window.MeshronReels.imgSrc(it.thumb), alt: '' }) : null,
+      h('span', { class: 'n' }, icon('heart', 14), String(it.likes || 0)))
+    if (st.meCache[st.meTab] && st.meCache[st.meTab].length) grid.replaceChildren(...st.meCache[st.meTab].map(tile))
+    const wanted = st.meTab
+    ;(async () => {
+      try {
+        const s = await M.call('reels.status')
+        if (!s || !s.ch) { grid.replaceChildren(h('p', { class: 'dim', style: { gridColumn: '1 / -1', padding: '28px', textAlign: 'center' } }, 'Videos are starting…')); return }
+        const r = await M.call('reels.feed', { kind: st.meTab, ch: s.ch, limit: 60 })
+        const items = r.items || []
+        st.meCache[wanted] = items
+        if (st.meTab !== wanted || !grid.isConnected) return
+        if (!items.length) { grid.replaceChildren(h('p', { class: 'dim', style: { gridColumn: '1 / -1', padding: '28px', textAlign: 'center' } }, st.meTab === 'user' ? 'Your videos show up here. Tap + to post one.' : 'Nothing here yet.')); return }
+        grid.replaceChildren(...items.map(tile))
+      } catch (e) { grid.replaceChildren(h('p', { class: 'dim', style: { gridColumn: '1 / -1', padding: '28px', textAlign: 'center' } }, e.message)) }
+    })()
+  }
+
+  /** Settings (the gear on Me): a full page, like Android. */
+  function showSettings() {
+    const page = h('div', { class: 'page-full' })
+    const pbody = h('div', { class: 'pbody' })
+    const close = () => { page.remove(); window.removeEventListener('keydown', esc) }
+    const esc = (e) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', esc)
+    page.append(h('div', { class: 'phead' }, h('button', { class: 'icon-btn', title: 'Back', onClick: close }, icon('back', 24)), h('h1', {}, 'Settings')), pbody)
+    document.body.appendChild(page)
+    const draw = () => { settingsBody(pbody) }
+    st.redrawSettings = () => { if (page.isConnected) draw() }
+    draw()
+  }
+  function settingsBody(body) {
     const me = st.me
     const s = st.prefs.settings
-    const toggle = (key) => () => M.call('prefs.set', { key, value: !s[key] }).catch(oops)
+    const toggle = (key) => () => M.call('prefs.set', { key, value: !s[key] }).then(() => st.redrawSettings && st.redrawSettings()).catch(oops)
     const dht = st.net.dht
     body.replaceChildren(
-      window.MeshronProfile.head(),
-      h('div', { class: 'actions3' },
-        h('button', { onClick: shareMe }, h('div', { class: 'orb' }, icon('share', 20)), 'Share'),
-        h('button', { onClick: showQr }, h('div', { class: 'orb' }, icon('qr', 20)), 'QR code'),
-        h('button', { onClick: () => copy(me.id, 'ID copied') }, h('div', { class: 'orb' }, icon('copy', 20)), 'Copy ID')),
+      h('div', { class: 'group', style: { marginTop: '8px' } },
+        setRow('copy', '#3D7BE0', 'Copy my Meshron ID', { sub: me.id, onClick: () => copy(me.id, 'ID copied') })),
+      h('div', { style: { height: '12px' } }),
       h('button', { class: 'mode-card' + (st.anon ? ' on' : ''), onClick: confirmSwitch },
         h('div', { class: 'orb' }, icon(st.anon ? 'globe' : 'eyeOff', 22)),
         h('div', { class: 'grow' },
@@ -2128,7 +2225,7 @@
     const me = st.me
     const mineAv = avatar(me.username, me.publicKey, 58)
     items.push(storyBubble({
-      label: 'Your story',
+      label: 'You',
       ring: stories.mine.length ? 'mine' : 'none',
       onClick: () => (stories.mine.length ? openViewer('me', 0) : openComposer()),
       inner: mineAv,
@@ -2143,7 +2240,7 @@
     if (!added.length) items.push(h('button', { class: 'story', onClick: () => showAddContact() }, h('div', { class: 'add' }, icon('userPlus', 24)), h('span', {}, 'Add friend')))
     const live = online.length + stories.friends.filter((f) => isOnline(f.key)).length
     return [
-      h('div', { class: 'section' }, 'Stories', live ? [h('span', { class: 'dimmer' }, '·'), h('span', { class: 'net-dot online', style: { width: '8px', height: '8px' } }), h('span', { style: { color: 'var(--online)' } }, live + ' active')] : null),
+      h('div', { class: 'section big' }, 'Moments'),
       h('div', { class: 'stories' }, items)
     ]
   }
@@ -2975,7 +3072,7 @@
   M.on('contacts', (list) => { st.contacts = list; renderRail(); renderSide(); refreshHeader() })
   M.on('groups', (list) => { st.groups = list; renderSide(); refreshHeader() })
   M.on('summaries', (list) => { st.summaries = list; renderRail(); if (st.tab === 'chats') renderSide() })
-  M.on('prefs', (p) => { st.prefs = p; renderRail(); renderSide(); if ($('#details')) renderDetailsSoon() })
+  M.on('prefs', (p) => { st.prefs = p; renderRail(); renderSide(); if (st.redrawSettings) st.redrawSettings(); if ($('#details')) renderDetailsSoon() })
   M.on('net', (n) => { st.net = n; renderRail(); if (st.tab !== 'me' || true) renderSideSoon(); refreshHeader() })
   M.on('file-status', ({ key, text }) => {
     if (text == null) delete st.fileStatus[key]

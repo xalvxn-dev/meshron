@@ -79,7 +79,7 @@
 .reels-tabs button.on::after { content: ''; position: absolute; left: 30%; right: 30%; bottom: 0; height: 3px; border-radius: 2px; background: #fff; }
 .r-icon { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .25); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .r-icon:hover { background: rgba(255, 255, 255, .14); }
-.reels-create { position: absolute; z-index: 3; right: 18px; top: calc(70px + var(--safe-t)); width: 48px; height: 48px; border-radius: 16px; border: 0; color: #fff; background: var(--grad); display: grid; place-items: center; cursor: pointer; box-shadow: 0 10px 26px -6px rgba(217, 70, 239, .6); }
+.reels-create { position: absolute; z-index: 3; right: 18px; top: calc(70px + var(--safe-t)); width: 48px; height: 48px; border-radius: 16px; border: 0; color: #fff; background: var(--grad); display: grid; place-items: center; cursor: pointer; box-shadow: 0 10px 26px -6px rgba(110, 123, 255, .6); }
 @media (min-width: 821px) { .reels-create { top: auto; bottom: 26px; right: 26px; width: 56px; height: 56px; border-radius: 18px; } }
 .reels-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; color: var(--text); background: var(--bg); }
 .reels-empty .orb { width: 76px; height: 76px; border-radius: 26px; display: grid; place-items: center; background: var(--grad); color: #fff; margin-bottom: 8px; }

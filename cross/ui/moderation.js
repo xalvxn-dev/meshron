@@ -241,5 +241,5 @@
     })
   }
 
-  window.MeshronMod = { check, guard, badgeOf, hiddenAmong, badgeEl, wantBadges, report, showNotices, unseenNotices, requestVerification, ACCOUNTS }
+  window.MeshronMod = { notices, appeal, check, guard, badgeOf, hiddenAmong, badgeEl, wantBadges, report, showNotices, unseenNotices, requestVerification, ACCOUNTS }
 })()

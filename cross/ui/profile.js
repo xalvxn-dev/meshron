@@ -48,8 +48,8 @@
       p.link ? h('a', { href: p.link, target: '_blank', rel: 'noopener noreferrer', style: { color: '#7C95FF', fontWeight: 600, textDecoration: 'none', marginTop: '4px' } }, '🔗 ' + p.link.replace(/^https:\/\//, '')) : null,
       nums,
       h('div', { style: { display: 'flex', gap: '10px', width: '100%', padding: '8px 16px' } },
-        h('button', { class: 'btn primary', style: { flex: 1 }, onClick: editProfile }, 'Edit profile'),
-        h('button', { class: 'btn soft', style: { flex: 1 }, onClick: () => UI.showAddContact() }, 'Add friends')))
+        h('button', { class: 'btn light', style: { flex: 1, minHeight: '54px', fontSize: '17px' }, onClick: editProfile }, 'Edit profile'),
+        h('button', { class: 'btn dark', style: { flex: 1, minHeight: '54px', fontSize: '17px' }, onClick: () => UI.showAddContact() }, 'Add friends')))
   }
 
   /** Following / Followers / Friends, with follow back and unfollow. */

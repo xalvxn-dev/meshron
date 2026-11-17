@@ -1,14 +1,14 @@
 /* Stories (Instagram-style 24-hour posts) and app-wide motion. Loaded after styles.css. */
 
 /* ---- Strip ---- */
-.story { width: 82px; }
-.sring { position: relative; width: 70px; height: 70px; border-radius: 50%; padding: 3px; display: grid; place-items: center; }
-.sring > .gap { border-radius: 50%; padding: 2.5px; background: var(--bg); display: grid; place-items: center; }
+.story { width: 96px; }
+.sring { position: relative; width: 80px; height: 80px; border-radius: 36%; padding: 3px; display: grid; place-items: center; }
+.sring > .gap { border-radius: 34%; padding: 2.5px; background: var(--bg); display: grid; place-items: center; }
 @property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-.sring.new { background: conic-gradient(from var(--spin), var(--g1), var(--g2), var(--g3), var(--g2), var(--g1)); animation: ringspin 4s linear infinite; }
+.sring.new { background: var(--grad); }
 .sring.mine { background: var(--grad); }
-.sring.seen { background: #3a3a46; }
-.sring.none { background: transparent; }
+.sring.seen { background: var(--s3); }
+.sring.none { background: var(--s2); }
 @keyframes ringspin { to { --spin: 360deg; } }
 .story:hover .sring.new { animation-duration: 1.6s; }
 .splus { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--grad); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 3px var(--bg); }
