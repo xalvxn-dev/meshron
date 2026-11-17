@@ -85,3 +85,7 @@ button:active:not([disabled]), .story:active, .chip:active, .tile-v:active, .not
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Pop-ups always above full-screen views (lives, pages), so their buttons can be pressed. */
+#layer { z-index: 45; }
+#toasts { z-index: 50; }

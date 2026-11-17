@@ -258,6 +258,16 @@ app.whenReady().then(() => {
       try { fs.writeFileSync(flag, '1') } catch {}
     }
   }
+  // Going live with the screen: share the main screen, with the PC's sound.
+  try {
+    const { session, desktopCapturer } = require('electron')
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+      desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+        if (!sources.length) return callback({})
+        callback({ video: sources[0], audio: 'loopback' })
+      }).catch(() => callback({}))
+    })
+  } catch {}
   createWindow()
   createTray()
   host.call('init').then((s) => { if (s && s.prefs && s.prefs.settings) settings = s.prefs.settings }).catch(() => {})

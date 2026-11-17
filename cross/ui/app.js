@@ -3149,8 +3149,11 @@
   }
   async function startHosting(title) {
     const L = hostLive
-    L.id = Math.random().toString(36).slice(2, 12)
-    await M.call('live.start', { id: L.id, title })
+    const s = await M.call('reels.status').catch(() => null)
+    if (!s || !s.ready) throw new Error("Meshron is still connecting. Try again in a moment (check the internet if it doesn't).")
+    const id = Math.random().toString(36).slice(2, 12)
+    await M.call('live.start', { id, title })
+    L.id = id // only once the live really started (ending asks first only then)
     L.setup.remove()
     L.status.textContent = 'LIVE'; L.status.style.background = ''
     // Video: H.264, the same frames as calls (Android viewers decode them the same way).
