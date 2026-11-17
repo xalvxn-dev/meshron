@@ -47,9 +47,15 @@ import kotlin.coroutines.resumeWithException
 enum class Look(val label: String) {
     None("Original"), Aurora("Aurora"), Ember("Ember"), Mint("Mint"), Dusk("Dusk"),
     Vivid("Vivid"), Fade("Fade"), Mono("Mono"), Noir("Noir"),
+    Warm("Warm"), Cool("Cool"), Retro("Retro"), Cinema("Cinema"), Pop("Pop"), Sepia("Sepia"), Teal("Teal & Orange"), Soft("Soft"),
 }
 
-class TextLayer(val text: String, val x: Float, val y: Float, val size: Float = 1f, val color: Int = 0xFFFFFFFF.toInt(), val pill: Boolean = true)
+class TextLayer(val text: String, val x: Float, val y: Float, val size: Float = 1f, val color: Int = 0xFFFFFFFF.toInt(), val pill: Boolean = true, val font: String = "sans") {
+    fun copy(text: String = this.text, x: Float = this.x, y: Float = this.y, size: Float = this.size, color: Int = this.color, pill: Boolean = this.pill, font: String = this.font) = TextLayer(text, x, y, size, color, pill, font)
+}
+
+/** Text fonts, by name (the same families on every phone). */
+val TEXT_FONTS = listOf("Classic" to "sans", "Serif" to "serif", "Mono" to "monospace", "Hand" to "cursive", "Bold" to "sans-serif-black")
 
 class MusicTrack(val file: File, val title: String, val startMs: Long = 0, val sound: ReelSound? = null)
 
@@ -69,6 +75,13 @@ data class Edit(
     val music: MusicTrack? = null,
     val musicVolume: Float = 0.8f,
     val coverMs: Long = 500,
+    val warmth: Float = 0f, // -1..1
+    val fadeIn: Boolean = false,
+    val fadeOut: Boolean = false,
+    val zoom: Float = 1f, // 1..2
+    val flip: Boolean = false,
+    /** For a new shape (9:16, 1:1, 4:5): fit the whole picture with bars instead of filling (cropping). */
+    val fit: Boolean = false,
 ) {
     val lengthMs get() = ((trimEndMs - trimStartMs) / speed).toLong()
     val changed get() = this != Edit(trimEndMs = trimEndMs)
@@ -91,7 +104,16 @@ object VideoEditor {
             Look.Fade -> { m.postConcat(sat(0.75f)); m.postConcat(contrast(0.85f)); m.postConcat(scale(1f, 1f, 1f, 18f)) }
             Look.Mono -> m.postConcat(sat(0f))
             Look.Noir -> { m.postConcat(sat(0f)); m.postConcat(contrast(1.35f)) }
+            Look.Warm -> { m.postConcat(scale(1.1f, 1.02f, 0.88f, 4f)) }
+            Look.Cool -> { m.postConcat(scale(0.9f, 1.0f, 1.12f)) }
+            Look.Retro -> { m.postConcat(sat(0.7f)); m.postConcat(scale(1.08f, 1.0f, 0.84f, 14f)); m.postConcat(contrast(0.92f)) }
+            Look.Cinema -> { m.postConcat(contrast(1.18f)); m.postConcat(sat(0.85f)); m.postConcat(scale(0.96f, 1.0f, 1.06f)) }
+            Look.Pop -> { m.postConcat(sat(1.55f)); m.postConcat(contrast(1.08f)); m.postConcat(scale(1f, 1f, 1f, 6f)) }
+            Look.Sepia -> { m.postConcat(sat(0f)); m.postConcat(scale(1.12f, 0.98f, 0.78f, 10f)) }
+            Look.Teal -> { m.postConcat(scale(1.1f, 0.98f, 0.92f)); m.postConcat(contrast(1.12f)); m.postConcat(sat(1.15f)) }
+            Look.Soft -> { m.postConcat(contrast(0.88f)); m.postConcat(scale(1f, 1f, 1f, 12f)); m.postConcat(sat(0.92f)) }
         }
+        if (e.warmth != 0f) m.postConcat(scale(1f + e.warmth * 0.12f, 1f, 1f - e.warmth * 0.12f))
         if (e.saturation != 0f) m.postConcat(sat(1f + e.saturation))
         if (e.contrast != 0f) m.postConcat(contrast(1f + e.contrast * 0.6f))
         if (e.brightness != 0f) m.postConcat(scale(1f, 1f, 1f, e.brightness * 60f))
@@ -99,8 +121,9 @@ object VideoEditor {
     }
 
     /** The same matrix for the GPU (4×4, column-major, 0..1 colours; offsets dropped into the last column). */
-    private class MatrixEffect(cm: ColorMatrix) : RgbMatrix {
+    private class MatrixEffect(cm: ColorMatrix, private val fadeInUs: Long = 0, private val fadeOutUs: Long = 0, private val lengthUs: Long = 0) : RgbMatrix {
         private val m4: FloatArray
+        private val faded = FloatArray(16)
         init {
             val a = cm.array // row-major 4x5, offsets in 0..255
             m4 = FloatArray(16)
@@ -109,7 +132,15 @@ object VideoEditor {
             // diagonal (good enough for the small offsets our looks use).
             for (row in 0 until 3) m4[row * 4 + row] += a[row * 5 + 4] / 255f
         }
-        override fun getMatrix(presentationTimeUs: Long, useHdr: Boolean) = m4
+        override fun getMatrix(presentationTimeUs: Long, useHdr: Boolean): FloatArray {
+            var f = 1f
+            if (fadeInUs > 0 && presentationTimeUs < fadeInUs) f = minOf(f, presentationTimeUs.toFloat() / fadeInUs)
+            if (fadeOutUs > 0 && lengthUs > 0 && presentationTimeUs > lengthUs - fadeOutUs) f = minOf(f, (lengthUs - presentationTimeUs).toFloat() / fadeOutUs)
+            f = f.coerceIn(0f, 1f)
+            if (f >= 1f) return m4
+            for (i in 0 until 16) faded[i] = if (i % 4 == 3) m4[i] else m4[i] * f
+            return faded
+        }
     }
 
     private fun volume(v: Float): AudioProcessor = ChannelMixingAudioProcessor().apply {
@@ -134,27 +165,34 @@ object VideoEditor {
             .apply { if (e.trimEndMs != Long.MAX_VALUE) setEndPositionMs(e.trimEndMs) }.build()
         val video = ArrayList<androidx.media3.common.Effect>()
         // Rotate first, so the crop below works on the picture as you see it.
-        if (e.rotation != 0) video += ScaleAndRotateTransformation.Builder().setRotationDegrees(-e.rotation.toFloat()).build()
+        if (e.rotation != 0 || e.flip) video += ScaleAndRotateTransformation.Builder().setRotationDegrees(-e.rotation.toFloat()).setScale(if (e.flip) -1f else 1f, 1f).build()
+        // Zoom in: a centred crop, scaled back up below.
+        if (e.zoom > 1.01f) { val k = 1f / e.zoom; video += Crop(-k, k, -k, k) }
         when (e.aspect) {
             "9:16", "1:1", "4:5" -> {
                 val target = when (e.aspect) { "9:16" -> 9f / 16f; "1:1" -> 1f; else -> 4f / 5f }
-                val rotated = e.rotation % 180 != 0
-                val w = if (rotated) videoH else videoW
-                val h = if (rotated) videoW else videoH
-                val ratio = w.toFloat() / h
-                // Centre crop in normalised coordinates (-1..1).
-                if (ratio > target) { val k = target / ratio; video += Crop(-k, k, -1f, 1f) }
-                else if (ratio < target) { val k = ratio / target; video += Crop(-1f, 1f, -k, k) }
+                if (e.fit) video += Presentation.createForAspectRatio(target, Presentation.LAYOUT_SCALE_TO_FIT)
+                else {
+                    val rotated = e.rotation % 180 != 0
+                    val w = if (rotated) videoH else videoW
+                    val h = if (rotated) videoW else videoH
+                    val ratio = w.toFloat() / h
+                    // Centre crop in normalised coordinates (-1..1).
+                    if (ratio > target) { val k = target / ratio; video += Crop(-k, k, -1f, 1f) }
+                    else if (ratio < target) { val k = ratio / target; video += Crop(-1f, 1f, -k, k) }
+                }
             }
         }
         val cm = colorMatrix(e)
-        if (e.look != Look.None || e.brightness != 0f || e.contrast != 0f || e.saturation != 0f) video += MatrixEffect(cm)
+        if (e.look != Look.None || e.brightness != 0f || e.contrast != 0f || e.saturation != 0f || e.warmth != 0f || e.fadeIn || e.fadeOut)
+            video += MatrixEffect(cm, if (e.fadeIn) 700_000L else 0L, if (e.fadeOut) 700_000L else 0L, e.lengthMs * 1000)
         if (e.texts.isNotEmpty()) {
             val overlays = e.texts.map { t ->
                 val s = SpannableString(t.text)
                 s.setSpan(AbsoluteSizeSpan((72 * t.size).toInt()), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 s.setSpan(ForegroundColorSpan(t.color), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 s.setSpan(StyleSpan(android.graphics.Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                if (t.font != "sans") s.setSpan(android.text.style.TypefaceSpan(t.font), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 if (t.pill) s.setSpan(BackgroundColorSpan(0x99000000.toInt()), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 // x, y are 0..1 from the top-left; the overlay anchor is -1..1 from the bottom-left.
                 TextOverlay.createStaticTextOverlay(s, StaticOverlaySettings.Builder().setBackgroundFrameAnchor(t.x * 2 - 1, 1 - t.y * 2).build())

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,7 +42,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.xalvxnlab.meshron.ui.theme.MeshColors
 
 /** Bump when the documents change in a way people must agree to again. */
-const val LEGAL_VERSION = 1
+const val LEGAL_VERSION = 2
 
 /** Where people reach Meshron about legal, privacy and safety questions. Shown in the documents. */
 const val LEGAL_CONTACT = "xalvxn@gmail.com"
@@ -52,11 +53,12 @@ val TERMS = LegalDoc(
     "Terms of Service", "16 November 2026",
     "These terms are an agreement between you and Meshron. By using Meshron you agree to them, to the Privacy Policy and to the Community Guidelines.",
     listOf(
-        "Who can use Meshron" to "You must be at least 13 years old, or the minimum age to use online services in your country if that is higher. If you are under 18, you confirm a parent or guardian agrees to these terms. You may not use Meshron if you have been suspended from it, or if the law forbids you to.",
+        "Who can use Meshron" to "You must be at least 13 years old, or the minimum age to use online services in your country if that is higher. If you are under 18, you confirm a parent or guardian agrees to these terms. You may not use Meshron if you have been suspended from it, or if the law forbids you to. After you create your account, Meshron asks your birthday once: it checks that you are old enough to use Meshron, and only people 18 or older can create or join 18+ groups. Giving a false birthday breaks these terms.",
         "How Meshron works" to "Meshron is peer-to-peer. Chats travel directly between devices (or through other devices carrying them, still encrypted) and are stored on the devices of the people in the chat, not on Meshron's servers. Public videos (Reels) are shared from people's devices to the people who watch them. Meshron's servers only handle public accounts (username, sign-in, email codes), moderation, verification, and optional AI features.",
         "Your account" to "Keep your password, PIN and recovery key safe: they protect your identity, and Meshron cannot read your chats or recover them for you. You are responsible for what happens under your account. Anonymous mode is a separate identity on your device; the same rules apply to it.",
         "Your content" to "You own what you post. By posting a public video, comment or profile, you give Meshron and the people who see it a worldwide, non-exclusive, royalty-free licence to store, copy, show and share it inside Meshron (for example in feeds, reposts, collaborations and shares), until you delete it. Others may already have a copy of something before you delete it. Only post content you have the rights to, including music.",
         "What you must not do" to "Follow the Community Guidelines. Do not break the law; harass, threaten or exploit anyone; post sexual content involving minors (it is reported to authorities); impersonate others; spread scams, malware or spam; collect other people's data without permission; or try to break, overload or get around Meshron's security and moderation.",
+        "18+ groups" to "Adults can make groups marked 18+. Only people whose birthday shows they are 18 or older can create or join them. Looser rules apply inside them (adult talk and swearing between adults), but the rules that protect people still apply: no harassment, threats, hate, scams, or anything involving minors.",
         "Moderation" to "People can report content and accounts. An automated moderator reviews reports first and Meshron's moderators review its decisions. We may hide content, limit features, warn, suspend or ban accounts that break these terms or the guidelines. Hidden content is not deleted: you can appeal from Activity, and if you win it comes back as it was. Repeated or serious violations lead to a permanent ban.",
         "AI features" to "Meshron AI (helper, captions, smart replies, translation) sends the text you choose to an AI service to get an answer. Answers can be wrong: do not rely on them for medical, legal, financial or safety decisions.",
         "Safety features" to "SOS and nearby features help you reach people, but Meshron is not an emergency service and cannot guarantee delivery. Always contact local emergency services when you are in danger.",
@@ -74,7 +76,9 @@ val PRIVACY = LegalDoc(
         "Chats, calls and moments" to "End-to-end encrypted between the people in the chat and stored only on their devices (in an encrypted database). Meshron's servers never receive them. Devices that carry messages for others only ever hold locked copies they cannot read.",
         "Public account" to "If you make a public account, our server stores your username, your email address (for codes and account recovery), a one-way hash of a key made from your password (never the password), your public ID, and a locked copy of your identity that only your password can open. Anonymous mode never uses the server.",
         "Reels and your profile" to "Your name, @username, photo, bio, public videos, likes, comments, follows and reposts are public and shared peer-to-peer with people who view them. Saved and liked lists stay on your device.",
+        "Your birthday" to "Asked once, after you create your account. It is kept only on your device, is not shown on your profile and is not sent to our servers. We use it to check that you are old enough to use Meshron (13, or older where the law requires) and to decide whether you can create or join 18+ groups.",
         "Nearby suggestions" to "Off unless you turn it on. When on, your device shares a rough area (a square of about 5 km), never your exact location, with Meshron users in the same area.",
+        "Automatic checks" to "When you post a comment, a group message, a caption, a description, a name, a username or a bio, its text is checked by Meshron AI against the Community Guidelines (in 18+ groups, the looser 18+ rules). The text is sent to an AI provider only for this check. If it breaks a rule you get a warning, kept with your moderation notices.",
         "Reports and moderation" to "When you report something, we receive your report, what you were looking at, the content in question, and any screenshot you attach. Reports are reviewed by an automated moderator and by Meshron's moderators, and are emailed to the moderation team. We keep moderation records (hidden items, warnings, suspensions, appeals) to enforce the rules.",
         "AI features" to "Only when you use them: the text you send is passed to an AI provider to answer, and is not used by Meshron to build profiles. A daily limit is counted per account.",
         "Verification" to "If you ask for verification, we receive the name, category, reasons and links you provide, and keep the decision.",
@@ -100,6 +104,8 @@ val GUIDELINES = LegalDoc(
         "No scams or spam" to "No fraud, phishing, pyramid schemes, fake giveaways, malware, or repetitive unwanted messages.",
         "Respect others' rights" to "Only post what you have the rights to. No sharing private information or intimate images without consent.",
         "No harmful misinformation" to "No false information likely to cause real harm (for example about health, elections or emergencies).",
+        "18+ groups" to "Groups marked 18+ are for adults only. Adult talk and swearing between adults are fine there; everything else in these guidelines still applies.",
+        "Instant warnings" to "Meshron AI checks what you post as you post it. If something breaks these guidelines it isn't posted (or, in a group, it's deleted) and you get a warning right away. Repeated breaks lead to a suspension.",
         "Enforcement" to "Content that breaks these rules is hidden, and accounts can be warned, limited, suspended or banned. You can appeal any decision from Activity → From Meshron. Report anything that breaks the rules: it's private and helps everyone.",
     ),
 )
@@ -133,7 +139,7 @@ fun LegalDocScreen(doc: LegalDoc, onBack: () -> Unit) {
 /** Shown once (and again when the documents change): confirm age and agree before using Meshron. */
 @Composable
 fun LegalGate(onAccept: () -> Unit) {
-    var age by remember { mutableStateOf(false) }
+    val age = true
     var agree by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<LegalDoc?>(null) }
     Column(Modifier.fillMaxSize().background(MeshColors.Bg).statusBarsPadding().navigationBarsPadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -141,8 +147,6 @@ fun LegalGate(onAccept: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text("Private chats, moments and videos, phone to phone. Before you start:", color = MeshColors.TextSecondary)
         Spacer(Modifier.height(24.dp))
-        Tick(age, "I'm 13 or older (or the minimum age in my country)") { age = !age }
-        Spacer(Modifier.height(12.dp))
         Tick(agree, "I agree to the Terms of Service and Community Guidelines, and I've read the Privacy Policy") { agree = !agree }
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -156,6 +160,68 @@ fun LegalGate(onAccept: () -> Unit) {
         }
     }
     reading?.let { LegalDocScreen(it) { reading = null } }
+}
+
+/** Asked once of people who started Meshron before birthdays were asked. */
+@Composable
+fun BirthdayGate(onDone: () -> Unit) {
+    var birthday by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    val problem = com.xalvxnlab.meshron.settings.Age.problem(birthday)
+    Column(Modifier.fillMaxSize().background(MeshColors.Bg).statusBarsPadding().navigationBarsPadding().imePadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
+        Text("When's your birthday?", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(24.dp))
+        BirthdayField(birthday) { birthday = it }
+        if (birthday != null && problem != null) Text(problem, color = MeshColors.Danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+        Spacer(Modifier.height(28.dp))
+        Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(50)).background(if (problem == null) MeshColors.TextPrimary else MeshColors.Surface3)
+            .clickable(enabled = problem == null) { birthday?.let { com.xalvxnlab.meshron.settings.Age.set(it) }; onDone() }, contentAlignment = Alignment.Center) {
+            Text("Continue", color = if (problem == null) MeshColors.Bg else MeshColors.TextTertiary, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** Day, month and year typed right on the page. */
+@Composable
+fun BirthdayField(value: java.time.LocalDate?, onPick: (java.time.LocalDate?) -> Unit) {
+    var d by remember { mutableStateOf(value?.dayOfMonth?.toString().orEmpty()) }
+    var m by remember { mutableStateOf(value?.monthValue?.toString().orEmpty()) }
+    var y by remember { mutableStateOf(value?.year?.toString().orEmpty()) }
+    fun emit() { onPick(runCatching { java.time.LocalDate.of(y.toInt(), m.toInt(), d.toInt()) }.getOrNull()?.takeIf { y.length == 4 }) }
+    val colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(focusedBorderColor = MeshColors.Accent, unfocusedBorderColor = MeshColors.Surface3)
+    val numbers = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        androidx.compose.material3.OutlinedTextField(d, { if (it.length <= 2 && it.all(Char::isDigit)) { d = it; emit() } }, label = { Text("Day") }, singleLine = true, keyboardOptions = numbers, colors = colors, modifier = Modifier.weight(1f))
+        androidx.compose.material3.OutlinedTextField(m, { if (it.length <= 2 && it.all(Char::isDigit)) { m = it; emit() } }, label = { Text("Month") }, singleLine = true, keyboardOptions = numbers, colors = colors, modifier = Modifier.weight(1f))
+        androidx.compose.material3.OutlinedTextField(y, { if (it.length <= 4 && it.all(Char::isDigit)) { y = it; emit() } }, label = { Text("Year") }, singleLine = true, keyboardOptions = numbers, colors = colors, modifier = Modifier.weight(1.4f))
+    }
+}
+
+/** (Old pop-up date picker, no longer used.) */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun BirthdayPicker(value: java.time.LocalDate?, onPick: (java.time.LocalDate) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { open = true }.background(MeshColors.Surface1).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Birthday", color = MeshColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+            Text(value?.format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.LONG)) ?: "Tap to pick your birthday", style = MaterialTheme.typography.bodyLarge,
+                color = if (value == null) MeshColors.TextTertiary else MeshColors.TextPrimary)
+        }
+        Text("Change", color = MeshColors.Accent, fontWeight = FontWeight.SemiBold)
+    }
+    if (open) {
+        val utc = java.time.ZoneOffset.UTC
+        val start = (value ?: java.time.LocalDate.now().minusYears(18)).atStartOfDay(utc).toInstant().toEpochMilli()
+        val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start, initialDisplayMode = androidx.compose.material3.DisplayMode.Input)
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { open = false },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                state.selectedDateMillis?.let { onPick(java.time.Instant.ofEpochMilli(it).atZone(utc).toLocalDate()) }
+                open = false
+            }) { Text("OK") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { open = false }) { Text("Cancel") } },
+        ) { androidx.compose.material3.DatePicker(state, title = { Text("Your birthday", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) }, showModeToggle = true) }
+    }
 }
 
 @Composable

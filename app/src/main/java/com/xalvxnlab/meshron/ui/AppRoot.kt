@@ -53,6 +53,9 @@ fun AppRoot(app: MeshronApp) {
             return@Surface
         }
         if (accepted < 0) return@Surface
+        // Meshron AI's warning when something just posted breaks a rule.
+        val ruleBreak by app.moderation.warning.collectAsState()
+        ruleBreak?.let { b -> com.xalvxnlab.meshron.ui.components.RuleWarning(b, onClose = { app.moderation.dismissWarning() }) }
         when (val s = state) {
             RootState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -67,6 +70,9 @@ fun AppRoot(app: MeshronApp) {
                 if (offline) OnboardingFlow(repo) else com.xalvxnlab.meshron.ui.account.AuthFlow(offline = { offline = true })
             }
             is RootState.Ready -> {
+                // Birthday: asked once, after the account is made.
+                var hasBirthday by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.xalvxnlab.meshron.settings.Age.known || com.xalvxnlab.meshron.identity.Mode.anon) }
+                if (!hasBirthday) { com.xalvxnlab.meshron.ui.legal.BirthdayGate(onDone = { hasBirthday = true }); return@Surface }
                 // App lock (a PIN set in Me): nothing shows until it's entered.
                 val pin by app.settings.pinHash.collectAsState(initial = null)
                 val isLocked by app.locked.collectAsState()

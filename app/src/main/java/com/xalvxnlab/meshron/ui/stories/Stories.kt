@@ -197,7 +197,8 @@ private fun BoxScope.OnlineDot() {
 
 @Composable
 private fun StoryBubble(label: String, ring: RingStyle, onClick: () -> Unit, badge: @Composable BoxScope.() -> Unit = {}, avatar: @Composable () -> Unit) {
-    val spin by rememberInfiniteTransition(label = "ring").animateFloat(0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing), RepeatMode.Restart), label = "spin")
+    // A still ring: many bubbles turning forever kept the home screen redrawing (slow phones felt it).
+    val spin = 0f
     Column(
         Modifier.width(80.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -495,7 +496,7 @@ private fun StoryComposer(onClose: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("New story", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("Your contacts see it for 24 hours", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, maxLines = 1)
+                    Text("Contacts see it for 24 hours", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
                 if (photo == null) {
                     // Photo lives up here, so it never gets squeezed by the colours.
@@ -526,7 +527,8 @@ private fun StoryComposer(onClose: () -> Unit) {
                     )
                 }
             }
-            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Extra room at the bottom: some phones report no navigation-bar inset inside dialogs, which hid the colours and button.
+            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (photo == null) {
                     // Colours scroll sideways if the screen is narrow.
                     Row(

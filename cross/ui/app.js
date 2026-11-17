@@ -518,7 +518,7 @@
       if (c.status !== 'ADDED' && !byConv.has(c.keyHex)) continue
       rows.push({ conv: c.keyHex, title: c.displayName, group: false, online: isOnline(c.keyHex), fallback: c.status === 'REQUEST' ? 'Wants to chat with you' : 'Tap to say hi', s: byConv.get(c.keyHex) })
     }
-    for (const g of st.groups) rows.push({ conv: g.conv, title: g.name, group: true, online: false, fallback: g.members.length + ' members', s: byConv.get(g.conv) })
+    for (const g of st.groups) rows.push({ conv: g.conv, title: g.name, group: true, online: false, fallback: (g.adult ? '18+ · ' : '') + g.members.length + ' members', s: byConv.get(g.conv) })
     const pinned = (r) => (st.prefs.pinned.includes(r.conv) ? 1 : 0)
     return rows.sort((a, b) => pinned(b) - pinned(a) || ((b.s ? b.s.last.localTime : 0) - (a.s ? a.s.last.localTime : 0)))
   }
@@ -772,6 +772,12 @@
     const name = h('input', { class: 'input', placeholder: 'e.g. Family', maxlength: 48 })
     const list = h('div', { style: { maxHeight: '300px', overflowY: 'auto', marginTop: '8px' } })
     const count = h('div', { class: 'section', style: { padding: '14px 4px 0' } })
+    // 18+ or for everyone (only adults can make an 18+ group).
+    const adultBox = h('input', { type: 'checkbox', disabled: true })
+    const adultHint = h('div', { class: 't-small dim' }, 'For everyone, teens included. Meshron AI keeps the rules strict.')
+    adultBox.addEventListener('change', () => { adultHint.textContent = adultBox.checked ? 'Adults only. Looser rules: adult talk and swearing are fine; harassment, threats, scams and anything involving minors are never allowed.' : 'For everyone, teens included. Meshron AI keeps the rules strict.' })
+    M.call('age.get').then((a) => { adultBox.disabled = !(a && a.adult); if (!(a && a.adult)) adultHint.textContent = 'Only adults (18 and over) can make 18+ groups.' }).catch(() => {})
+    const adultRow = h('label', { class: 'set-row', style: { cursor: 'pointer', alignItems: 'flex-start' } }, adultBox, h('div', { class: 'grow' }, h('div', { class: 't-title' }, '18+ group'), adultHint))
     let m = null
     const refresh = () => {
       count.textContent = `Who's in it? (${picked.size} picked)`
@@ -784,12 +790,12 @@
     name.addEventListener('input', refresh)
     m = modal({
       title: 'New group',
-      body: added.length ? h('div', {}, h('label', { class: 'field', style: { marginTop: 0 } }, h('span', {}, 'Group name'), name), count, list)
+      body: added.length ? h('div', {}, h('label', { class: 'field', style: { marginTop: 0 } }, h('span', {}, 'Group name'), name), adultRow, count, list)
         : h('p', { class: 'dim' }, "You need contacts first. Only people you've added can join a group."),
       buttons: added.length ? [{ label: 'Cancel', onClick: (x) => x.close() }, {
         label: 'Create', kind: 'primary', disabled: true, onClick: async (x) => {
           try {
-            const conv = await M.call('group.create', { name: name.value, members: [...picked] })
+            const conv = await M.call('group.create', { name: name.value, members: [...picked], adult: !!(adultBox && adultBox.checked) })
             x.close()
             setTimeout(() => openChat(conv), 80)
           } catch (err) { oops(err) }
@@ -1241,7 +1247,7 @@
       if (!g) return ['', false]
       const others = g.members.filter((k) => k !== st.me.publicKey)
       const on = others.filter(isOnline).length
-      return [`${g.members.length} members` + (on ? ` · ${on} online` : ''), false]
+      return [(g.adult ? "18+ · " : "") + `${g.members.length} members` + (on ? ` · ${on} online` : ''), false]
     }
     const c = contact(conv)
     if (c && c.status === 'REQUEST') return ['Wants to chat with you', false]
@@ -1578,7 +1584,7 @@
       title: g.name,
       body: h('div', {},
         h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', margin: '4px 0 12px' } },
-          icon64, h('div', { class: 't-h2' }, g.name), h('div', { class: 'dim t-small' }, g.members.length + ' members'), g.bio ? h('p', { style: { textAlign: 'center' } }, g.bio) : null),
+          icon64, h('div', { class: 't-h2' }, g.name), h('div', { class: 'dim t-small' }, (g.adult ? '18+ group · ' : '') + g.members.length + ' members'), g.bio ? h('p', { style: { textAlign: 'center' } }, g.bio) : null),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '8px' } },
           iAdmin ? h('button', { class: 'btn small soft', onClick: editInfo }, 'Edit') : null,
           iAdmin ? h('button', { class: 'btn small soft', onClick: addMembers }, 'Add members') : null,
@@ -3041,7 +3047,7 @@
   function legalGate() {
     const L = window.MeshronLegal
     return new Promise((resolve) => {
-      let age = false
+      const age = true
       let agree = false
       const go = h('button', { class: 'btn primary', disabled: true, onClick: async () => { await M.call('prefs.set', { key: 'legalVersion', value: L.version }).catch(() => {}); resolve() } }, 'Continue')
       const tick = (label, set) => {
@@ -3052,14 +3058,37 @@
       ob.replaceChildren(h('div', { class: 'ob-card' },
         h('h1', { class: 't-h1' }, 'Welcome to Meshron'),
         h('p', { class: 'dim' }, 'Private chats, moments and videos, device to device. Before you start:'),
-        tick("I'm 13 or older (or the minimum age in my country)", (v) => { age = v }),
         tick("I agree to the Terms of Service and Community Guidelines, and I've read the Privacy Policy", (v) => { agree = v }),
         h('p', {}, ...['TERMS', 'PRIVACY', 'GUIDELINES'].map((k) => h('a', { href: '#', style: { marginRight: '14px' }, onClick: (e) => { e.preventDefault(); showLegal(L.docs[k]) } }, L.docs[k].title))),
         go))
     })
   }
 
+  /** Asked once of people who started before birthdays were asked (18+ groups need it). */
+  async function askBirthday() {
+    const a = await M.call('age.get').catch(() => null)
+    if (!a || a.birth || st.anon) return
+    const num = (ph, max) => h('input', { class: 'input', inputmode: 'numeric', placeholder: ph, maxlength: max, style: { flex: max === 4 ? 1.4 : 1, minWidth: 0, textAlign: 'center' } })
+    const d = num('Day', 2); const mo = num('Month', 2); const y = num('Year', 4)
+    const err = h('div', { class: 'hint bad' })
+    const go = h('button', { class: 'btn primary wide', disabled: true, style: { marginTop: '24px' } }, 'Continue')
+    const value = () => (y.value.length === 4 && mo.value && d.value) ? y.value + '-' + mo.value.padStart(2, '0') + '-' + d.value.padStart(2, '0') : ''
+    for (const x of [d, mo, y]) x.addEventListener('input', () => { x.value = x.value.replace(/\D/g, ''); err.textContent = ''; go.disabled = !value() })
+    const page = h('div', { class: 'birthday-page', style: { position: 'fixed', inset: 0, zIndex: 400, background: 'var(--bg, #0b0d14)', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px' } },
+      h('div', { style: { maxWidth: '420px', width: '100%', margin: '0 auto' } },
+        h('h1', { class: 't-h1' }, "When's your birthday?"),
+        h('div', { style: { display: 'flex', gap: '10px', marginTop: '24px' } }, d, mo, y), err, go))
+    go.onclick = async () => {
+      const v = value(); const dt = new Date(v)
+      if (!v || isNaN(dt) || dt.getUTCDate() !== Number(d.value)) { err.textContent = 'Check the date'; return }
+      try { await M.call('age.set', { birth: v }); page.remove() } catch (e) { err.textContent = e.message }
+    }
+    document.body.appendChild(page)
+    setTimeout(() => d.focus(), 50)
+  }
+
   function enterApp() {
+    askBirthday()
     ob.hidden = true
     $('#shell').hidden = false
     buildSide()

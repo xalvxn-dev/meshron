@@ -83,12 +83,14 @@ class IdentityRepository(context: Context) {
         val h = Identity.cleanHandle(handle)
         require(h.isEmpty() || Identity.isValidHandle(h))
         if (byUser) nextHandleChange().let { if (it > System.currentTimeMillis()) throw IllegalStateException(waitText("username", it)) }
+        if (byUser && h.isNotEmpty()) com.xalvxnlab.meshron.moderation.ModerationService.guardText("username", h)
         store.edit { it[HANDLE] = h; if (byUser) it[HANDLE_AT] = System.currentTimeMillis() }
     }
 
     suspend fun rename(username: String) {
         require(Identity.isValidName(username))
         nextNameChange().let { if (it > System.currentTimeMillis()) throw IllegalStateException(waitText("name", it)) }
+        com.xalvxnlab.meshron.moderation.ModerationService.guardText("name", username)
         store.edit { it[USERNAME] = Identity.cleanName(username); it[NAME_AT] = System.currentTimeMillis() }
     }
 

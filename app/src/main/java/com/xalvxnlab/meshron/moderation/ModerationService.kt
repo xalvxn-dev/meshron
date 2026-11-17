@@ -42,6 +42,54 @@ class ModerationService(private val context: Context, private val accounts: Acco
     /** Why my account is suspended (null if it isn't). */
     val banned: StateFlow<String?> = _banned.asStateFlow()
 
+    init { current = this }
+
+    // ---- Meshron AI's rule check (as things are posted) ----
+
+    /** What Meshron AI found wrong with something just posted. */
+    data class RuleBreak(val kind: String, val rule: String, val reason: String, val severity: Int)
+
+    /** Thrown when Meshron AI stops a post; the app shows [warning] as a full warning. */
+    class RuleBroken(val b: RuleBreak) : Exception(b.reason)
+
+    private val _warning = MutableStateFlow<RuleBreak?>(null)
+    /** The latest warning to show (null once it's been seen). */
+    val warning: StateFlow<RuleBreak?> = _warning.asStateFlow()
+    fun dismissWarning() { _warning.value = null }
+
+    /**
+     * Meshron AI checks [text] ([kind]: comment, group, caption, description, username, name,
+     * bio). Null when it's fine, or when the check can't run (no internet, AI busy): the check
+     * never stops anyone posting by itself failing.
+     */
+    suspend fun check(kind: String, text: String, adult: Boolean = false): RuleBreak? {
+        if (text.isBlank()) return null
+        val o = runCatching {
+            kotlinx.coroutines.withTimeout(8_000) {
+                signed("/v1/mod/check", JSONObject().put("kind", kind).put("text", text.take(2000)).put("adult", adult)
+                    .put("lang", java.util.Locale.getDefault().getDisplayLanguage(java.util.Locale.ENGLISH)))
+            }
+        }.getOrNull() ?: return null
+        if (o.optBoolean("ok", true)) return null
+        val b = RuleBreak(kind, o.optString("rule").ifBlank { "Community Guidelines" }, o.optString("reason").ifBlank { "This breaks Meshron's Community Guidelines." }, o.optInt("severity", 2))
+        _warning.value = b
+        runCatching { refresh() } // the warning is in Activity too
+        return b
+    }
+
+    /** Checks [text] and stops the post (throws [RuleBroken]) when it breaks a rule. */
+    suspend fun guard(kind: String, text: String, adult: Boolean = false) {
+        check(kind, text, adult)?.let { throw RuleBroken(it) }
+    }
+
+    companion object {
+        /** The running service, for the places that check posts (set once at start). */
+        @Volatile var current: ModerationService? = null
+            private set
+        /** Same as [guard], when moderation is running. */
+        suspend fun guardText(kind: String, text: String, adult: Boolean = false) { current?.guard(kind, text, adult) }
+    }
+
     private suspend fun myId() = identity.identity.filterNotNull().first().publicKey.toHex()
 
     private fun sha256Hex(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).toHex()

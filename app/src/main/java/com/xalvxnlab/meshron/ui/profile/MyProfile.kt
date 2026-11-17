@@ -247,8 +247,9 @@ fun SettingsScreen(identity: Identity, repo: IdentityRepository, network: Networ
 fun MeshronCard(identity: Identity, bio: String, friends: Int, followers: Int?, likes: Int?) {
     var back by remember { mutableStateOf(false) }
     val turn by androidx.compose.animation.core.animateFloatAsState(if (back) 180f else 0f, androidx.compose.animation.core.tween(450), label = "flip")
-    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "mesh")
-    val drift by t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(9000), androidx.compose.animation.core.RepeatMode.Reverse), label = "d")
+
+    // Still (a drifting background redrew every frame while Me was open).
+    val drift = 0.5f
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(220.dp)
@@ -318,8 +319,9 @@ private fun CardStat(value: String, label: String) {
 @Composable
 fun MeshronCover(identity: Identity, bio: String, friends: Int, followers: Int?, likes: Int?) {
     var qr by remember { mutableStateOf(false) }
-    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "mesh")
-    val drift by t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(9000), androidx.compose.animation.core.RepeatMode.Reverse), label = "d")
+
+    // Still (a drifting background redrew every frame while Me was open).
+    val drift = 0.5f
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.fillMaxWidth().height(186.dp)) {
             Box(

@@ -11,6 +11,8 @@ BREVO_SENDER = "meshronmessanger@gmail.com"
 #   npx wrangler secret put AI_KEY
 AI_URL = "https://api.groq.com/openai/v1"
 AI_MODEL = "openai/gpt-oss-120b"
+# The quick check of every post (higher free limits, fast).
+AI_CHECK_MODEL = "openai/gpt-oss-20b"
 # Every report and appeal is emailed here (comma-separate several).
 MOD_EMAIL = "xalvxn@gmail.com"
 # Usernames that are Meshron admins (can appoint moderators). Founders: reserved usernames.

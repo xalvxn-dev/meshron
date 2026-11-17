@@ -107,6 +107,8 @@ data class GroupEntity(
     val bio: String = "",
     /** Small group photo (base64 JPEG), or empty. */
     val icon: String = "",
+    /** An 18+ group (chosen when it's made): adults only, looser rules (the safety rules still apply). */
+    val adult: Boolean = false,
 ) {
     val memberList: List<String> get() = members.split(',').filter { it.isNotBlank() }
     val owner: String get() = ownerKey.ifEmpty { creatorKey }
@@ -368,6 +370,13 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/** v8: 18+ groups. */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE groups ADD COLUMN adult INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 /** v5 (Phase 6): file messages remember their local copy. */
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -377,7 +386,7 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
 
 @Database(
     entities = [MessageEntity::class, GroupEntity::class, GroupAck::class, GroupLog::class, ReadMark::class],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -393,7 +402,7 @@ abstract class AppDatabase : RoomDatabase() {
             DatabaseEncryption.encryptIfPlaintext(context, NAME, passphrase)
             return Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, NAME)
                 .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
         }
     }

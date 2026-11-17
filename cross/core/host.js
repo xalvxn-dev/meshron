@@ -688,7 +688,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       const admins = (Array.isArray(o.admins) ? o.admins : []).filter((m) => members.includes(m))
       return {
         id: o.id, name: String(o.name || '').slice(0, 48).trim() || 'Group', secret: o.secret, creatorKey: o.creator,
-        members: [...new Set(members)], createdAt: now(), ownerKey: owner, admins, bio: String(o.bio || '').slice(0, 200), icon: String(o.icon || '').slice(0, 24000)
+        members: [...new Set(members)], createdAt: now(), ownerKey: owner, admins, bio: String(o.bio || '').slice(0, 200), icon: String(o.icon || '').slice(0, 24000), adult: o.adult === true
       }
     } catch {
       return null
@@ -698,6 +698,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
   function acceptInvite(from, json) {
     const g = parseInvite(json)
     if (!g || !g.members.includes(from) || !g.members.includes(myKey)) return false
+    // 18+ groups: someone under 18 (or who hasn't given a birthday) never joins one.
+    if (g.adult && !isAdult()) return true
     const old = S().groups.find((x) => x.id === g.id)
     if (!old) {
       S().groups.push(g)
@@ -793,8 +795,19 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
   }
 
   function inviteJson(g) {
-    return JSON.stringify({ id: g.id, name: g.name, secret: g.secret, creator: g.creatorKey, members: g.members, owner: ownerOf(g), admins: g.admins || [], bio: g.bio || '', icon: g.icon || '' })
+    return JSON.stringify({ id: g.id, name: g.name, secret: g.secret, creator: g.creatorKey, members: g.members, owner: ownerOf(g), admins: g.admins || [], bio: g.bio || '', icon: g.icon || '', adult: !!g.adult })
   }
+
+  // ---- Age (a birthday asked once; it stays on this device) ----
+  function ageYears() {
+    const b = S().birth
+    if (!b) return null
+    const d = new Date(b); const t = new Date()
+    let y = t.getFullYear() - d.getFullYear()
+    if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) y--
+    return y
+  }
+  const isAdult = () => (ageYears() || 0) >= 18
 
   // ---- Files ------------------------------------------------------------------------
 
@@ -1541,7 +1554,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       if (!clean) return
       const quoted = replyTo && chat(conv).rows.find((r) => r.id === replyTo && visible(r) && r.kind !== 'deleted')
       const body = (quoted ? '↩ ' + quoteOf(quoted) + '\n' + clean : clean).slice(0, MAX_BODY)
-      sendRow(conv, body, 'text', null, !!urgent)
+      const row = sendRow(conv, body, 'text', null, !!urgent)
+      return row ? row.id : null
     },
     /** SOS: an urgent message to every added contact. Returns how many. */
     async 'sos.send'({ text }) {
@@ -1697,9 +1711,10 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       groupMeta(conv.slice(GROUP.length), { op: 'del', id })
     },
 
-    async 'group.create'({ name, members }) {
+    async 'group.create'({ name, members, adult }) {
+      if (adult && !isAdult()) throw new Error('Only adults can make 18+ groups')
       const keys = [...new Set((members || []).filter((k) => HEX64.test(k) && k !== myKey))]
-      const g = { id: randomHex(16), name: String(name || '').trim().slice(0, 48) || 'Group', secret: randomHex(32), creatorKey: myKey, members: [myKey, ...keys], createdAt: now() }
+      const g = { id: randomHex(16), name: String(name || '').trim().slice(0, 48) || 'Group', secret: randomHex(32), creatorKey: myKey, members: [myKey, ...keys], createdAt: now(), adult: !!adult }
       S().groups.push(g)
       saveState()
       emit('groups', groupsView())
@@ -1773,6 +1788,16 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       return true
     },
     /** App lock: a 6-digit PIN asked for when Meshron opens. '' removes it. */
+    /** The birthday (yyyy-mm-dd), asked once; null when not given yet. */
+    async 'age.get'() { return { birth: S().birth || null, years: ageYears(), adult: isAdult() } },
+    async 'age.set'({ birth }) {
+      const d = new Date(String(birth || ''))
+      if (isNaN(d) || d > new Date() || d.getFullYear() < new Date().getFullYear() - 120) throw new Error('Check the date')
+      S().birth = d.toISOString().slice(0, 10)
+      if ((ageYears() || 0) < 13) { delete S().birth; throw new Error('You must be at least 13 to use Meshron') }
+      saveState()
+      return { birth: S().birth, years: ageYears(), adult: isAdult() }
+    },
     async 'lock.set'({ pin }) {
       if (!pin) delete S().lock
       else {

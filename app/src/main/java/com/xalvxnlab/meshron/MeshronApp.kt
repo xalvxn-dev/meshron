@@ -99,6 +99,9 @@ class MeshronApp : Application() {
         super.onCreate()
         // Public or anonymous: decides which identity's stores everything below opens.
         com.xalvxnlab.meshron.identity.Mode.load(this)
+        com.xalvxnlab.meshron.settings.Age.init(this)
+        // Meshron AI checks posts through moderation (started early so the checks can reach it).
+        moderation
         appScope.launch { runCatching { contactsRepository.encryptLegacy() }.onFailure { Log.e(TAG, "contacts", it) } }
         // Moderation: hide what moderators removed, send reports made while offline, and turn a
         // reel's "Report" into a report for the AI moderator and the human moderators.

@@ -32,6 +32,14 @@ const HIDEABLE = ['reel', 'comment', 'live', 'moment']
 const STRIKES_TO_BAN = 3
 const NOTICE_TTL = 90 * 86400
 const MAX_SHOT = 900 * 1024 // base64 chars
+const CHECK_KINDS = ['comment', 'group', 'caption', 'description', 'username', 'name', 'bio']
+const CHECK_WHERE = { comment: 'a comment under a video', group: 'a group chat message', caption: 'a video caption', description: 'a description', username: 'a @username', name: 'a display name', bio: 'a profile bio' }
+
+export const RULES_PROMPT = 'You are Meshron AI, checking text the moment someone posts it on Meshron, a social app. You get where it was posted, the audience, and the text. Decide if it clearly breaks Meshron\'s rules.\n' +
+  'Rules for everyone: no harassment or bullying of a person, no hate against a group, no threats or calls to violence, no sexual content involving minors (always severity 5), no promoting self-harm or suicide, no scams or fraud, no spam or mass advertising, no impersonation of real people or of Meshron staff, no sharing someone\'s private information (doxxing), no selling drugs or weapons.\n' +
+  'Strict audience (everyone, including teens): also no sexual or explicit content, no graphic violence, no slurs, no heavy profanity aimed at someone. Usernames, names and bios must not contain slurs, sexual words, or pretend to be Meshron, a moderator or a famous person.\n' +
+  '18+ group: adults may swear, joke crudely and talk about adult topics between themselves; only the rules for everyone apply.\n' +
+  'Do not flag disagreement, criticism, mild swearing, jokes, slang, song lyrics, or words in any language that are only rude. When unsure, it is ok. Reply with JSON only: {"ok":true|false,"category":"none|harassment|hate|sexual|child-safety|violence|self-harm|spam|scam|impersonation|privacy|illegal|other","rule":"<the rule broken, 2 to 5 words, in English>","reason":"<one short, kind sentence to the person, written in the reader\'s language given above, saying what is wrong>","severity":1-5}.'
 
 export const OVERSEE_PROMPT = 'You check the decisions of human moderators on Meshron, a social app, to catch abuse of power. You get the action (remove a post, warn, or suspend an account), what was acted on, the reason the moderator gave, and any report or AI verdict behind it. Meshron\'s rules forbid: harassment, hate, sexual content, child sexual content, violence or threats, self-harm promotion, scams, spam, impersonation, dangerous misinformation. Judge only whether the action is justified by the rules and the evidence. An action is NOT fair when the content plainly breaks no rule, when there is no evidence and no real reason, when the reason is personal or insulting, or when the punishment is far too heavy. If the content is missing, judge from the reason and report; a removal with no content, no report and only a generic reason is suspicious. Reply with JSON only: {"fair":true|false,"concern":"<one short sentence for the CEOs, empty if fair>","severity":1-5}.'
 
@@ -234,6 +242,34 @@ export function moderation ({ fail, limit, sha, verifySig, ai, clip, account, au
       for (const k of keys.reverse().slice(0, 100)) { const v = await env.ACCOUNTS.get(k); if (v) out.push({ key: k.split(':').slice(2).join(':'), ...JSON.parse(v) }) }
       const banned = await env.ACCOUNTS.get('b:' + id)
       return { notices: out, banned: banned ? JSON.parse(banned) : null }
+    },
+
+    /**
+     * Meshron AI checks text as it's posted (comments, group messages, captions, descriptions,
+     * usernames, names, bios). When it breaks a rule the person gets a warning right away (in
+     * the app and in their Activity). 18+ groups have looser rules (adult talk, swearing), but
+     * the rules that protect people still apply there.
+     *   payload: { kind, text, adult }
+     *   reply:   { ok, category, rule, reason, severity }
+     */
+    async '/v1/mod/check' (body, env) {
+      const { id, payload: x } = await signed('/v1/mod/check', body)
+      const kind = CHECK_KINDS.includes(x.kind) ? x.kind : 'comment'
+      const text = clip(x.text, 2000).trim()
+      if (!text || !/[\p{L}\p{N}]/u.test(text)) return { ok: true }
+      if (!(await limit(env, 'chk:' + id, 600, 86400))) return { ok: true } // never block people for our limit
+      const adult = kind === 'group' && x.adult === true
+      let o
+      try {
+        o = await ai(env, 'rules', [{ role: 'user', content: 'Where: ' + CHECK_WHERE[kind] + '\nReader\'s language: ' + (clip(x.lang, 30) || 'English') + '\nAudience: ' + (adult ? '18+ group (adults only, looser rules)' : 'everyone, including teens (strict rules)') + '\nText:\n' + text }], true, env.AI_CHECK_MODEL)
+      } catch { return { ok: true } } // the AI being busy never stops anyone posting
+      if (o.ok !== false) return { ok: true }
+      const severity = Math.max(1, Math.min(5, Number(o.severity) || 2))
+      const out = { ok: false, category: clip(o.category, 20) || 'other', rule: clip(o.rule, 60) || 'Community Guidelines', reason: clip(o.reason, 200) || 'This breaks Meshron\'s Community Guidelines.', severity }
+      if (await limit(env, 'chkwarn:' + id, 20, 86400)) {
+        await notice(env, id, { from: 'Meshron AI', title: 'Warning: ' + out.rule, text: out.reason + ' (' + CHECK_WHERE[kind] + ')', kind: 'person', target: id, action: 'warn' })
+      }
+      return out
     },
 
     /** Appeal a removal (or a suspension). A person reviews every appeal. */

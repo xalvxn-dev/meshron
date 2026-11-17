@@ -48,6 +48,7 @@ class LiveService(private val context: Context, private val net: NetworkService,
 
     /** Starts my live (needs camera + microphone permission). */
     suspend fun start(title: String) {
+        com.xalvxnlab.meshron.moderation.ModerationService.guardText("description", title)
         stopAll()
         val id = java.util.UUID.randomUUID().toString().take(12)
         _chat.value = emptyList(); _viewers.value = 0

@@ -1,5 +1,5 @@
 import { sendMail } from './mail.js'
-import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT } from './moderation.js'
+import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT, RULES_PROMPT } from './moderation.js'
 import { PANEL_HTML } from './panel.js'
 // Meshron accounts: usernames, email codes and the locked account copy for public profiles.
 //
@@ -65,22 +65,23 @@ const AI_TASKS = {
   translate: 'Translate the user\'s text into the language named in the instructions. Reply with the translation only, no notes.',
   review: REVIEW_PROMPT,
   oversee: OVERSEE_PROMPT,
+  rules: RULES_PROMPT,
   moderate: 'You moderate content for a social app. Reply with JSON only: {"ok": true|false, "category": "none|harassment|hate|sexual|violence|self-harm|spam|scam|other", "reason": "<short, plain reason when not ok>"}. Flag only clearly harmful content; jokes, mild swearing and disagreement are ok.'
 }
 
-async function ai (env, task, messages, jsonMode) {
+async function ai (env, task, messages, jsonMode, model) {
   if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
   const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
     method: 'POST',
     headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: env.AI_MODEL || 'auto',
+      model: model || env.AI_MODEL || 'auto',
       messages: [{ role: 'system', content: AI_TASKS[task] }, ...messages],
       max_tokens: task === 'helper' || task === 'ask' ? 2000 : task === 'translate' || task === 'autotranslate' ? 1200 : 600, // room for a short think
-      temperature: task === 'moderate' || task === 'review' || task === 'translate' || task === 'autotranslate' ? 0 : 0.7,
+      temperature: task === 'moderate' || task === 'rules' || task === 'review' || task === 'translate' || task === 'autotranslate' ? 0 : 0.7,
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       // Reasoning models (gpt-oss): think briefly, so short replies come fast and fit the token cap.
-      ...(/gpt-oss|qwen3/i.test(env.AI_MODEL || '') ? { reasoning_effort: 'low' } : {})
+      ...(/gpt-oss|qwen3/i.test(model || env.AI_MODEL || '') ? { reasoning_effort: 'low' } : {})
     })
   })
   if (!r.ok) { console.log('ai failed', r.status, (await r.text()).slice(0, 300)); throw fail('The AI is busy. Try again in a moment.', 502) }
@@ -134,7 +135,7 @@ const routes = {
   /** AI tasks for signed-in accounts. */
   async '/v1/ai' ({ username, authKey, task, text, lang, history }, env) {
     const { u } = await authed(env, username, authKey)
-    if (!AI_TASKS[task] || task === 'review' || task === 'oversee' || task === 'ask') throw fail('Unknown AI task')
+    if (!AI_TASKS[task] || task === 'review' || task === 'oversee' || task === 'ask' || task === 'rules') throw fail('Unknown AI task')
     if (!(await limit(env, 'ai:' + u, 200, 86400))) throw fail('You\'ve used today\'s AI limit. It resets tomorrow.', 429)
     switch (task) {
       case 'helper': {

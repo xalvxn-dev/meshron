@@ -45,11 +45,16 @@
   let username = ''
   let auth = ''
   class ApiError extends Error { constructor (m, status) { super(m); this.status = status } }
-  async function post (path, body) {
+  async function post (path, body, retry = 1) {
     let r
-    try { r = await fetch(BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) } catch { throw new ApiError('No connection. Check the internet and try again.', 0) }
+    try { r = await fetch(BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) } catch {
+      if (retry > 0) { await new Promise((ok) => setTimeout(ok, 800)); return post(path, body, retry - 1) }
+      throw new ApiError('No connection. Check the internet and try again.', 0)
+    }
     const o = await r.json().catch(() => ({}))
-    if (!r.ok) throw new ApiError(o.error || 'Something went wrong (' + r.status + ')', r.status)
+    // A hiccup on the server's side (no answer from Meshron): try once more before showing it.
+    if (r.status >= 500 && !o.error && retry > 0) { await new Promise((ok) => setTimeout(ok, 800)); return post(path, body, retry - 1) }
+    if (!r.ok) throw new ApiError(o.error || (r.status >= 500 ? "Meshron's server didn't answer. Try again in a moment." : 'Something went wrong (' + r.status + ')'), r.status)
     return o
   }
   const me = (path, body) => post(path, Object.assign({}, body || {}, { username, authKey: auth }))
@@ -212,10 +217,11 @@
   // Activity
   function activityTab () {
     const box = h('div', { class: 'list' })
+    const add = (...k) => box.append(...k.flat(Infinity).filter((x) => x != null && x !== false))
     const flaggedOnly = filters.activity
     const set = (v) => () => { filters.activity = v; render() }
     const listEl = h('div', { class: 'list' }, h('div', { class: 'spinner' }))
-    box.append(h('div', { class: 'chips' }, chip('Everything', !flaggedOnly, set(false)), chip('Flagged by AI', flaggedOnly, set(true))),
+    add(h('div', { class: 'chips' }, chip('Everything', !flaggedOnly, set(false)), chip('Flagged by AI', flaggedOnly, set(true))),
       h('div', { class: 'faint', style: { margin: '0 4px' } }, 'Every moderator action is recorded here for all moderators to see. The AI checks each removal, warning and suspension; anything it thinks is unfair is flagged to the CEOs.'),
       listEl)
     me('/v1/mod/log', { flagged: flaggedOnly }).then((r) => {
@@ -348,9 +354,10 @@
   // More
   function moreTab () {
     const box = h('div', { class: 'list' })
+    const add = (...k) => box.append(...k.flat(Infinity).filter((x) => x != null && x !== false))
     const card = (...k) => h('div', { class: 'card' }, ...k)
     const ver = q.verifications || []
-    box.append(h('div', { class: 'section' }, 'Verification requests'),
+    add(h('div', { class: 'section' }, 'Verification requests'),
       ver.length ? ver.map((v) => card(h('b', {}, v.name + '  @' + v.username), h('div', { style: { color: C.accent, fontSize: '13px' } }, v.category), h('div', { class: 'dim', style: { marginTop: '4px' } }, v.reason),
         v.links ? h('div', { class: 'faint', style: { marginTop: '4px' } }, v.links) : null,
         h('div', { class: 'actions' }, pill('Verify ✓', 'good', () => act('verify', { who: v.id }, 'Verified · they were told')), pill('Not now', '', () => ask({ title: 'Decline verification?', action: 'deny-verify', extra: { who: v.id }, done: 'Answered' })))))
@@ -358,18 +365,18 @@
     if (ceo) {
       const on = q.aiAuto !== false
       const sw = h('button', { class: 'switch' + (on ? ' on' : ''), title: 'AI moderation', onClick: () => act('ai-auto', { reason: on ? 'off' : 'on' }, on ? 'AI moderation off' : 'AI moderation on') })
-      box.append(h('div', { class: 'section' }, 'AI moderation'),
+      add(h('div', { class: 'section' }, 'AI moderation'),
         card(h('div', { class: 'row', style: { gap: '12px' } }, h('div', { class: 'grow' }, h('b', {}, 'AI reviews every report first'),
           h('div', { class: 'dim', style: { fontSize: '13px' } }, on ? 'It can remove, warn or suspend right away; unsure cases come to you.' : 'Off: every report waits for a person.')), sw)))
       const apps = q.applications || []
-      box.append(h('div', { class: 'section' }, 'Moderator applications'),
+      add(h('div', { class: 'section' }, 'Moderator applications'),
         apps.length ? apps.map((a) => card(h('b', {}, a.name + '  @' + a.username), h('div', { class: 'dim', style: { marginTop: '4px' } }, a.why),
           h('div', { class: 'faint', style: { marginTop: '4px' } }, 'Hours a week: ' + (a.hours || '—') + ' · Languages: ' + (a.languages || '—')),
           h('div', { class: 'actions' }, pill('Approve', 'good', () => act('approve-mod', { who: a.id }, '@' + a.username + ' is a moderator now')), pill('Decline', '', () => ask({ title: 'Decline the application?', action: 'deny-mod', extra: { who: a.id }, done: 'Answered' })))))
           : h('div', { class: 'faint', style: { margin: '0 4px' } }, 'No applications.'))
     }
     const team = q.team || []
-    box.append(h('div', { class: 'section' }, 'The team (' + team.length + ')'),
+    add(h('div', { class: 'section' }, 'The team (' + team.length + ')'),
       team.map((t) => h('div', { class: 'person-row', style: { cursor: 'pointer' }, onClick: () => openPerson(t.username) },
         h('div', { class: 'av' }, (t.username || '?')[0].toUpperCase()),
         h('div', { style: { flex: 1 } }, h('b', {}, '@' + t.username + (t.username === username ? ' (you)' : '')), roleTags(t)),

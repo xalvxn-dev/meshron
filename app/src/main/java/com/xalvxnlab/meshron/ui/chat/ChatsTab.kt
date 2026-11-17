@@ -300,8 +300,10 @@ private fun ConversationRow(r: ChatRow, nameOf: (String) -> String, onClick: () 
 }
 
 @Composable
-fun NewGroupDialog(contacts: List<Contact>, onDismiss: () -> Unit, onCreate: (String, List<String>) -> Unit) {
+fun NewGroupDialog(contacts: List<Contact>, onDismiss: () -> Unit, onCreate: (String, List<String>, Boolean) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
+    var adult by rememberSaveable { mutableStateOf(false) }
+    val canAdult = com.xalvxnlab.meshron.settings.Age.isAdult
     val picked = remember { mutableStateListOf<String>() }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -316,6 +318,19 @@ fun NewGroupDialog(contacts: List<Contact>, onDismiss: () -> Unit, onCreate: (St
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // 18+ or for everyone: decided now, shown to everyone in the group.
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp).clickable(enabled = canAdult) { adult = !adult }, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("18+ group", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            if (!canAdult) "Only adults (18 and over) can make 18+ groups."
+                            else if (adult) "Adults only. Looser rules: adult talk and swearing are fine; harassment, threats, scams and anything involving minors are never allowed."
+                            else "For everyone, teens included. Meshron AI keeps the rules strict.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    androidx.compose.material3.Switch(checked = adult, onCheckedChange = { adult = it }, enabled = canAdult)
+                }
                 if (contacts.isEmpty()) {
                     Text(
                         "You need contacts first. Only people you've added can join a group.",
@@ -350,7 +365,7 @@ fun NewGroupDialog(contacts: List<Contact>, onDismiss: () -> Unit, onCreate: (St
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() && picked.isNotEmpty(),
-                onClick = { onCreate(name.trim(), picked.toList()) },
+                onClick = { onCreate(name.trim(), picked.toList(), adult && canAdult) },
             ) { Text("Create") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

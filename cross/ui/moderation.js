@@ -23,6 +23,57 @@
     return post(path, s)
   }
 
+  // ---- Meshron AI's rule check, as things are posted ----
+  // Comments, group messages, captions, descriptions, usernames, names and bios. A break shows a
+  // warning at once (and lands in Activity). Captions, names, bios and comments aren't posted;
+  // a group message is deleted for everyone, except small things in 18+ groups.
+  const lang = (() => { try { return new Intl.DisplayNames(['en'], { type: 'language' }).of((navigator.language || 'en').split('-')[0]) || 'English' } catch { return 'English' } })()
+  const KIND_NOTE = { comment: "Your comment wasn't posted.", group: 'Your message was flagged.', caption: "Your video wasn't posted.", description: "This description wasn't saved.", username: "This username wasn't saved.", name: "This name wasn't saved.", bio: "This bio wasn't saved." }
+  async function check (kind, text, adult) {
+    if (st.anon || !String(text || '').trim()) return null
+    let o
+    try {
+      o = await Promise.race([signed('/v1/mod/check', { kind, text: String(text).slice(0, 2000), adult: !!adult, lang }), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 8000))])
+    } catch { return null } // the check never stops anyone by failing
+    if (!o || o.ok !== false) return null
+    const b = { kind, rule: o.rule || 'Community Guidelines', reason: o.reason || "This breaks Meshron's Community Guidelines.", severity: o.severity || 2 }
+    showWarning(b)
+    return b
+  }
+  function showWarning (b) {
+    modal({ title: 'Warning from Meshron AI', body: h('div', {},
+      h('span', { style: { display: 'inline-block', padding: '3px 10px', borderRadius: '8px', background: 'rgba(240,84,92,0.15)', color: '#F0545C', fontWeight: 700, fontSize: '13px' } }, b.rule),
+      h('p', {}, b.reason),
+      h('p', { class: 'dim', style: { fontSize: '13px' } }, (KIND_NOTE[b.kind] || '') + (b.kind === 'group' ? ' In groups for everyone it was deleted. ' : ' ') + "Repeated breaks can lead to a suspension. You'll find this warning in Activity.")),
+    buttons: [{ label: 'OK, got it', kind: 'primary', onClick: (m) => m.close() }] })
+  }
+  class RuleBroken extends Error { constructor (b) { super(b.reason); this.rule = b } }
+  async function guard (kind, text, adult) { const b = await check(kind, text, adult); if (b) throw new RuleBroken(b) }
+
+  // Every post goes through here: check first (or right after, for group messages).
+  const groupOf = (conv) => (st.groups || []).find((g) => g.conv === conv)
+  const rawCall = M.call.bind(M)
+  M.call = async (method, args) => {
+    const a = args || {}
+    switch (method) {
+      case 'reels.comment': await guard('comment', a.text); break
+      case 'reels.repost': if (a.on && a.quote && !a.cid) await guard('comment', a.quote); break
+      case 'reels.end': await guard('caption', [a.title, a.cap].filter(Boolean).join('\n')); break
+      case 'live.start': await guard('description', a.title); break
+      case 'identity.rename': await guard('name', a.name); break
+      case 'identity.setHandle': if (a.handle) await guard('username', a.handle); break
+      case 'profile.set': { const me = (st.profiles && st.profiles.me) || {}; if (typeof a.bio === 'string' && a.bio.trim() !== (me.bio || '').trim()) await guard('bio', a.bio); break }
+      case 'group.create': await guard('name', a.name, a.adult); break
+      case 'group.info': { const g = groupOf('g:' + a.id) || {}; if (a.name && a.name.trim() !== g.name) await guard('name', a.name, g.adult); if (typeof a.bio === 'string' && a.bio.trim() !== (g.bio || '')) await guard('description', a.bio, g.adult); break }
+    }
+    const r = await rawCall(method, args)
+    if (method === 'chat.send' && String(a.conv || '').startsWith('g:') && r) {
+      const g = groupOf(a.conv) || {}
+      check('group', a.text, g.adult).then((b) => { if (b && (!g.adult || b.severity >= 4)) rawCall('chat.unsend', { conv: a.conv, id: r }).catch(() => {}) })
+    }
+    return r
+  }
+
   // ---- What moderators hid (cached 10 minutes) ----
   const hidCache = new Map()
   async function hiddenAmong (keys) {
@@ -190,5 +241,5 @@
     })
   }
 
-  window.MeshronMod = { badgeOf, hiddenAmong, badgeEl, wantBadges, report, showNotices, unseenNotices, requestVerification, ACCOUNTS }
+  window.MeshronMod = { check, guard, badgeOf, hiddenAmong, badgeEl, wantBadges, report, showNotices, unseenNotices, requestVerification, ACCOUNTS }
 })()

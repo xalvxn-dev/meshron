@@ -288,6 +288,7 @@ class ReelsService(
     suspend fun follow(ch: String, on: Boolean) = act(JSONObject().put("cmd", "reel-follow").put("ch", ch).put("on", on))
     suspend fun comment(ch: String, id: String, text: String, re: String? = null): String {
         need()
+        com.xalvxnlab.meshron.moderation.ModerationService.guardText("comment", text)
         return call(JSONObject().put("cmd", "reel-comment").put("ch", ch).put("id", id).put("text", text).apply { if (re != null) put("re", re) }).optString("cid")
     }
 
@@ -296,8 +297,10 @@ class ReelsService(
         act(JSONObject().put("cmd", "reel-comment").put("ch", ch).put("id", id).put("text", a.text).put("re", a.re).put("ai", a.sig))
     suspend fun uncomment(ch: String, cid: String) = act(JSONObject().put("cmd", "reel-uncomment").put("ch", ch).put("cid", cid))
     /** Repost (or undo); [quote] is a comment you're sharing with it. */
-    suspend fun repost(r: Reel, on: Boolean, quote: String = "", cid: String? = null) =
+    suspend fun repost(r: Reel, on: Boolean, quote: String = "", cid: String? = null) {
+        if (on && quote.isNotBlank() && cid == null) com.xalvxnlab.meshron.moderation.ModerationService.guardText("comment", quote)
         act(JSONObject().put("cmd", "reel-repost").put("ch", r.ch).put("id", r.id).put("on", on).put("quote", quote).apply { if (cid != null) put("cid", cid) })
+    }
 
     /** Invite a friend (identity key) to be a collaborator on one of my reels. */
     suspend fun invite(id: String, who: String) = act(JSONObject().put("cmd", "reel-invite").put("id", id).put("who", who))
@@ -389,6 +392,7 @@ class ReelsService(
     /** Shares a finished video. Returns its id. */
     suspend fun post(video: File, caption: String, durSec: Int, w: Int, h: Int, thumbB64: String, sound: ReelSound?, onProgress: (Float) -> Unit, title: String = ""): String {
         need()
+        com.xalvxnlab.meshron.moderation.ModerationService.guardText("caption", listOf(title, caption).filter { it.isNotBlank() }.joinToString("\n"))
         val xfer = "x" + seq.incrementAndGet()
         net.reelsSend(JSONObject().put("cmd", "reel-begin").put("xfer", xfer))
         val total = video.length().coerceAtLeast(1)

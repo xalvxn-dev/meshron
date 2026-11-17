@@ -334,9 +334,9 @@ fun HomeScreen(
     if (newGroup) NewGroupDialog(
         contacts = contacts.filter { it.status == Contact.Status.ADDED },
         onDismiss = { newGroup = false },
-        onCreate = { name, members ->
+        onCreate = { name, members, adult ->
             newGroup = false
-            scope.launch { openChat = messaging.createGroup(name, members).conversationKey }
+            scope.launch { runCatching { messaging.createGroup(name, members, adult) }.onSuccess { openChat = it.conversationKey } }
         },
     )
 

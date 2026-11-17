@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +44,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Crop
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.RotateRight
@@ -103,9 +107,19 @@ import java.io.File
 import kotlin.math.roundToInt
 
 private enum class Tool(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Trim("Trim", Icons.Rounded.ContentCut), Speed("Speed", Icons.Rounded.Speed), Looks("Looks", Icons.Rounded.AutoAwesome),
-    Adjust("Adjust", Icons.Rounded.Tune), Text("Text", Icons.Rounded.TextFields), Crop("Crop", Icons.Rounded.Crop),
+    Trim("Trim", Icons.Rounded.ContentCut), Speed("Speed", Icons.Rounded.Speed), Looks("Filters", Icons.Rounded.AutoAwesome),
+    Effects("Effects", Icons.Rounded.AutoFixHigh), Adjust("Adjust", Icons.Rounded.Tune), Text("Text", Icons.Rounded.TextFields),
+    Stickers("Stickers", Icons.Rounded.EmojiEmotions), Crop("Canvas", Icons.Rounded.Crop),
     Sound("Sound", Icons.Rounded.MusicNote), Cover("Cover", Icons.Rounded.Image),
+}
+
+private val STICKERS = listOf("😂", "😍", "🔥", "💯", "😭", "🥹", "😎", "🤯", "👀", "🙌", "❤️", "💜", "✨", "🎉", "🥳", "👏", "💀", "🤝", "🙏", "😅", "🤔", "🎶", "📍", "⭐", "🌙", "☀️", "🌈", "🍕", "⚽", "🎮", "🎬", "📸", "💪", "🫶", "👑", "➡️", "⬆️", "❓", "‼️", "✅")
+
+private fun fontOf(name: String) = when (name) {
+    "serif" -> androidx.compose.ui.text.font.FontFamily.Serif
+    "monospace" -> androidx.compose.ui.text.font.FontFamily.Monospace
+    "cursive" -> androidx.compose.ui.text.font.FontFamily.Cursive
+    else -> androidx.compose.ui.text.font.FontFamily.SansSerif
 }
 
 private val TEXT_COLORS = listOf(0xFFFFFFFF, 0xFF111111, 0xFFB6F36A, 0xFF22D3C5, 0xFF8E9BFF, 0xFFFF8A2B, 0xFFFF3B5C).map { it.toInt() }
@@ -171,8 +185,10 @@ fun EditorScreen(reels: ReelsService, uri: Uri, sound: ReelSound?, soundItem: Re
             }
             BoxWithConstraints(Modifier.aspectRatio(ratio, matchHeightConstraintsFirst = ratio < 1f).clip(RoundedCornerShape(20.dp)).background(Color.Black)) {
                 // The preview lets go of the video decoder while the reel is being made.
-                if (!busy) Box(Modifier.fillMaxSize().rotate(e.rotation.toFloat())) {
-                    PreviewPlayer(uri, e, cover = e.aspect != "original")
+                val turned = e.rotation % 180 != 0
+                if (!busy) Box(Modifier.align(Alignment.Center).then(if (turned) Modifier.requiredSize(maxHeight, maxWidth) else Modifier.fillMaxSize())
+                    .rotate(e.rotation.toFloat()).graphicsLayer { scaleX = (if (e.flip) -1f else 1f) * e.zoom; scaleY = e.zoom }) {
+                    PreviewPlayer(uri, e, cover = e.aspect != "original" && !e.fit)
                 }
                 // Text layers: drag to place, tap to select.
                 val d = LocalDensity.current
@@ -181,7 +197,7 @@ fun EditorScreen(reels: ReelsService, uri: Uri, sound: ReelSound?, soundItem: Re
                     val wPx = with(d) { maxWidth.toPx() }
                     val hPx = with(d) { maxHeight.toPx() }
                     Text(
-                        t.text, color = Color(t.color), fontWeight = FontWeight.Bold, fontSize = (22 * t.size).sp,
+                        t.text, color = Color(t.color), fontWeight = if (t.font == "sans-serif-black") FontWeight.Black else FontWeight.Bold, fontSize = (22 * t.size).sp, fontFamily = fontOf(t.font),
                         modifier = Modifier.offset { IntOffset((pos.first * wPx).roundToInt() - 60, (pos.second * hPx).roundToInt() - 30) }
                             .then(if (t.pill) Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) else Modifier)
                             .border(if (selectedText == i) 2.dp else 0.dp, if (selectedText == i) Color.White else Color.Transparent, RoundedCornerShape(8.dp))
@@ -189,7 +205,7 @@ fun EditorScreen(reels: ReelsService, uri: Uri, sound: ReelSound?, soundItem: Re
                             .clickable { selectedText = i; tool = Tool.Text }
                             .pointerInput(i) {
                                 detectDragGestures(onDragEnd = {
-                                    e = e.copy(texts = e.texts.toMutableList().also { l -> l[i] = TextLayer(t.text, pos.first, pos.second, t.size, t.color, t.pill) })
+                                    e = e.copy(texts = e.texts.toMutableList().also { l -> l[i] = t.copy(x = pos.first, y = pos.second) })
                                 }) { _, drag -> pos = ((pos.first + drag.x / wPx).coerceIn(0.05f, 0.95f)) to ((pos.second + drag.y / hPx).coerceIn(0.05f, 0.95f)) }
                             },
                     )
@@ -235,8 +251,29 @@ fun EditorScreen(reels: ReelsService, uri: Uri, sound: ReelSound?, soundItem: Re
                         Look.entries.forEach { l -> LookChip(uri, l, e.copy(look = l), on = e.look == l) { e = e.copy(look = l) } }
                     }
                 }
+                Tool.Effects -> {
+                    Label("Effects")
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Toggle("Fade in", e.fadeIn) { e = e.copy(fadeIn = !e.fadeIn) }
+                        Toggle("Fade out", e.fadeOut) { e = e.copy(fadeOut = !e.fadeOut) }
+                        Toggle("Mirror", e.flip) { e = e.copy(flip = !e.flip) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Slide("Zoom", e.zoom, sliderColors, 1f..2f) { e = e.copy(zoom = it) }
+                }
+                Tool.Stickers -> {
+                    Label("Tap to add · drag it on the video · tap it to resize")
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        STICKERS.forEach { s ->
+                            Text(s, fontSize = 30.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable {
+                                e = e.copy(texts = e.texts + TextLayer(s, 0.5f, 0.4f, size = 2f, pill = false)); selectedText = e.texts.lastIndex
+                            }.padding(6.dp))
+                        }
+                    }
+                }
                 Tool.Adjust -> {
                     Slide("Brightness", e.brightness, sliderColors) { e = e.copy(brightness = it) }
+                    Slide("Warmth", e.warmth, sliderColors) { e = e.copy(warmth = it) }
                     Slide("Contrast", e.contrast, sliderColors) { e = e.copy(contrast = it) }
                     Slide("Saturation", e.saturation, sliderColors) { e = e.copy(saturation = it) }
                 }
@@ -255,11 +292,17 @@ fun EditorScreen(reels: ReelsService, uri: Uri, sound: ReelSound?, soundItem: Re
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             TEXT_COLORS.forEach { c ->
                                 Box(Modifier.size(28.dp).clip(RoundedCornerShape(9.dp)).background(Color(c)).border(2.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(9.dp)).clickable {
-                                    val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = TextLayer(t.text, t.x, t.y, t.size, c, t.pill) })
+                                    val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = t.copy(color = c) })
                                 })
                             }
-                            Pill("Bigger") { val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = TextLayer(t.text, t.x, t.y, (t.size * 1.2f).coerceAtMost(3f), t.color, t.pill) }) }
+                            Pill("Bigger") { val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = t.copy(size = (t.size * 1.2f).coerceAtMost(4f)) }) }
+                            Pill("Smaller") { val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = t.copy(size = (t.size / 1.2f).coerceAtLeast(0.4f)) }) }
+                            Pill(if (e.texts[selectedText].pill) "No box" else "Box") { val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = t.copy(pill = !t.pill) }) }
                             Pill("Remove") { e = e.copy(texts = e.texts.filterIndexed { i, _ -> i != selectedText }); selectedText = -1 }
+                        }
+                        if (selectedText in e.texts.indices) {
+                            Spacer(Modifier.height(8.dp))
+                            Chips(com.xalvxnlab.meshron.reels.TEXT_FONTS, e.texts[selectedText].font) { f -> val t = e.texts[selectedText]; e = e.copy(texts = e.texts.toMutableList().also { it[selectedText] = t.copy(font = f) }) }
                         }
                     } else Label("Drag text on the video to place it. Tap it to change colour or size.")
                 }
@@ -269,6 +312,10 @@ fun EditorScreen(reels: ReelsService, uri: Uri, sound: ReelSound?, soundItem: Re
                         Chips(listOf("Original" to "original", "9:16" to "9:16", "1:1" to "1:1", "4:5" to "4:5"), e.aspect) { e = e.copy(aspect = it) }
                         Spacer(Modifier.width(8.dp))
                         IconButton(onClick = { e = e.copy(rotation = (e.rotation + 90) % 360) }) { Icon(Icons.Rounded.RotateRight, "Rotate", tint = Color.White) }
+                    }
+                    if (e.aspect != "original") {
+                        Spacer(Modifier.height(8.dp))
+                        Chips(listOf("Fill (crop)" to false, "Fit (bars)" to true), e.fit) { e = e.copy(fit = it) }
                     }
                 }
                 Tool.Sound -> {
@@ -380,7 +427,15 @@ private fun PreviewPlayer(uri: Uri, e: Edit, cover: Boolean) {
     val music = remember { MediaPlayer() }
     var ready by remember { mutableStateOf(false) }
     var view by remember { mutableStateOf<TextureView?>(null) }
+    val coverNow by androidx.compose.runtime.rememberUpdatedState(cover)
     DisposableEffect(Unit) { onDispose { player.release(); music.release() } }
+    fun fitPicture(tv: TextureView) {
+        val vw = runCatching { player.videoWidth.toFloat() }.getOrDefault(0f); val vh = runCatching { player.videoHeight.toFloat() }.getOrDefault(0f)
+        if (vw <= 0f || vh <= 0f || tv.width <= 0 || tv.height <= 0) return
+        val s = if (coverNow) maxOf(tv.width / vw, tv.height / vh) else minOf(tv.width / vw, tv.height / vh)
+        tv.setTransform(android.graphics.Matrix().apply { setScale(vw * s / tv.width, vh * s / tv.height, tv.width / 2f, tv.height / 2f) })
+    }
+    LaunchedEffect(cover, ready, view) { view?.let { fitPicture(it) } }
     // Look + adjustments, applied to the video layer directly.
     LaunchedEffect(e.look, e.brightness, e.contrast, e.saturation, view) {
         view?.setLayerType(View.LAYER_TYPE_HARDWARE, Paint().apply { colorFilter = ColorMatrixColorFilter(VideoEditor.colorMatrix(e)) })
@@ -409,25 +464,19 @@ private fun PreviewPlayer(uri: Uri, e: Edit, cover: Boolean) {
         factory = { ctx ->
             TextureView(ctx).also { tv ->
                 view = tv
+                tv.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitPicture(tv) }
                 tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                         runCatching {
                             player.setSurface(Surface(st))
                             player.setDataSource(context, uri)
                             player.isLooping = true
-                            player.setOnPreparedListener { p ->
-                                // Fit or fill the frame.
-                                val vw = p.videoWidth.toFloat(); val vh = p.videoHeight.toFloat()
-                                if (vw > 0 && tv.width > 0) {
-                                    val s = if (cover) maxOf(tv.width / vw, tv.height / vh) else minOf(tv.width / vw, tv.height / vh)
-                                    tv.setTransform(android.graphics.Matrix().apply { setScale(vw * s / tv.width, vh * s / tv.height, tv.width / 2f, tv.height / 2f) })
-                                }
-                                p.start(); ready = true
-                            }
+                            player.setOnPreparedListener { p -> fitPicture(tv); p.start(); ready = true }
+                            player.setOnVideoSizeChangedListener { _, _, _ -> fitPicture(tv) }
                             player.prepareAsync()
                         }
                     }
-                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) = Unit
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) { fitPicture(tv) }
                     override fun onSurfaceTextureDestroyed(st: SurfaceTexture) = true
                     override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
                 }
@@ -474,6 +523,13 @@ private fun <T> Chips(options: List<Pair<String, T>>, selected: T, onSelect: (T)
                 Text(label, color = if (on) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
+    }
+}
+
+@Composable
+private fun Toggle(label: String, on: Boolean, onClick: () -> Unit) {
+    Box(Modifier.clip(RoundedCornerShape(50)).background(if (on) Color.White else Color.White.copy(alpha = 0.12f)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Text(label, color = if (on) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 

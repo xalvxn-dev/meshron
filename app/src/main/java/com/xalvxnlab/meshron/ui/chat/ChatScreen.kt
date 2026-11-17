@@ -295,7 +295,7 @@ fun ChatScreen(
         is ChatTarget.Group -> {
             val g = grp ?: target.group
             val others = g.memberList.filter { it != myKey }
-            g.name to if (myKey !in g.memberList) "You're not in this group" else "${others.size + 1} members · ${others.count(online)} online"
+            g.name to if (myKey !in g.memberList) "You're not in this group" else (if (g.adult) "18+ · " else "") + "${others.size + 1} members · ${others.count(online)} online"
         }
     }
     val ackByMember = acks.associate { it.member to it.length }

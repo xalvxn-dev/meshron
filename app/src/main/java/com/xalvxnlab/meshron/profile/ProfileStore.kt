@@ -68,6 +68,7 @@ class ProfileStore(context: Context, dirName: String = "profiles") {
 
     /** Saves my bio and (optionally) a new photo; bumps the version so contacts refresh. */
     suspend fun setMine(bio: String, photo: Uri?, context: Context, removePhoto: Boolean = false, link: String? = null) = withContext(Dispatchers.IO) {
+        if (bio.trim() != _me.value.bio.trim()) com.xalvxnlab.meshron.moderation.ModerationService.guardText("bio", bio)
         if (removePhoto) mePhoto.delete()
         if (photo != null) squareJpeg(context, photo)?.let { mePhoto.writeBytes(it) }
         val pv = _me.value.pv + 1

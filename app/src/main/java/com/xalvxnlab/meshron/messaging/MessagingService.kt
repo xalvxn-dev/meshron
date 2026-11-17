@@ -164,13 +164,29 @@ class MessagingService(
         )
         dao.insert(msg)
         if (network.isOnline) appendLock.withLock { appendRow(msg) }
+        if (group) checkGroupMessage(conversation, msg, clean)
+    }
+
+    /**
+     * Meshron AI looks at what I said in a group (right after it's sent, so chatting stays fast).
+     * A rule break gets a warning at once; outside 18+ groups the message is also deleted for everyone.
+     */
+    private fun checkGroupMessage(conversation: String, msg: MessageEntity, text: String) {
+        val mod = com.xalvxnlab.meshron.moderation.ModerationService.current ?: return
+        scope.launch {
+            val g = dao.findGroup(conversation.removePrefix(MessageEntity.GROUP_PREFIX))
+            val broke = mod.check("group", text, adult = g?.adult == true) ?: return@launch
+            if (g?.adult != true || broke.severity >= 4) runCatching { dao.find(msg.peerKey, msg.id)?.let { unsend(it) } }
+        }
     }
 
     /**
      * Creates a group with me plus [memberKeys] (all contacts), then invites each member
      * through their 1:1 log.
      */
-    suspend fun createGroup(name: String, memberKeys: List<String>): GroupEntity {
+    suspend fun createGroup(name: String, memberKeys: List<String>, adult: Boolean = false): GroupEntity {
+        require(!adult || com.xalvxnlab.meshron.settings.Age.isAdult) { "Only adults can make 18+ groups" }
+        com.xalvxnlab.meshron.moderation.ModerationService.guardText("name", name, adult)
         val me = myKey()
         val group = GroupEntity(
             id = newId(),
@@ -179,6 +195,7 @@ class MessagingService(
             creatorKey = me,
             members = (listOf(me) + memberKeys).distinct().joinToString(","),
             createdAt = System.currentTimeMillis(),
+            adult = adult,
         )
         dao.insertGroup(group)
         if (network.isOnline) openGroup(group)
@@ -189,7 +206,7 @@ class MessagingService(
     private fun inviteJson(g: GroupEntity) = JSONObject()
         .put("id", g.id).put("name", g.name).put("secret", g.secret)
         .put("creator", g.creatorKey).put("members", JSONArray(g.memberList))
-        .put("owner", g.owner).put("admins", JSONArray(g.adminList)).put("bio", g.bio).put("icon", g.icon)
+        .put("owner", g.owner).put("admins", JSONArray(g.adminList)).put("bio", g.bio).put("icon", g.icon).put("adult", g.adult)
         .toString()
 
     private suspend fun sendInvites(group: GroupEntity, memberKeys: List<String>) {
@@ -218,8 +235,11 @@ class MessagingService(
     }
 
     /** Owner/admins: name, bio and photo. */
-    suspend fun setGroupInfo(g: GroupEntity, name: String, bio: String, icon: String) =
+    suspend fun setGroupInfo(g: GroupEntity, name: String, bio: String, icon: String) {
+        if (name.trim() != g.name) com.xalvxnlab.meshron.moderation.ModerationService.guardText("name", name, g.adult)
+        if (bio.trim() != g.bio) com.xalvxnlab.meshron.moderation.ModerationService.guardText("description", bio, g.adult)
         meta(g, JSONObject().put("op", "info").put("name", name.trim().take(48)).put("bio", bio.trim().take(200)).put("icon", icon.take(24_000)))
+    }
 
     /** Owner only: make someone an admin, or take it away. */
     suspend fun setAdmin(g: GroupEntity, who: String, on: Boolean) = meta(g, JSONObject().put("op", "admin").put("who", who).put("on", on))
@@ -487,6 +507,7 @@ class MessagingService(
     private suspend fun acceptInvite(from: String, json: String): Boolean {
         val g = parseInvite(json) ?: return false
         if (from !in g.memberList || myKey() !in g.memberList) return false
+        if (g.adult && !com.xalvxnlab.meshron.settings.Age.isAdult) return true // shown as an invite they can't open
         if (dao.insertGroup(g) != -1L) openGroup(g)
         else {
             // Added back after leaving or being removed: take the fresh member list and settings.
@@ -558,6 +579,7 @@ class MessagingService(
                 creatorKey = creator, members = members.distinct().joinToString(","),
                 createdAt = System.currentTimeMillis(),
                 ownerKey = owner, admins = adm.joinToString(","), bio = o.optString("bio").take(200), icon = o.optString("icon").take(24_000),
+                adult = o.optBoolean("adult"),
             )
         }.getOrNull()
     }
