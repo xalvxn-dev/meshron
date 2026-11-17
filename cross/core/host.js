@@ -324,8 +324,30 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     if (ipc) ipc.emit('data', b4a.from(JSON.stringify(o) + '\n'))
   }
 
+  // The network's local storage (RocksDB) can break if the app was killed mid-write: CURRENT
+  // names a MANIFEST that isn't there. Then it's set aside and rebuilt from peers; chats, contacts
+  // and keys live elsewhere and are not touched.
+  const storeDir = () => path.join(dataDir, 'corestore')
+  function storeBroken() {
+    try {
+      const db = path.join(storeDir(), 'db')
+      if (!fs.existsSync(path.join(db, 'CURRENT'))) return false
+      const manifest = String(fs.readFileSync(path.join(db, 'CURRENT'), 'utf8')).trim()
+      return !!manifest && !fs.existsSync(path.join(db, manifest))
+    } catch { return false }
+  }
+  function setStoreAside() {
+    try {
+      const to = storeDir() + '.broken-' + now()
+      fs.renameSync(storeDir(), to)
+      log('Network storage was damaged; set aside and starting fresh')
+      return true
+    } catch (e) { log('Could not set aside the damaged storage: ' + (e && e.message)); return false }
+  }
+
   async function startNetwork() {
     if (workletStarted || !S().identity) return
+    if (storeBroken()) setStoreAside()
     workletStarted = true
     net.status = 'starting'
     net.lastError = null
@@ -578,6 +600,11 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       case 'error': {
         const first = String(e.msg || '').split('\n')[0]
         log('Error: ' + first)
+        // Damaged storage: set it aside and start again (once).
+        if (/NewSequentialFile|MANIFEST|Corruption/i.test(first) && !startNetwork.recovered) {
+          startNetwork.recovered = true
+          if (setStoreAside()) { setTimeout(() => emit('restart', { anon }), 300); return }
+        }
         net.lastError = first
         return netChanged()
       }
