@@ -96,6 +96,8 @@ fun AuthFlow(offline: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var userFree by remember { mutableStateOf<Boolean?>(null) }
+    var userReserved by remember { mutableStateOf(false) }
+    var invite by remember { mutableStateOf("") }
     var emailHint by remember { mutableStateOf("") }
 
     fun go(s: Step) { error = null; step = s }
@@ -121,6 +123,7 @@ fun AuthFlow(offline: () -> Unit) {
         if (!Regex("^[a-z0-9_]{3,24}$").matches(cleanUser) || step != Step.Name) return@LaunchedEffect
         delay(450)
         userFree = runCatching { acc.available(cleanUser) }.getOrNull()
+        userReserved = userFree == false && runCatching { acc.reserved(cleanUser) }.getOrDefault(false)
     }
 
     Box(Modifier.fillMaxSize().background(MeshColors.Bg)) {
@@ -163,14 +166,16 @@ fun AuthFlow(offline: () -> Unit) {
                             Hint(
                                 when {
                                     cleanUser.isNotEmpty() && !Regex("^[a-z0-9_]{3,24}$").matches(cleanUser) -> "3–24 letters, numbers or _"
+                                    userReserved -> "@$cleanUser is kept for someone: enter your invite code"
                                     userFree == false -> "@$cleanUser is taken"
                                     userFree == true -> "@$cleanUser is yours to take"
                                     else -> "Letters, numbers and _ only"
                                 },
-                                userFree == false,
+                                userFree == false && !userReserved,
                             )
+                            if (userReserved) { Spacer(Modifier.height(12.dp)); Field(invite, { invite = it.trim().take(64) }, "Invite code") }
                             Spacer(Modifier.height(24.dp))
-                            Primary("Continue", name.isNotBlank() && userFree == true) { go(Step.Email) }
+                            Primary("Continue", name.isNotBlank() && (userFree == true || (userReserved && invite.length >= 4))) { go(Step.Email) }
                         }
                         Step.Email -> {
                             Title("Your email", "Only for codes that keep your account safe. Nobody else sees it.")
@@ -197,7 +202,7 @@ fun AuthFlow(offline: () -> Unit) {
                             StrengthBar(score, label)
                             Spacer(Modifier.height(24.dp))
                             Primary("Create account", score >= 2) {
-                                run { acc.signUp(name, cleanUser, email, password, code); password = "" }
+                                run { acc.signUp(name, cleanUser, email, password, code, invite = if (userReserved) invite else ""); password = "" }
                             }
                         }
                         Step.Login -> {

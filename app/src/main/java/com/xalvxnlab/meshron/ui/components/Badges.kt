@@ -233,8 +233,8 @@ fun BadgeGuide() {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         GuideRow({ VerifiedMark(26.dp) }, "Verified", "A person at Meshron confirmed this is really them: known people, creators, brands.")
         GuideRow({ ModMark(26.dp) }, "Meshron moderator", "Reviews reports and keeps Meshron safe. Moderators are also verified.")
-        GuideRow({ FounderMark(26.dp) }, "CEO · Founder", "Alvin Nana Kojo Pieterson (@alvinnanakojopieterson). Shown as a gold pill on their profile.")
-        GuideRow({ CofounderMark(26.dp) }, "Co-CEO · Co-founder", "Clement Kofi Yeboah (@clementkofiyeboah). Shown as a silver pill on their profile.")
+        GuideRow({ FounderMark(26.dp) }, "CEO · Founder", "Alvin Nana Kojo Pieterson (@alvinpieterson). Shown as a gold pill on their profile.")
+        GuideRow({ CofounderMark(26.dp) }, "Co-CEO · Co-founder", "Clement Kofi Yeboah (@clementyeaboah). Shown as a silver pill on their profile.")
         Text("On profiles", style = MaterialTheme.typography.titleSmall, color = MeshColors.TextSecondary)
         Row(verticalAlignment = Alignment.CenterVertically) { Text("Alvin", fontWeight = FontWeight.Bold); BadgeRow(true, true, "founder", 18.dp, full = true) }
         Row(verticalAlignment = Alignment.CenterVertically) { Text("Clement", fontWeight = FontWeight.Bold); BadgeRow(true, true, "cofounder", 18.dp, full = true) }

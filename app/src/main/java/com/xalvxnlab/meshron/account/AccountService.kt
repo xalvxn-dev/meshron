@@ -65,6 +65,8 @@ class AccountService(context: Context, private val identity: IdentityRepository)
     suspend fun postRaw(path: String, body: JSONObject): JSONObject = post(path, body)
 
     suspend fun available(username: String): Boolean = post("/v1/check", JSONObject().put("username", username)).optBoolean("available")
+    /** A username kept for someone (needs an invite code). */
+    suspend fun reserved(username: String): Boolean = post("/v1/check", JSONObject().put("username", username)).optBoolean("reserved")
 
     /** Public key for @username, or null if nobody has it. */
     suspend fun resolve(username: String): String? = runCatching {
@@ -77,7 +79,7 @@ class AccountService(context: Context, private val identity: IdentityRepository)
      * Creates the account. With [existing] = true, the ID already on this phone gets the
      * username and password (nothing is lost); otherwise a new ID is made.
      */
-    suspend fun signUp(name: String, username: String, email: String, password: String, code: String, existing: Boolean = false) {
+    suspend fun signUp(name: String, username: String, email: String, password: String, code: String, existing: Boolean = false, invite: String = "") {
         val u = username.trim().removePrefix("@").lowercase()
         val keys = withContext(Dispatchers.Default) { AccountCrypto.derive(u, password) }
         val seed = if (existing) identity.withSeed { it.copyOf() } else ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -87,7 +89,7 @@ class AccountService(context: Context, private val identity: IdentityRepository)
             post(
                 "/v1/signup", JSONObject().put("username", u).put("email", email.trim()).put("code", code.trim())
                     .put("authKey", keys.authHex).put("blob", AccountCrypto.lock(keys.lockKey, seed))
-                    .put("publicKey", pk.hex()).put("sig", sig.hex()),
+                    .put("publicKey", pk.hex()).put("sig", sig.hex()).apply { if (invite.isNotBlank()) put("invite", invite.trim()) },
             )
             if (existing) identity.setHandle(u) else identity.adopt(seed.copyOf(), name, u)
             remember(u, email.trim(), keys.authHex, false)

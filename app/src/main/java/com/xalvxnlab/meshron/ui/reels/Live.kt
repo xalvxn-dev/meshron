@@ -242,11 +242,14 @@ fun WatchLive(item: ReelsService.LiveNow, onClose: () -> Unit) {
     val wide = remote?.let { it.width > it.height } == true
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         VideoView(format = remote, crop = !item.screen, onTexture = { st -> live.setRemoteSurface(st?.let { Surface(it) }) }, modifier = Modifier.fillMaxSize())
-        if (remote == null && !s.ended) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+        // No picture after 20 seconds: the host has gone (the live just hadn't said it ended).
+        var gaveUp by remember(item.lid) { mutableStateOf(false) }
+        LaunchedEffect(item.lid, remote) { if (remote == null) { kotlinx.coroutines.delay(20_000); gaveUp = true } else gaveUp = false }
+        if (remote == null && !s.ended && !gaveUp) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(color = Color.White)
             Text("Joining ${item.author.label}…", color = Color.White, modifier = Modifier.padding(top = 12.dp))
         }
-        if (s.ended) Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (s.ended || (gaveUp && remote == null)) Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(if (s.full) "This live is full" else "This live has ended", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
             Spacer(Modifier.height(14.dp))
             Text("Close", color = Color.Black, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable(onClick = onClose).padding(horizontal = 26.dp, vertical = 10.dp))

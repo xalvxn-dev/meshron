@@ -16,7 +16,7 @@ AI_CHECK_MODEL = "openai/gpt-oss-20b"
 # Every report and appeal is emailed here (comma-separate several).
 MOD_EMAIL = "xalvxn@gmail.com"
 # Usernames that are Meshron admins (can appoint moderators). Founders: reserved usernames.
-ADMINS = "alvinnanakojopieterson,clementkofiyeboah,xalvxn"
+ADMINS = "alvinpieterson,clementyeaboah,xalvxn"
 
 [[kv_namespaces]]
 binding = "ACCOUNTS"
@@ -33,7 +33,7 @@ BREVO_SENDER = "meshronmessanger@gmail.com"
 AI_URL = "http://127.0.0.1:8800"
 AI_MODEL = "auto"
 MOD_EMAIL = "xalvxn@gmail.com"
-ADMINS = "alvinnanakojopieterson,clementkofiyeboah,modtester"
+ADMINS = "alvinpieterson,clementyeaboah,modtester"
 
 [[env.test.kv_namespaces]]
 binding = "ACCOUNTS"

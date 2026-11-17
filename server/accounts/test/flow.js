@@ -81,11 +81,11 @@ function unlock (lockKey, blob) {
   assert.equal((await call('/v1/ai', { username: user, authKey, task: 'moderate', text: 'nice video' })).ok, true)
 
   // Reserved usernames: not available, can't be taken without the invite code.
-  assert.equal((await call('/v1/check', { username: 'alvinnanakojopieterson' })).available, false)
+  assert.equal((await call('/v1/check', { username: 'alvinpieterson' })).available, false)
   // Rename: needs new keys (they depend on the username); old name is freed.
   const newName = user + 'x'
   const k2 = derive(newName, 'correct horse battery')
-  assert.equal((await call('/v1/rename', { username: user, authKey, newUsername: 'clementkofiyeboah', newAuthKey: k2.authKey, newBlob: lock(k2.lockKey, seed) })).error, 'That username is reserved')
+  assert.equal((await call('/v1/rename', { username: user, authKey, newUsername: 'clementyeaboah', newAuthKey: k2.authKey, newBlob: lock(k2.lockKey, seed) })).error, 'That username is reserved')
   assert.equal((await call('/v1/rename', { username: user, authKey, newUsername: newName, newAuthKey: k2.authKey, newBlob: lock(k2.lockKey, seed) })).username, newName)
   // A second change within 30 days is refused.
   const again = await call('/v1/rename', { username: newName, authKey: k2.authKey, newUsername: newName + 'x', newAuthKey: k2.authKey, newBlob: lock(k2.lockKey, seed) })

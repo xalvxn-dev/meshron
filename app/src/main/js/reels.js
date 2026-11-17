@@ -46,7 +46,9 @@ function cleanLink (v) {
   return /^https:\/\/[^\s/]+\.[^\s]+$/.test(t) ? t : ''
 }
 
-const LIVE_MAX = 4 * 60 * 60 * 1000 // a live that never said it ended counts as over after 4 h
+// A live re-announces itself every minute; one that went quiet (app closed, phone off) counts as over after 3 minutes.
+const LIVE_MAX = 3 * 60 * 1000
+const LIVE_BEAT = 60 * 1000
 
 module.exports = function createReels (x) {
   const { b4a, crypto, sodium, Hyperblobs, send, log, report } = x
@@ -65,6 +67,7 @@ module.exports = function createReels (x) {
   let nearCell = null
   let nearTopic = null
   let me = { name: '', handle: '' }
+  let liveBeat = null // re-announces my live every minute while it runs
   let mine = null // { ch, chKey, blobsCore, blobs, priv }
   const chans = new Map() // chHex -> channel state
   const byId = new Map() // identity hex -> chHex
@@ -982,12 +985,17 @@ module.exports = function createReels (x) {
           await learn(cmd.ch)
           maybeSync(cmd.ch)
           return reply('reel-ok', {})
-        case 'reel-live':
+        case 'reel-live': {
           // Going live / stopping: written to my channel so followers see the LIVE ring.
-          await mine.ch.append(b4a.from(JSON.stringify({ t: 'live', on: !!cmd.on, id: String(cmd.id || '').slice(0, 40), title: str(cmd.title, 100), ts: now(), screen: !!cmd.screen })))
+          const entry = () => b4a.from(JSON.stringify({ t: 'live', on: !!cmd.on, id: String(cmd.id || '').slice(0, 40), title: str(cmd.title, 100), ts: now(), screen: !!cmd.screen }))
+          await mine.ch.append(entry())
+          clearInterval(liveBeat); liveBeat = null
+          // Still live: say so every minute, so a live that stopped without saying so ends for everyone.
+          if (cmd.on) liveBeat = setInterval(() => { mine.ch.append(entry()).catch(() => {}) }, LIVE_BEAT)
           changed(mine.chKey)
           hiAll()
           return reply('reel-ok', {})
+        }
         case 'reels-lives': {
           // Who is live now: people I follow first, then everyone else I know.
           const list = []

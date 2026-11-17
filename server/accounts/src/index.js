@@ -171,7 +171,9 @@ const routes = {
   /** Is this username free? */
   async '/v1/check' ({ username }, env) {
     const u = name(username)
-    return { available: !RESERVED.includes(u) && !(await env.ACCOUNTS.get('u:' + u)) }
+    const taken = !!(await env.ACCOUNTS.get('u:' + u))
+    // Reserved (the founders' usernames): free only with the invite code.
+    return { available: !RESERVED.includes(u) && !taken, reserved: RESERVED.includes(u) && !taken }
   },
 
   /** Username -> public key, for adding a friend by @username. */
@@ -285,7 +287,7 @@ const routes = {
 }
 
 // Founders' usernames are kept for them: only with the invite code (RESERVED_CODE secret).
-const RESERVED = ['alvinnanakojopieterson', 'clementkofiyeboah', 'meshron', 'admin', 'moderator', 'support', 'official', 'meshronai', 'meshron_ai', 'meshron']
+const RESERVED = ['alvinpieterson', 'clementyeaboah', 'alvinnanakojopieterson', 'clementkofiyeboah', 'meshron', 'admin', 'moderator', 'support', 'official', 'meshronai', 'meshron_ai', 'meshron']
 function reservedCheck (env, u, invite) {
   if (RESERVED.includes(u) && (!env.RESERVED_CODE || String(invite || '') !== env.RESERVED_CODE)) throw fail('That username is reserved')
 }
