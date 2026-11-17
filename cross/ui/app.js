@@ -209,10 +209,12 @@
   function displayBody(row) {
     if (row.kind === 'deleted') return row.outgoing ? 'You deleted this message' : 'This message was deleted'
     if (row.kind === 'text' && row.body.startsWith('meshron://ai/')) return '✦ Meshron AI answered'
+    if (row.kind === 'text' && row.body.startsWith('meshron://reel/')) return '🎬 Reel'
+    if (row.kind === 'text' && row.body.startsWith('meshron://collab/')) return '🤝 Collab invite'
     if (row.kind === 'text') return bodyText(row.body)
     if (row.kind === 'file') {
       const f = fileInfo(row)
-      return f ? (f.mime.startsWith('image/') ? 'Photo: ' : 'File: ') + f.name : 'File'
+      return f ? (f.mime.startsWith('image/') ? 'Photo: ' + f.name : f.mime.startsWith('audio/') ? '🎤 Voice message' : 'File: ' + f.name) : 'File'
     }
     if (row.kind === 'invite') {
       const o = parseJson(row.body)
@@ -1406,14 +1408,23 @@
       h('button', { class: 'btn ghost small danger', onClick: () => blockContact(conv) }, 'Block'),
       h('button', { class: 'btn primary small', onClick: () => M.call('contacts.add', { key: conv, name: '' }) }, 'Accept'))
     const replyBar = h('div', { class: 'reply-bar', hidden: true })
+    const suggestRow = h('div', { class: 'ai-suggest', hidden: true })
+    const aiBtn = st.anon ? null : h('button', { class: 'icon-btn ai-spark', title: 'Reply ideas from Meshron AI', onClick: () => suggestReplies(conv, suggestRow, input, autosize) }, h('span', { style: { fontSize: '20px', lineHeight: 1 } }, '✦'))
+    const mic = h('button', { class: 'mic-btn', title: 'Record a voice message' }, icon('mic', 22))
+    const recBar = h('div', { class: 'rec-bar', hidden: true })
+    mic.onclick = () => toggleVoice(conv, mic, recBar)
     const composer = h('div', { class: 'composer' },
-      h('button', { class: 'icon-btn', title: 'Send a photo or file', onClick: () => $('#file-input').click() }, icon('clip', 22)),
-      emojiBtn, input, send, counter)
+      h('div', { class: 'composer-pill' },
+        aiBtn,
+        h('button', { class: 'icon-btn', title: 'Send a photo or file', onClick: () => $('#file-input').click() }, icon('plus', 24)),
+        input, emojiBtn, mic, send),
+      counter)
 
     const autosize = () => {
       input.style.height = 'auto'
       input.style.height = Math.min(160, input.scrollHeight + 2) + 'px'
       send.classList.toggle('hide', !input.value.trim())
+      if (chatEls && chatEls.mic) chatEls.mic.classList.toggle('hide', !!input.value.trim())
       const left = st.limits.MAX_BODY - input.value.length
       counter.hidden = left > 200
       counter.textContent = left + ' left'
@@ -1452,8 +1463,8 @@
 
     main.classList.add('enter')
     setTimeout(() => main.classList.remove('enter'), 500)
-    main.replaceChildren(head, banner, msgs, toBottom, replyBar, composer)
-    chatEls = { av, who, msgs, input, send, toBottom, banner, composer, autosize, replyBar }
+    main.replaceChildren(head, banner, msgs, toBottom, replyBar, suggestRow, recBar, composer)
+    chatEls = { av, who, msgs, input, send, toBottom, banner, composer, autosize, replyBar, mic }
     st.reply = null
     st.editing = null
     input.value = st.prefs.drafts[conv] || ''
@@ -1753,6 +1764,29 @@
   }
   const BIG_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|‍|️|\s)+$/u
 
+  /** A voice message: play/pause, progress and length, like Android. */
+  function voicePlayer(row, f) {
+    const bar = h('div', { class: 'vp-fill' })
+    const time = h('span', { class: 'vp-time' }, '0:00')
+    const btn = h('button', { class: 'vp-btn', title: 'Play' }, icon('play', 20))
+    let audio = null
+    const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
+    btn.onclick = async (e) => {
+      e.stopPropagation()
+      if (!row.localPath) { M.call('file.retry'); toast('Downloading…'); return }
+      if (!audio) {
+        const b = await loadBlob(row, f.mime).catch(() => null)
+        if (!b) { toast("Couldn't play this voice message"); return }
+        audio = new Audio(b.url)
+        audio.onloadedmetadata = () => { if (isFinite(audio.duration)) time.textContent = fmt(audio.duration) }
+        audio.ontimeupdate = () => { if (audio.duration && isFinite(audio.duration)) { bar.style.width = (audio.currentTime / audio.duration * 100) + '%'; time.textContent = fmt(audio.currentTime) } }
+        audio.onended = () => { btn.replaceChildren(icon('play', 20)); bar.style.width = '0%' }
+      }
+      if (audio.paused) { audio.play().catch(() => {}); btn.replaceChildren(icon('pause', 20)) } else { audio.pause(); btn.replaceChildren(icon('play', 20)) }
+    }
+    return h('div', { class: 'voice-player' }, btn, h('div', { class: 'vp-track' }, h('div', { class: 'vp-bar' }, bar), time))
+  }
+
   async function loadBlob(row, mime) {
     const k = row.peerKey + '|' + row.id
     if (blobs.has(k)) return blobs.get(k)
@@ -1884,7 +1918,9 @@
     if (row.kind === 'file') {
       const f = fileInfo(row)
       const status = st.fileStatus[row.peerKey + '|' + row.id]
-      if (f && f.mime.startsWith('image/') && row.localPath && f.size < 12 * 1024 * 1024) {
+      if (f && f.mime.startsWith('audio/')) {
+        kids.push(voicePlayer(row, f))
+      } else if (f && f.mime.startsWith('image/') && row.localPath && f.size < 12 * 1024 * 1024) {
         media = true
         const img = h('img', { class: 'photo', alt: f.name })
         loadBlob(row, f.mime).then((b) => { img.src = b.url; img.onclick = () => lightbox(row, f, b.url) }).catch(() => { img.alt = "Couldn't show this photo" })
@@ -1921,6 +1957,28 @@
         kids.push(h('div', { class: 'story-quote' }, icon('zap', 14), h('span', { class: 'ellipsis' }, (row.outgoing ? 'You replied to their story: ' : 'Replied to your story: ') + reply[1])))
         const rbig = reply[2].length <= 12 && BIG_EMOJI.test(reply[2])
         kids.push(h('div', { class: 'text' + (rbig ? ' big' : '') }, richText(reply[2], hl)))
+      } else if (row.body.startsWith('meshron://reel/')) {
+        const lines = row.body.split('\n')
+        const m = /^meshron:\/\/reel\/([0-9a-f]{64})\/([A-Za-z0-9_-]+)/.exec(lines[0])
+        kids.push(h('div', { class: 'reel-card', onClick: () => { if (m) { setTab('reels'); setTimeout(() => window.MeshronReels.openReel(m[1], m[2]), 80) } } },
+          h('div', { class: 'rc-tile' }, icon('play', 26)),
+          h('div', { style: { minWidth: 0 } }, h('div', { class: 'rc-title' }, 'Reel'), h('div', { class: 'rc-sub' }, lines.slice(1).join(' ').trim() || 'Tap to watch'))))
+      } else if (row.body.startsWith('meshron://collab/')) {
+        const lines = row.body.split('\n')
+        const parts = lines[0].replace('meshron://collab/', '').split('/')
+        const key = 'collab:' + parts.join('/')
+        let done = false
+        try { done = localStorage.getItem(key) === '1' } catch {}
+        const accept = !row.outgoing && parts.length === 2 ? h('button', { class: 'pill-btn' + (done ? '' : ' strong'), disabled: done, onClick: async (e) => {
+          const b = e.currentTarget; b.textContent = '…'
+          try { await M.call('reels.collabAccept', { ch: parts[0], id: parts[1] }); b.textContent = 'Accepted'; b.disabled = true; b.classList.remove('strong'); try { localStorage.setItem(key, '1') } catch {} } catch (err) { b.textContent = 'Try again'; oops(err) }
+        } }, done ? 'Accepted' : 'Accept') : null
+        kids.push(h('div', { class: 'collab-card' },
+          h('div', { class: 'rc-title' }, '🤝 Collab invite'),
+          h('div', { class: 'rc-sub' }, row.outgoing ? 'You invited them to collaborate on your reel.' : 'They want you as a collaborator on their reel.'),
+          lines[1] ? h('div', { class: 'rc-sub' }, lines[1]) : null,
+          h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
+            h('button', { class: 'pill-btn', onClick: () => { if (parts.length === 2) { setTab('reels'); setTimeout(() => window.MeshronReels.openReel(parts[0], parts[1]), 80) } } }, 'View'), accept)))
       } else if (row.body.startsWith('meshron://ai/')) {
         // Meshron AI's answer (shown only when its signature checks out).
         const box = h('div', { class: 'text' }, '…')
@@ -2045,6 +2103,51 @@
   }
 
   /** Shows picked / pasted / dropped files first: photo previews, names and sizes, a caption. */
+  /** Three short replies from Meshron AI (the sparkle in the message bar). */
+  async function suggestReplies(conv, row, input, autosize) {
+    if (!row.hidden) { row.hidden = true; return }
+    if (!window.MeshronAccount || !window.MeshronAccount.state) { toast('Create a Meshron account (Me → Settings) to use Meshron AI'); return }
+    row.hidden = false
+    row.replaceChildren(h('span', { class: 'dim t-small' }, 'Thinking…'))
+    const history = (st.rows || []).filter((r) => r.kind === 'text').slice(-8).map((r) => ({ mine: r.outgoing, text: displayBody(r) }))
+    try {
+      const r = await window.MeshronAccount.authed('/v1/ai', { task: 'replies', history })
+      row.replaceChildren(...(r.replies || []).map((t) => h('button', { class: 'chip', onClick: () => { input.value = t; autosize(); row.hidden = true; input.focus() } }, t)))
+    } catch (e) { row.replaceChildren(h('span', { class: 'dim t-small' }, e.message)) }
+  }
+
+  /** Voice messages: tap the mic to record, tap again to send (or ✕ to cancel). */
+  let rec = null
+  async function toggleVoice(conv, mic, bar) {
+    if (rec) { rec.stop(true); return }
+    let stream
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }) } catch { toast('Allow the microphone to record voice messages'); return }
+    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || ''
+    let mr
+    try { mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined) } catch { stream.getTracks().forEach((t) => t.stop()); toast("Voice messages aren't supported here"); return }
+    const chunks = []
+    let send = false
+    const started = Date.now()
+    const clock = h('span', {}, '0:00')
+    const tick = setInterval(() => { const s = Math.floor((Date.now() - started) / 1000); clock.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); if (s % 4 === 0) M.call('chat.typing', { conv, what: 'recording' }).catch(() => {}); if (s >= 300) rec && rec.stop(true) }, 1000)
+    bar.hidden = false
+    bar.replaceChildren(h('span', { class: 'rec-dot' }), h('span', { style: { color: 'var(--danger)', fontWeight: 700 } }, 'Recording '), clock, h('span', { class: 'grow' }),
+      h('button', { class: 'btn dark small', onClick: () => rec && rec.stop(false) }, 'Cancel'), h('button', { class: 'btn light small', onClick: () => rec && rec.stop(true) }, 'Send'))
+    mic.classList.add('on')
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data) }
+    mr.onstop = async () => {
+      clearInterval(tick); stream.getTracks().forEach((t) => t.stop()); bar.hidden = true; mic.classList.remove('on'); rec = null
+      if (!send || Date.now() - started < 700) return
+      const mime = (mr.mimeType || type || 'audio/webm').split(';')[0]
+      const ext = mime.includes('mp4') ? 'm4a' : 'webm'
+      const d = new Date()
+      const name = 'Voice note ' + d.toISOString().slice(0, 10) + ' ' + d.toTimeString().slice(0, 8).replace(/:/g, '.') + '.' + ext
+      await uploadFiles([new File(chunks, name, { type: mime })], conv)
+    }
+    rec = { stop: (s) => { send = s; try { mr.stop() } catch {} } }
+    mr.start(250)
+  }
+
   function sendFiles(list) {
     const conv = st.open
     if (!conv) return
@@ -2859,6 +2962,140 @@
     }
   }
 
+  // ---- Watching a live (same video and audio as calls; from the Android app's lives) ----
+  let liveView = null // { host, el, canvas, chat, count, vdec, ctx, speaker, adec, adecTs, lastFrameAt, timer }
+  async function watchLive(item) {
+    if (liveView) closeLive()
+    const host = item.author.id
+    const canvas = h('canvas', { class: 'lv-canvas' })
+    const chat = h('div', { class: 'lv-chat' })
+    const count = h('span', { class: 'lv-count' }, icon('play', 12), '0')
+    const wait = h('div', { class: 'lv-wait' }, h('div', { class: 'spinner' }), h('div', {}, 'Joining ' + (item.author.handle ? '@' + item.author.handle : item.author.name) + '…'))
+    const input = h('input', { class: 'lv-input', placeholder: 'Say something…', maxlength: 200 })
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { M.call('live.chat', { host, text: input.value.trim() }).catch(() => {}); addLiveChat('You', input.value.trim()); input.value = '' } })
+    const el = h('div', { class: 'live-view' }, canvas, wait,
+      h('div', { class: 'lv-head' },
+        avatar(item.author.name || '?', item.author.id, 40),
+        h('div', { style: { minWidth: 0 } }, h('div', { class: 'lv-name ellipsis' }, item.author.handle ? '@' + item.author.handle : item.author.name), h('div', { class: 'lv-sub ellipsis' }, item.title || 'Live now')),
+        h('span', { class: 'lv-badge' }, 'LIVE'), count, h('span', { style: { flex: 1 } }),
+        h('button', { class: 'icon-btn', style: { color: '#fff' }, title: 'Close', onClick: closeLive }, icon('x', 24))),
+      chat,
+      h('div', { class: 'lv-foot' }, input, h('button', { class: 'lv-heart', title: 'Send a heart', onClick: () => { M.call('live.heart', { host }).catch(() => {}); burstHeart() } }, '❤')))
+    document.body.appendChild(el)
+    liveView = { host, el, canvas, chat, count, wait, lastFrameAt: 0, adecTs: 0 }
+    // Sound: the live's Opus audio, played through the call speaker.
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
+      await ctx.audioWorklet.addModule('audio-worklet.js')
+      const speaker = new AudioWorkletNode(ctx, 'mesh-speaker', { outputChannelCount: [2] })
+      speaker.connect(ctx.destination)
+      const adec = new AudioDecoder({
+        output: (ad) => {
+          const n = ad.numberOfFrames; const pcm = new Float32Array(n)
+          ad.copyTo(pcm, { planeIndex: 0, format: 'f32-planar' }); const rate = ad.sampleRate; ad.close()
+          const outLen = Math.round(n * ctx.sampleRate / rate); const out = new Float32Array(outLen)
+          for (let i = 0; i < outLen; i++) out[i] = pcm[Math.min(n - 1, Math.floor(i * rate / ctx.sampleRate))]
+          speaker.port.postMessage(out)
+        },
+        error: () => {}
+      })
+      adec.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })
+      Object.assign(liveView, { ctx, speaker, adec })
+    } catch {}
+    M.call('live.watch', { host, id: item.lid }).catch(oops)
+    // No picture for 20 seconds: the host has gone.
+    liveView.timer = setInterval(() => {
+      if (!liveView) return
+      if (Date.now() - (liveView.lastFrameAt || liveView.startedAt) > 20000) liveEnded(false)
+    }, 2000)
+    liveView.startedAt = Date.now()
+  }
+  function addLiveChat(name, text) {
+    if (!liveView) return
+    liveView.chat.appendChild(h('div', { class: 'lv-msg' }, h('b', {}, name + ' '), text))
+    while (liveView.chat.children.length > 40) liveView.chat.firstChild.remove()
+    liveView.chat.scrollTop = liveView.chat.scrollHeight
+  }
+  function burstHeart() {
+    if (!liveView) return
+    const hrt = h('div', { class: 'lv-float' }, '❤')
+    hrt.style.left = (70 + Math.random() * 20) + '%'
+    liveView.el.appendChild(hrt)
+    setTimeout(() => hrt.remove(), 1600)
+  }
+  function liveEnded(full) {
+    if (!liveView || liveView.ended) return
+    liveView.ended = true
+    clearInterval(liveView.timer)
+    liveView.wait.replaceChildren(h('div', { class: 't-h2' }, full ? 'This live is full' : 'This live has ended'), h('button', { class: 'btn light', style: { marginTop: '14px' }, onClick: closeLive }, 'Close'))
+    liveView.wait.hidden = false
+  }
+  function closeLive() {
+    if (!liveView) return
+    const v = liveView
+    liveView = null
+    clearInterval(v.timer)
+    M.call('live.leave', { host: v.host }).catch(() => {})
+    try { v.vdec && v.vdec.close() } catch {}
+    try { v.adec && v.adec.close() } catch {}
+    try { v.ctx && v.ctx.close() } catch {}
+    v.el.remove()
+  }
+  function onLiveVideo(data) {
+    const v = liveView
+    if (!v || v.ended) return
+    const p = unb64(data)
+    if (p.length < 11) return
+    const dv = new DataView(p.buffer)
+    const s = dv.getUint32(0)
+    const key = p[4] === 1
+    const rot = p[5]
+    if (!v.vdec || v.vdec.state === 'closed') {
+      if (!key) { if (!v.askedKey || Date.now() - v.askedKey > 2000) { v.askedKey = Date.now(); M.call('live.keyreq', { host: v.host }).catch(() => {}) } return }
+      v.vdec = new VideoDecoder({
+        output: (frame) => {
+          const cv = v.canvas
+          const swap = rot % 2 === 1
+          const w = swap ? frame.displayHeight : frame.displayWidth
+          const hgt = swap ? frame.displayWidth : frame.displayHeight
+          if (cv.width !== w || cv.height !== hgt) { cv.width = w; cv.height = hgt }
+          const g = cv.getContext('2d')
+          g.save(); g.translate(w / 2, hgt / 2); g.rotate((rot * Math.PI) / 2); g.drawImage(frame, -frame.displayWidth / 2, -frame.displayHeight / 2); g.restore()
+          frame.close()
+          v.lastFrameAt = Date.now()
+          v.wait.hidden = true
+        },
+        error: () => { v.vdec = null; M.call('live.keyreq', { host: v.host }).catch(() => {}) }
+      })
+      v.vdec.configure({ codec: 'avc1.42E01F', optimizeForLatency: true })
+    }
+    if (v.vdec.decodeQueueSize > 6 && !key) return
+    try { v.vdec.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: s * 33000, data: p.subarray(10) })) } catch { v.vdec = null }
+  }
+  function onLiveAudio(data) {
+    const v = liveView
+    if (!v || !v.adec || v.adec.state !== 'configured') return
+    const p = unb64(data)
+    if (p.length < 3) return
+    const dv = new DataView(p.buffer)
+    let o = 3
+    for (let i = 0; i < p[2]; i++) {
+      if (o + 2 > p.length) return
+      const len = dv.getUint16(o)
+      if (!len || o + 2 + len > p.length) return
+      try { v.adec.decode(new EncodedAudioChunk({ type: 'key', timestamp: v.adecTs, data: p.subarray(o + 2, o + 2 + len) })) } catch {}
+      v.adecTs += 20000
+      o += 2 + len
+    }
+  }
+  M.on('live-video', (e) => { if (liveView && e.host === liveView.host) onLiveVideo(e.data) })
+  M.on('live-audio', (e) => { if (liveView && e.host === liveView.host) onLiveAudio(e.data) })
+  M.on('live-chat', (e) => { if (liveView && e.host === liveView.host && e.text) addLiveChat(e.name || 'Someone', e.text) })
+  M.on('live-hearts', (e) => { if (liveView && e.host === liveView.host) for (let i = 0; i < Math.min(8, e.n || 1); i++) setTimeout(burstHeart, i * 120) })
+  M.on('live-count', (e) => { if (liveView && e.host === liveView.host) liveView.count.replaceChildren(icon('play', 12), String(e.viewers || 0)) })
+  M.on('live-welcome', (e) => { if (liveView && e.host === liveView.host) liveView.count.replaceChildren(icon('play', 12), String(e.viewers || 0)) })
+  M.on('live-ended', (e) => { if (liveView && e.host === liveView.host) liveEnded(!!e.full) })
+
   // ---- Call flow ----
   let wakeLock = null
   async function keepAwake(on) {
@@ -3214,7 +3451,7 @@
   }
 
   // Shared with reels.js.
-  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto }
+  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive }
 
   async function start() {
     try {

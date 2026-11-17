@@ -287,7 +287,7 @@ const routes = {
 }
 
 // Founders' usernames are kept for them: only with the invite code (RESERVED_CODE secret).
-const RESERVED = ['alvinpieterson', 'clementyeaboah', 'alvinnanakojopieterson', 'clementkofiyeboah', 'meshron', 'admin', 'moderator', 'support', 'official', 'meshronai', 'meshron_ai', 'meshron']
+const RESERVED = ['alvinpieterson', 'clementyeboah', 'alvinnanakojopieterson', 'clementkofiyeboah', 'meshron', 'admin', 'moderator', 'support', 'official', 'meshronai', 'meshron_ai', 'meshron']
 function reservedCheck (env, u, invite) {
   if (RESERVED.includes(u) && (!env.RESERVED_CODE || String(invite || '') !== env.RESERVED_CODE)) throw fail('That username is reserved')
 }

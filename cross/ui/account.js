@@ -71,7 +71,16 @@
     user.value = (st.me && st.me.handle) || ''
     const pass = field('Password (8+ characters)', 'password')
     const code = field('6-digit code', 'text', { inputmode: 'numeric', maxlength: 6 })
-    const step2 = h('div', { style: { display: 'none' } }, h('div', { style: { height: '10px' } }), code, h('div', { style: { height: '10px' } }), user, h('div', { style: { height: '10px' } }), pass)
+    // A username kept for someone (the founders') asks for the invite code.
+    const invite = field('Invite code', 'text', { maxlength: 64 })
+    const inviteWrap = h('div', { style: { display: 'none', marginTop: '10px' } }, h('div', { class: 'hint' }, 'This username is kept for someone: enter your invite code.'), invite)
+    let checkTimer = null
+    user.addEventListener('input', () => {
+      clearTimeout(checkTimer)
+      const u = user.value.trim().replace(/^@/, '').toLowerCase()
+      checkTimer = setTimeout(async () => { const r = await post('/v1/check', { username: u }).catch(() => null); inviteWrap.style.display = r && r.reserved ? 'block' : 'none' }, 350)
+    })
+    const step2 = h('div', { style: { display: 'none' } }, h('div', { style: { height: '10px' } }), code, h('div', { style: { height: '10px' } }), user, inviteWrap, h('div', { style: { height: '10px' } }), pass)
     const err = h('div', { class: 'hint bad' })
     const go = h('button', { class: 'btn primary wide', style: { marginTop: '16px' } }, 'Send code')
     let sent = false
@@ -87,7 +96,7 @@
           go.textContent = 'Creating…'
           const k = await M.call('account.keys', { username: user.value, password: pass.value })
           const d = await M.call('account.signupData', { username: k.username })
-          await post('/v1/signup', { username: k.username, email: email.value.trim(), code: code.value.trim(), authKey: d.authKey, blob: d.blob, publicKey: d.publicKey, sig: d.sig })
+          await post('/v1/signup', { username: k.username, email: email.value.trim(), code: code.value.trim(), authKey: d.authKey, blob: d.blob, publicKey: d.publicKey, sig: d.sig, ...(invite.value.trim() && inviteWrap.style.display !== 'none' ? { invite: invite.value.trim() } : {}) })
           await M.call('account.saved', { email: email.value.trim(), twoFactor: false })
           m && m.close && m.close()
           toast('Account created: @' + k.username)

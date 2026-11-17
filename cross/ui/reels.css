@@ -156,3 +156,26 @@
 .reel-repost { display: inline-block; margin-bottom: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.35); color: #fff; font-size: 12px; font-weight: 600; border: 0; }
 .reel-repost.danger { background: rgba(255, 59, 92, .75); }
 .r-with { color: rgba(255,255,255,.8); font-size: 13px; margin-top: 2px; }
+
+/* ---- Lives (watch from the Android app's lives) ---- */
+.live-pill { position: relative; height: 38px; padding: 0 14px; border-radius: 10px; background: #ff2d55; color: #fff; font-weight: 900; letter-spacing: .5px; }
+.live-pill .live-n { position: absolute; top: -8px; right: -8px; min-width: 20px; height: 20px; border-radius: 999px; background: #fff; color: #ff2d55; font-size: 12px; display: grid; place-items: center; padding: 0 5px; }
+.r-lives { display: grid; gap: 8px; padding: 8px 14px; }
+.r-live-row { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 18px; background: var(--s1); color: inherit; }
+.r-live-av { position: relative; }
+.live-tag { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); background: #ff2d55; color: #fff; font-size: 10px; font-weight: 900; padding: 1px 6px; border-radius: 6px; }
+.live-view { position: fixed; inset: 0; z-index: 35; background: #000; color: #fff; display: flex; flex-direction: column; }
+.lv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.lv-wait { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; }
+.lv-head { position: relative; display: flex; align-items: center; gap: 10px; padding: calc(10px + var(--safe-t)) 10px 8px 14px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
+.lv-name { font-weight: 800; }
+.lv-sub { font-size: 12px; opacity: .8; }
+.lv-badge { background: #ff2d55; color: #fff; font-weight: 900; font-size: 12px; padding: 3px 8px; border-radius: 6px; }
+.lv-count { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13px; }
+.lv-chat { position: relative; margin-top: auto; max-height: 34%; overflow-y: auto; padding: 0 14px 8px; display: grid; gap: 4px; mask-image: linear-gradient(transparent, #000 30%); }
+.lv-msg { font-size: 14px; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.lv-foot { position: relative; display: flex; gap: 10px; padding: 8px 12px calc(12px + var(--safe-b)); }
+.lv-input { flex: 1; height: 48px; border-radius: 999px; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.12); color: #fff; padding: 0 18px; outline: none; -webkit-user-select: text; user-select: text; }
+.lv-heart { width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,.12); color: #ff2d55; font-size: 22px; }
+.lv-float { position: absolute; bottom: 90px; font-size: 26px; color: #ff2d55; animation: lvfloat 1.6s ease-out forwards; pointer-events: none; }
+@keyframes lvfloat { to { transform: translateY(-260px) scale(1.4); opacity: 0; } }

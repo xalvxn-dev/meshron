@@ -26,7 +26,7 @@ import { sendMail } from './mail.js'
 //   sig  = sign("meshron-mod-v1\n" + path + "\n" + ts + "\n" + sha256hex(p))
 
 const FOUNDER = 'alvinpieterson' // CEO & founder: Alvin Nana Kojo Pieterson
-const COFOUNDER = 'clementyeaboah' // co-CEO & co-founder: Clement Kofi Yeboah
+const COFOUNDER = 'clementyeboah' // co-CEO & co-founder: Clement Kofi Yeboah
 const KINDS = ['reel', 'comment', 'person', 'group', 'message', 'live', 'moment']
 const HIDEABLE = ['reel', 'comment', 'live', 'moment']
 const STRIKES_TO_BAN = 3
