@@ -10,7 +10,8 @@
   "scripts": {
     "prepare-app": "node prepare.js",
     "start": "node prepare.js && electron .",
-    "dist": "node prepare.js && electron-builder --win nsis --x64"
+    "dist": "node prepare.js && electron-builder --win nsis --x64",
+    "dist-mod": "node prepare-mod.js && electron-builder --config mod-builder.json --win nsis --x64"
   },
   "dependencies": {
     "@hyperswarm/secret-stream": "^6.9.2",

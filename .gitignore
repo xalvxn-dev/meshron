@@ -32,6 +32,8 @@ app/src/main/addons
 cross/desktop/node_modules
 cross/desktop/dist
 cross/desktop/bundle
+cross/desktop/dist-mod
+cross/desktop/mod-bundle
 cross/desktop/build
 cross/ios/app.bundle
 cross/ios/addons
@@ -48,3 +50,5 @@ relay.seed
 dev-secrets.json
 store/*.mp4
 cross/ios/out/
+cross/ios-mod/App/mod
+cross/ios-mod/*.xcodeproj

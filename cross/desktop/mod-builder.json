@@ -1,0 +1,10 @@
+{
+  "appId": "com.xalvxnlab.meshron.mod.desktop",
+  "productName": "Meshron Mod",
+  "copyright": "© 2026 xalvxnLab",
+  "extraMetadata": { "main": "mod-main.js", "name": "meshron-mod", "productName": "Meshron Mod", "version": "1.0.0", "dependencies": {} },
+  "directories": { "output": "dist-mod", "buildResources": "mod-bundle/icons" },
+  "files": ["mod-main.js", "mod-preload.js", "mod-bundle/**/*", "package.json", "!node_modules/**/*"],
+  "win": { "icon": "mod-bundle/icons/icon.png", "target": [{ "target": "nsis", "arch": ["x64"] }] },
+  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "Meshron-Mod-Setup-${version}.${ext}", "shortcutName": "Meshron Mod" }
+}

@@ -74,3 +74,42 @@ jobs:
           name: Meshron-iPhone
           path: cross/ios/Meshron-unsigned.ipa
           retention-days: 30
+
+  # Meshron Mod (the moderators' app): the shared screens in cross/mod, no networking addons.
+  mod-ipa:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy the screens
+        run: |
+          cp -R cross/mod cross/ios-mod/App/mod
+          sed -i '' 's# http://127.0.0.1:8799##' cross/ios-mod/App/mod/index.html
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd cross/ios-mod && xcodegen generate
+
+      - name: Build
+        run: |
+          cd cross/ios-mod
+          xcodebuild -project MeshronMod.xcodeproj -scheme MeshronMod -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+          test -d build/Build/Products/Release-iphoneos/MeshronMod.app
+
+      - name: Package .ipa
+        run: |
+          cd cross/ios-mod
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/MeshronMod.app Payload/
+          zip -qry MeshronMod-unsigned.ipa Payload
+          ls -la MeshronMod-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeshronMod-iPhone
+          path: cross/ios-mod/MeshronMod-unsigned.ipa
+          retention-days: 30

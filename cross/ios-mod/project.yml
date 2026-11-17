@@ -1,0 +1,36 @@
+# XcodeGen project for Meshron Mod on iPhone. Generated in CI (.github/workflows/ios.yml):
+#   App/mod  <- copy of cross/mod (without the local-testing server address)
+name: MeshronMod
+options:
+  bundleIdPrefix: com.xalvxnlab
+  deploymentTarget:
+    iOS: "16.4"
+targets:
+  MeshronMod:
+    type: application
+    platform: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.xalvxnlab.meshron.mod
+        PRODUCT_NAME: MeshronMod
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        CODE_SIGNING_ALLOWED: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Meshron Mod
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIUserInterfaceStyle: Dark
+        ITSAppUsesNonExemptEncryption: false
+    sources:
+      - path: App
+        excludes: [mod, "mod/**"]
+      - path: App/mod
+        type: folder
+        buildPhase: resources
