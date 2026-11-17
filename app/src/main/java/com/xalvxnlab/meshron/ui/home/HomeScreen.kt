@@ -263,11 +263,6 @@ fun HomeScreen(
                             if (anon) Box(Modifier.padding(end = 4.dp).clip(RoundedCornerShape(50)).background(MeshColors.AccentContainer).padding(horizontal = 9.dp, vertical = 4.dp)) {
                                 Text("ANON", color = MeshColors.Accent, fontWeight = FontWeight.Black, fontSize = 10.sp, letterSpacing = 1.sp)
                             }
-                            // SOS: one place only, here.
-                            Box(
-                                Modifier.padding(horizontal = 3.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE5243B))
-                                    .clickable { showSos = true }.padding(horizontal = 10.dp, vertical = 5.dp),
-                            ) { Text("SOS", color = Color.White, fontWeight = FontWeight.Black, fontSize = 11.sp, letterSpacing = 0.5.sp) }
                             HeaderButton(Icons.Rounded.Search, "Search everything") { overlay = Overlay.Search }
                         }
                         if (!anon) com.xalvxnlab.meshron.ui.ai.AiEntry { overlay = Overlay.Ai }

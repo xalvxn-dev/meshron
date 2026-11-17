@@ -438,7 +438,6 @@
     const [label, cls] = netLabel()
     $('#rail').replaceChildren(
       h('div', { class: 'logo' }, icon('logo', 24)),
-      h('button', { class: 'rail-sos desk-only', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
       ...TABS.map(([id, text, ic]) => {
         const n = id === 'chats' ? unreadTotal() : id === 'contacts' ? requestCount() : 0
         return h('button', { class: 'rail-btn' + (st.tab === id ? ' on' : ''), title: text, onClick: () => setTab(id) },
@@ -461,9 +460,7 @@
     menu(r.left, r.top, [
       st.anon ? null : { icon: 'play', label: 'Post a video', onClick: () => { setTab('reels'); setTimeout(() => window.MeshronReels.openCreate(), 50) } },
       { icon: 'plus', label: 'Share a moment', onClick: () => openComposer() },
-      { icon: 'edit', label: 'New chat', onClick: showNewChat },
-      { icon: 'users', label: 'New group', onClick: showNewGroup },
-      { icon: 'userPlus', label: 'Add a friend', onClick: () => showAddContact() }
+      st.anon ? null : { icon: 'video', label: 'Go live', onClick: () => goLive() }
     ].filter(Boolean))
   }
 
@@ -490,7 +487,6 @@
       head = h('div', { class: 'side-head' },
         h('div', { class: 'brand' }, icon('logo', 40), h('h1', { class: 't-h1' }, 'Meshron'), anonChip),
         h('button', { class: 'status-pill', id: 'status-pill', onClick: showConnection }),
-        h('button', { class: 'sos-pill', title: 'Emergency SOS', onClick: showSos }, 'SOS'),
         h('button', { class: 'circ', title: 'Search', onClick: () => { st.searchOpen = !st.searchOpen; if (!st.searchOpen) { st.query = ''; st.hits = [] } buildSide(); if (st.searchOpen) setTimeout(() => { const i = $('#search'); if (i) i.focus() }, 30) } }, icon(st.searchOpen ? 'x' : 'search', 22)))
     } else if (st.tab === 'contacts') {
       head = h('div', { class: 'side-head' }, h('h1', { class: 't-h1', style: { fontSize: '32px' } }, 'Activity'), anonChip,
@@ -531,6 +527,8 @@
   }
 
   function renderSide() {
+    // Nothing open on the right (Windows): the welcome panel, never an empty pane.
+    if (!st.open && !main.children.length && !$('#shell').hidden) showHero()
     const body = $('#side-body')
     if (!body) return
     const top = body.scrollTop
@@ -993,7 +991,11 @@
       h('div', { class: 'section' }, 'About'),
       h('div', { class: 'group' },
         setRow('info', '#5B5B66', 'About Meshron', { sub: 'Version ' + VERSION, onClick: showAbout }),
-        setRow('sliders', '#5B5B66', 'Connection details', { sub: 'For troubleshooting', onClick: showConnection })))
+        setRow('sliders', '#5B5B66', 'Connection details', { sub: 'For troubleshooting', onClick: showConnection })),
+      h('div', { class: 'section' }, 'Emergency'),
+      h('div', { class: 'group' },
+        setRow('warn', '#E8243C', 'Emergency SOS', { sub: 'Send an urgent message with your location to all your contacts', onClick: showSos })),
+      h('div', { style: { height: '24px' } }))
   }
 
   let noticeCount = 0
@@ -1349,7 +1351,9 @@
     saveDraft()
     st.open = null
     $('#shell').classList.remove('chat-open')
-    showHero()
+    // On phones the chat slides away first; the welcome panel only matters on Windows.
+    if (window.innerWidth <= 820) setTimeout(() => { if (!st.open) showHero() }, 460)
+    else showHero()
     renderSide()
   }
 
@@ -3102,6 +3106,148 @@
   M.on('live-welcome', (e) => { if (liveView && e.host === liveView.host) liveView.count.replaceChildren(icon('play', 12), String(e.viewers || 0)) })
   M.on('live-ended', (e) => { if (liveView && e.host === liveView.host) liveEnded(!!e.full) })
 
+  // ---- Going live ----
+  let hostLive = null // { id, el, cam, venc, aenc, ctx, timer, forceKey, viewers }
+  async function goLive() {
+    if (hostLive) return
+    if (!videoSupported() || typeof AudioEncoder === 'undefined') { toast("Going live isn't supported on this device yet"); return }
+    const preview = h('video', { class: 'lv-canvas', muted: true, playsinline: true, autoplay: true })
+    preview.muted = true
+    const title = h('input', { class: 'lv-input', placeholder: 'Add a title…', maxlength: 100 })
+    const chat = h('div', { class: 'lv-chat' })
+    const count = h('span', { class: 'lv-count' }, icon('play', 12), '0')
+    const status = h('span', { class: 'lv-badge', style: { background: 'var(--s3)' } }, 'NOT LIVE')
+    let source = 'camera'
+    const pickSrc = h('div', { class: 'chips', style: { padding: '0 0 10px', justifyContent: 'center' } })
+    const startBtn = h('button', { class: 'btn primary wide' }, 'Go live')
+    const setup = h('div', { class: 'lv-setup' }, pickSrc, title, h('div', { style: { height: '10px' } }), startBtn)
+    const el = h('div', { class: 'live-view' }, preview,
+      h('div', { class: 'lv-head' }, avatar(st.me.username, st.me.publicKey, 40), h('div', { style: { minWidth: 0 } }, h('div', { class: 'lv-name' }, st.me.handle ? '@' + st.me.handle : st.me.username), h('div', { class: 'lv-sub' }, 'Your live')),
+        status, count, h('span', { style: { flex: 1 } }), h('button', { class: 'icon-btn', style: { color: '#fff' }, title: 'End', onClick: () => endLive() }, icon('x', 24))),
+      chat, setup)
+    document.body.appendChild(el)
+    hostLive = { el, chat, count, status, preview, setup, viewers: 0 }
+    const openSource = async () => {
+      if (hostLive.cam) hostLive.cam.getTracks().forEach((t) => t.stop())
+      try {
+        hostLive.cam = source === 'screen'
+          ? await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true })
+          : await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } })
+        preview.srcObject = hostLive.cam
+        await preview.play().catch(() => {})
+      } catch { toast(source === 'screen' ? "Couldn't share the screen" : "Couldn't open the camera") }
+    }
+    const drawSrc = () => pickSrc.replaceChildren(...[['camera', 'Camera'], ...(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia ? [['screen', 'Screen']] : [])].map(([id, label]) =>
+      h('button', { class: 'chip' + (source === id ? ' on' : ''), onClick: () => { source = id; drawSrc(); openSource() } }, label)))
+    drawSrc()
+    await openSource()
+    startBtn.onclick = async () => {
+      if (!hostLive.cam) return toast('Pick the camera or the screen first')
+      startBtn.disabled = true
+      try { await startHosting(title.value.trim()) } catch (e) { startBtn.disabled = false; oops(e) }
+    }
+  }
+  async function startHosting(title) {
+    const L = hostLive
+    L.id = Math.random().toString(36).slice(2, 12)
+    await M.call('live.start', { id: L.id, title })
+    L.setup.remove()
+    L.status.textContent = 'LIVE'; L.status.style.background = ''
+    // Video: H.264, the same frames as calls (Android viewers decode them the same way).
+    const vid = L.preview
+    const canvas = document.createElement('canvas')
+    const g = canvas.getContext('2d')
+    let seq = 0; let width = 0; let height = 0
+    L.forceKey = true
+    const makeEncoder = () => {
+      if (L.venc) try { L.venc.close() } catch {}
+      L.venc = new VideoEncoder({
+        output: (chunk) => {
+          const body = new Uint8Array(chunk.byteLength); chunk.copyTo(body)
+          const p = new Uint8Array(10 + body.length); const dv = new DataView(p.buffer)
+          dv.setUint32(0, seq++); p[4] = chunk.type === 'key' ? 1 : 0; p[5] = 0; dv.setUint16(6, width); dv.setUint16(8, height); p.set(body, 10)
+          M.call('live.frame', { kind: 'v', data: b64(p) }).catch(() => {})
+        },
+        error: () => {}
+      })
+      L.venc.configure({ codec: 'avc1.42E01F', width, height, bitrate: 1_800_000, framerate: 30, latencyMode: 'realtime', avc: { format: 'annexb' } })
+    }
+    let lastKey = 0
+    L.timer = setInterval(() => {
+      if (!L.cam || vid.readyState < 2 || !vid.videoWidth) return
+      // 720p at most, even sizes.
+      const k = Math.min(1, 1280 / Math.max(vid.videoWidth, vid.videoHeight))
+      const w = Math.round(vid.videoWidth * k) & ~1; const hh = Math.round(vid.videoHeight * k) & ~1
+      if (w !== width || hh !== height || !L.venc) { width = w; height = hh; canvas.width = w; canvas.height = hh; makeEncoder(); L.forceKey = true }
+      g.drawImage(vid, 0, 0, w, hh)
+      const now = Date.now()
+      if (now - lastKey > 2000) L.forceKey = true
+      const frame = new VideoFrame(canvas, { timestamp: now * 1000 })
+      try { L.venc.encode(frame, { keyFrame: L.forceKey }) } catch {}
+      if (L.forceKey) lastKey = now
+      L.forceKey = false
+      frame.close()
+    }, 33)
+    // Sound: the microphone (and the screen's sound when sharing a screen), Opus like calls.
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
+      await ctx.audioWorklet.addModule('audio-worklet.js')
+      L.ctx = ctx
+      const micNode = new AudioWorkletNode(ctx, 'mesh-mic')
+      L.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }).catch(() => null)
+      if (L.mic) ctx.createMediaStreamSource(L.mic).connect(micNode)
+      if (L.cam.getAudioTracks().length) ctx.createMediaStreamSource(new MediaStream(L.cam.getAudioTracks())).connect(micNode)
+      let aseq = 0; let frames = []
+      L.aenc = new AudioEncoder({
+        output: (chunk) => {
+          const f = new Uint8Array(chunk.byteLength); chunk.copyTo(f); frames.push(f)
+          if (frames.length === 2) {
+            const size = 3 + frames.reduce((n, x) => n + 2 + x.length, 0)
+            const p = new Uint8Array(size); const dv = new DataView(p.buffer)
+            dv.setUint16(0, aseq++ & 0xffff); p[2] = frames.length
+            let o = 3
+            for (const x of frames) { dv.setUint16(o, x.length); p.set(x, o + 2); o += 2 + x.length }
+            frames = []
+            M.call('live.frame', { kind: 'a', data: b64(p) }).catch(() => {})
+          }
+        },
+        error: () => {}
+      })
+      const RATE = 48000; const FRAME = RATE / 50
+      L.aenc.configure({ codec: 'opus', sampleRate: RATE, numberOfChannels: 1, bitrate: 64000, opus: { frameDuration: 20000 } })
+      let pending = new Float32Array(0); let ts = 0
+      micNode.port.onmessage = (e) => {
+        if (!L.aenc || L.aenc.state !== 'configured') return
+        const merged = new Float32Array(pending.length + e.data.length); merged.set(pending); merged.set(e.data, pending.length)
+        let o = 0
+        while (merged.length - o >= FRAME) { L.aenc.encode(new AudioData({ format: 'f32', sampleRate: RATE, numberOfFrames: FRAME, numberOfChannels: 1, timestamp: ts, data: merged.slice(o, o + FRAME) })); ts += 20000; o += FRAME }
+        pending = merged.slice(o)
+      }
+    } catch {}
+  }
+  async function endLive() {
+    const L = hostLive
+    if (!L) return
+    if (L.id && !(await confirmBox('End your live?', 'Everyone watching will see that it ended.', 'End live', true))) return
+    hostLive = null
+    clearInterval(L.timer)
+    if (L.id) M.call('live.stop', { id: L.id }).catch(() => {})
+    try { L.venc && L.venc.close() } catch {}
+    try { L.aenc && L.aenc.close() } catch {}
+    try { L.ctx && L.ctx.close() } catch {}
+    for (const s of [L.cam, L.mic]) if (s) s.getTracks().forEach((t) => t.stop())
+    L.el.remove()
+    if (L.id) toast('Your live ended')
+  }
+  M.on('live-key', () => { if (hostLive) hostLive.forceKey = true })
+  M.on('live-viewers', (e) => { if (hostLive) hostLive.count.replaceChildren(icon('play', 12), String(e.n || 0)) })
+  M.on('live-chat', (e) => {
+    if (!hostLive || e.host) return
+    hostLive.chat.appendChild(h('div', { class: 'lv-msg' }, h('b', {}, (e.name || 'Someone') + ' '), e.joined ? 'joined' : e.text))
+    while (hostLive.chat.children.length > 40) hostLive.chat.firstChild.remove()
+    hostLive.chat.scrollTop = hostLive.chat.scrollHeight
+  })
+
   // ---- Call flow ----
   let wakeLock = null
   async function keepAwake(on) {
@@ -3451,13 +3597,13 @@
     askBirthday()
     ob.hidden = true
     $('#shell').hidden = false
-    buildSide()
     showHero()
+    try { buildSide() } catch (e) { console.warn('side', e) }
     refreshNoticeCount().then(() => { if (noticeCount && st.tab === 'me') renderSide() })
   }
 
   // Shared with reels.js.
-  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive }
+  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, closeChat }
 
   async function start() {
     try {

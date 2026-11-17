@@ -1,0 +1,87 @@
+/* Meshron on iPhone (and Windows): iOS-grade motion and finish on top of the Android layout.
+   Same screens as Android; this only changes how they feel. */
+
+:root {
+  --ios: cubic-bezier(.32, .72, 0, 1);       /* the iOS push / sheet curve */
+  --spring: cubic-bezier(.34, 1.4, .64, 1);  /* a small, friendly overshoot */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Roboto, system-ui, sans-serif;
+}
+.t-h1, .t-display, .brand .t-h1 { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Roboto, system-ui, sans-serif; letter-spacing: -.5px; }
+html { -webkit-text-size-adjust: 100%; }
+body { text-rendering: optimizeLegibility; }
+
+/* Scrolling: momentum, no scroll chaining into the page behind. */
+.side-body, .msgs, .pbody, .r-page-body, .modal, .lv-chat { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+
+/* Press feedback everywhere (like a tap on iOS). */
+button, .row, .story, .chip, .tile-v, .set-row, .pick, .note-row, .person-row, .r-live-row {
+  transition: transform .22s var(--ios), background-color .2s, opacity .2s, filter .2s;
+}
+button:active:not([disabled]), .story:active, .chip:active, .tile-v:active, .note-row:active, .r-live-row:active { transform: scale(.96); }
+.row:active, .set-row:active, .pick:active { transform: scale(.985); background: var(--s1); }
+.circ:active, .icon-btn:active, .mic-btn:active, .send-btn:active, #create-btn:active { transform: scale(.88); }
+
+/* Opening a chat on a phone: the iOS push, with the list sliding a little behind it. */
+@media (max-width: 820px) {
+  #main { transition: transform .46s var(--ios); box-shadow: -20px 0 40px rgba(0, 0, 0, .35); }
+  #side { transition: transform .46s var(--ios), filter .46s var(--ios); }
+  #shell.chat-open #side { transform: translateX(-28%); filter: brightness(.6); }
+  #shell.dragging #main, #shell.dragging #side { transition: none; }
+
+  /* Translucent bottom bar (iOS material). */
+  #rail { background: rgba(22, 25, 34, .72); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); border-color: rgba(255, 255, 255, .06); transition: transform .42s var(--ios); }
+  #create-btn { transition: transform .42s var(--ios); }
+  .rail-btn { transition: flex .42s var(--ios), background-color .3s; }
+  .rail-btn.on::after { animation: barIn .42s var(--spring) both; }
+
+  /* Bottom sheets: a grabber, the iOS sheet curve, drag down to close (motion.js). */
+  .modal { animation: sheet .5s var(--ios) both; position: relative; padding-top: 26px; }
+  .modal::before { content: ""; position: absolute; top: 8px; left: 50%; width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: rgba(255, 255, 255, .22); }
+  .modal.dragging { transition: none; animation: none; }
+}
+@keyframes barIn { from { transform: scaleX(.2); opacity: 0; } }
+
+/* Full pages (Settings, profiles, reels pages): pushed in from the right like iOS. */
+.page-full, .r-page { animation: push .46s var(--ios) both; will-change: transform; }
+.page-full.closing, .r-page.closing { animation: pop .32s var(--ios) both; }
+@keyframes push { from { transform: translateX(100%); } }
+@keyframes pop { to { transform: translateX(100%); } }
+.page-full .phead { position: sticky; top: 0; z-index: 2; background: rgba(14, 16, 21, .78); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }
+
+/* Switching tabs: the new screen fades up softly. */
+.side-body.enter > * { animation: fadeUp .5s var(--ios) both; }
+.side-body.enter > *:nth-child(2) { animation-delay: .03s; }
+.side-body.enter > *:nth-child(3) { animation-delay: .06s; }
+.side-body.enter > *:nth-child(4) { animation-delay: .09s; }
+.side-body.enter > *:nth-child(n+5) { animation-delay: .12s; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } }
+#reels { animation: fade .3s var(--ios) both; }
+
+/* Messages: a little spring as they arrive. */
+.msg { animation: msgIn .38s var(--spring) both; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(10px) scale(.96); } }
+.msg.mine { transform-origin: bottom right; }
+.msg:not(.mine) { transform-origin: bottom left; }
+
+/* Menus and toasts: frosted, springy. */
+.menu { background: rgba(30, 34, 45, .82); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); animation: menuIn .26s var(--spring) both; transform-origin: top left; }
+@keyframes menuIn { from { opacity: 0; transform: scale(.9); } }
+.toast { background: rgba(40, 45, 58, .86); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); animation: toastIn .4s var(--spring) both; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+
+/* Headers stay put while lists scroll under them. */
+.chat-head { background: rgba(14, 16, 21, .78); -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%); }
+
+/* Moments, likes and the create button: small delights. */
+.story { animation: fadeUp .5s var(--ios) both; }
+.vp-btn, .rc-tile { transition: transform .2s var(--spring); }
+.vp-btn:active { transform: scale(.88); }
+.switch::after { transition: transform .32s var(--spring), background .2s; }
+.chip.on { transition: background-color .25s, color .25s; }
+
+/* Live views fade in. */
+.live-view { animation: fade .3s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

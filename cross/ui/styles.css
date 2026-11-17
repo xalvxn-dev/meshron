@@ -431,3 +431,10 @@ textarea.input { resize: none; }
   .brand .t-h1 { font-size: 28px; white-space: nowrap; }
   .brand { flex: 1 1 auto; overflow: visible; }
 }
+
+/* Settings and other full pages sit under pop-ups (so "Switch" / "Cancel" show at once). */
+.page-full { z-index: 15; }
+/* A roomier chat list on Windows. */
+@media (min-width: 821px) { #shell { grid-template-columns: 88px minmax(400px, 480px) 1fr !important; } }
+.lv-setup { position: relative; margin-top: auto; padding: 14px 14px calc(16px + var(--safe-b)); background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+.lv-setup + .lv-chat { display: none; }

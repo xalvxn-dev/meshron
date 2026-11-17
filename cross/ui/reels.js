@@ -110,10 +110,10 @@
       liveBtn)
     M.call('reels.lives').then((list) => {
       const n = (list || []).length
-      liveBtn.replaceChildren('LIVE', n ? h('span', { class: 'live-n' }, String(n)) : null)
+      liveBtn.replaceChildren(...['LIVE', n ? h('span', { class: 'live-n' }, String(n)) : null].filter(Boolean))
       liveBtn._list = list || []
     }).catch(() => {})
-    const create = h('button', { class: 'reels-create', title: 'New reel', onClick: () => openCreate() }, icon('plus', 26))
+    // Posting is in the + menu of the bottom bar, like Android.
     if (!status.on) {
       root.replaceChildren(h('div', { class: 'reels-empty' }, h('div', { class: 'orb' }, icon('eyeOff', 34)), h('div', { class: 't-h1' }, 'Reels are off while anonymous'), h('p', { class: 'dim' }, 'Switch back to public in Me to watch and share reels.')))
       return
@@ -123,7 +123,7 @@
       return
     }
     const p = makePager({ kind: feedKind })
-    root.replaceChildren(p.el, top, create)
+    root.replaceChildren(p.el, top)
     pager = p
     loadMore(p)
   }
@@ -592,7 +592,7 @@
       h('div', { class: 'r-live-av' }, it.photo ? h('div', { class: 'avatar has-photo', style: { width: '52px', height: '52px' } }, h('img', { src: imgSrc(it.photo), alt: '' })) : avatar(it.name || '?', it.id, 52), h('span', { class: 'live-tag' }, 'LIVE')),
       h('div', { style: { flex: 1, minWidth: 0, textAlign: 'left' } }, h('div', { style: { fontWeight: 700 } }, it.handle ? '@' + it.handle : it.name), h('div', { class: 'dim ellipsis' }, it.title || 'Live now')),
       h('span', { class: 'btn light small' }, 'Watch')))
-      : [h('div', { class: 'reels-empty' }, h('div', { class: 'orb' }, icon('play', 30)), h('div', { class: 't-h2' }, 'Nobody is live right now'), h('p', { class: 'dim' }, 'When someone goes live in the Android app, they show up here.'))]))
+      : [h('div', { class: 'reels-empty', style: { position: 'static', minHeight: '60vh' } }, h('div', { class: 'orb' }, icon('play', 30)), h('div', { class: 't-h2' }, 'Nobody is live right now'), h('p', { class: 'dim' }, 'When someone goes live in the Android app, they show up here.'))]))
   }
 
   // ---- Making a reel -----------------------------------------------------------------

@@ -144,6 +144,7 @@ fun ProfileTab(identity: Identity, repo: IdentityRepository, network: NetworkSer
     var editingHandle by rememberSaveable { mutableStateOf(false) }
     var showBackup by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    var showSos by rememberSaveable { mutableStateOf(false) }
     var showQr by rememberSaveable { mutableStateOf(false) }
     var showDetails by rememberSaveable { mutableStateOf(false) }
     var selfTest by remember { mutableStateOf<Boolean?>(null) }
@@ -529,7 +530,15 @@ fun ProfileTab(identity: Identity, repo: IdentityRepository, network: NetworkSer
             SettingsDivider()
             SettingsRow(Icons.Rounded.Tune, MeshColors.TileGrey, "Connection details", subtitle = "For troubleshooting") { showDetails = true }
         }
+
+        // ---- Emergency (SOS lives here, at the very bottom) ----
+        SectionHeader("Emergency")
+        SettingsGroup {
+            SettingsRow(Icons.Rounded.WarningAmber, androidx.compose.ui.graphics.Color(0xFFE5243B), "Emergency SOS", subtitle = "Send an urgent message with your location to all your contacts") { showSos = true }
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 24.dp))
     }
+    if (showSos) com.xalvxnlab.meshron.ui.sos.SosScreen(onClose = { showSos = false })
 
     if (showDetails) com.xalvxnlab.meshron.ui.components.PageDialog(
         onDismissRequest = { showDetails = false },

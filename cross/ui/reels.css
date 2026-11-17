@@ -179,3 +179,5 @@
 .lv-heart { width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,.12); color: #ff2d55; font-size: 22px; }
 .lv-float { position: absolute; bottom: 90px; font-size: 26px; color: #ff2d55; animation: lvfloat 1.6s ease-out forwards; pointer-events: none; }
 @keyframes lvfloat { to { transform: translateY(-260px) scale(1.4); opacity: 0; } }
+
+.r-page .reels-empty { position: static; min-height: 60vh; }
