@@ -29,3 +29,4 @@ dependencyResolutionManagement {
 rootProject.name = "Meshron"
 include(":app")
 include(":modapp")
+include(":assistant")

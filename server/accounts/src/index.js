@@ -1,5 +1,6 @@
 import { sendMail } from './mail.js'
 import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT, RULES_PROMPT } from './moderation.js'
+import { assistant } from './assistant.js'
 import { PANEL_HTML } from './panel.js'
 import { d1Store, migrateStep } from './store.js'
 // Meshron accounts: usernames, email codes and the locked account copy for public profiles.
@@ -39,7 +40,7 @@ export default {
     }
     if (req.method !== 'POST') return json({ error: 'Not found' }, 404)
     const path = new URL(req.url).pathname
-    const route = routes[path] || modRoutes[path]
+    const route = routes[path] || modRoutes[path] || assistantRoutes[path]
     if (!route) return json({ error: 'Not found' }, 404)
     let body
     try { body = await req.json() } catch { return json({ error: 'Bad request' }, 400) }
@@ -429,6 +430,7 @@ async function verifySig (pkHex, message, sigHex) {
 }
 
 const modRoutes = moderation({ fail, limit, sha, verifySig, ai, clip, account, authed, HEX64, mailer, AI_ID })
+const assistantRoutes = assistant({ fail, limit, authed, clip })
 
 function json (o, status = 200) {
   return cors(new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } }))

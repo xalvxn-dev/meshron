@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.MeshronAssistant" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/asst_bg</item>
+        <item name="android:statusBarColor">@color/asst_bg</item>
+        <item name="android:navigationBarColor">@color/asst_bg</item>
+    </style>
+    <color name="asst_bg">#FF04060C</color>
+</resources>

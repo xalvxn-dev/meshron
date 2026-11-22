@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An "arc reactor": outer broken ring, inner ring, bright core. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M54,30 A24,24 0 0,1 76.5,46" android:strokeColor="#FF22D3C5" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M78,54 A24,24 0 0,1 62,76.6" android:strokeColor="#FF6E7BFF" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M54,78 A24,24 0 0,1 31.4,62" android:strokeColor="#FF22D3C5" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M30,54 A24,24 0 0,1 46,31.4" android:strokeColor="#FFB6F36A" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M54,40 A14,14 0 1,1 53.99,40 Z" android:strokeColor="#9922D3C5" android:strokeWidth="2" android:fillColor="#00000000" />
+    <path android:pathData="M54,46 A8,8 0 1,1 53.99,46 Z" android:fillColor="#FFE6FFFB" />
+</vector>
