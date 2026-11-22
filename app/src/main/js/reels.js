@@ -787,6 +787,16 @@ module.exports = function createReels (x) {
           x.onTopic(topic())
           setInterval(() => prefetch().catch(() => {}), 10 * 60 * 1000)
           setInterval(flushSeen, 60 * 1000)
+          // Comments still waiting for the video's owner: keep looking for them (the first try
+          // gives up after 90 s, and nothing else would try again until they post something).
+          setInterval(() => {
+            let n = 0
+            for (const ch of new Set([...state.pending.keys(), ...state.uncomment.keys()])) {
+              if (n >= 8) break
+              const w = wanted(ch)
+              if (w && (w.comments.length || w.uncomment.length)) { n++; maybeSync(ch) }
+            }
+          }, 45 * 1000)
           setTimeout(() => prefetch().catch(() => {}), 20000)
           log('Reels on: channel ' + mine.chKey.slice(0, 8) + '…')
           return reply('reels-ready', { ch: mine.chKey })

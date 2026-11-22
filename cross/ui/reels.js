@@ -457,7 +457,7 @@
         isAi ? AI.aiAvatar(reply ? 28 : 36) : c.photo ? h('div', { class: 'avatar has-photo', style: { width: (reply ? 28 : 36) + 'px', height: (reply ? 28 : 36) + 'px' } }, h('img', { src: imgSrc(c.photo), alt: '' })) : U().avatar(c.name || '?', c.by, reply ? 28 : 36),
         h('div', { class: 'grow' },
           h('div', { class: 'cm-name' }, isAi ? 'Meshron AI' : (c.name || 'Someone'), window.MeshronMod ? window.MeshronMod.badgeEl(c.by, 11) : null,
-            c.by === it.author.id ? h('span', { class: 'r-creator' }, 'Creator') : null, h('span', { class: 'dim' }, ' · ' + ago(c.ts) + (c.sent ? '' : ' · on its way'))),
+            c.by === it.author.id ? h('span', { class: 'r-creator' }, 'Creator') : null, h('span', { class: 'dim' }, ' · ' + ago(c.ts) + (c.sent ? '' : ' · Sending...'))),
           txt,
           h('div', { class: 'cm-actions' },
             closed ? null : h('button', { onClick: () => setReply(reply ? { cid: c.re, name: c.name } : c) }, 'Reply'),
