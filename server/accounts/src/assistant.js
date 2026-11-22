@@ -47,6 +47,56 @@ const DEVICE_TOOLS = [
   fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question']),
   fn('lock_phone', 'Lock the phone now.')
 ]
+// Android, through the accessibility service and the gallery / a folder the person chose.
+const ANDROID_HANDS = [
+  fn('ui_read', 'Read what is on the screen right now, as a numbered list of buttons, fields, text and lists, plus the app in front. Do this before tapping or typing, and again after, to check.'),
+  fn('ui_tap', 'Tap something on screen by its number from ui_read, or by its words.', { target: S('A number from ui_read, or the words on it'), long: B('Long-press instead') }, ['target']),
+  fn('ui_type', 'Type text into a text box (the focused one, or one named by its number or words).', { text: S('What to type'), target: S('Optional: which box') }, ['text']),
+  fn('ui_scroll', 'Scroll the screen (feeds, lists, pages).', { direction: S('down, up, left or right') }, ['direction']),
+  fn('ui_swipe', 'Swipe across the screen like a finger (up = next video in Reels/TikTok/Shorts).', { direction: S('up, down, left or right') }, ['direction']),
+  fn('ui_action', 'A system action.', { action: S('home, back, recents, notifications, quick_settings or screenshot') }, ['action']),
+  fn('close_app', 'Close the app in front.'),
+  fn('list_albums', 'List the photo albums with how many photos each has.'),
+  fn('list_photos', 'List photos (newest first) with their ids.', { days: N('Only from the last N days'), album: S('Only this album'), limit: N('At most this many, default 30') }),
+  fn('move_photos', 'Move photos into an album (made if needed). Android asks the person to allow it.', { ids: { type: 'array', items: { type: 'string' }, description: 'Photo ids from list_photos' }, album: S('Album name') }, ['ids', 'album']),
+  fn('delete_photos', 'Move photos to the trash (recoverable for 30 days). Android asks the person first.', { ids: { type: 'array', items: { type: 'string' }, description: 'Photo ids from list_photos' } }, ['ids']),
+  fn('choose_folder', 'Ask the person to pick a folder the assistant may organise (needed once before the file tools).'),
+  fn('list_files', 'List files and folders inside the chosen folder.', { path: S('Sub-folder path, e.g. "Invoices/2026"; empty for the top') }),
+  fn('make_folder', 'Make a folder (and any parents) inside the chosen folder.', { path: S('Folder path') }, ['path']),
+  fn('move_files', 'Move files from one folder to another inside the chosen folder, by names or a pattern like "*.pdf".', { from: S('Source folder path ("" = top)'), to: S('Destination folder path (made if needed)'), names: { type: 'array', items: { type: 'string' } }, pattern: S('e.g. *.jpg') }, ['to']),
+  fn('delete_files', 'Delete files inside the chosen folder (the person approves first).', { path: S('Folder path'), names: { type: 'array', items: { type: 'string' } }, pattern: S('e.g. *.tmp') })
+]
+
+// Windows: the desktop app runs these.
+const WINDOWS_TOOLS = [
+  fn('open_app', 'Open an installed app by name (Start menu apps and programs).', { name: S('App name') }, ['name']),
+  fn('close_app', 'Close an app (its windows) by name. The person approves first.', { name: S('App name or window title') }, ['name']),
+  fn('switch_to', 'Bring an open app\'s window to the front.', { name: S('App name or window title') }, ['name']),
+  fn('list_windows', 'List the open app windows.'),
+  fn('show_desktop', 'Minimise everything and show the desktop.'),
+  fn('open_url', 'Open a web page.', { url: S('Full https URL') }, ['url']),
+  fn('open_path', 'Open a file or folder (File Explorer for folders).', { path: S('Full path, or a known folder like Downloads, Documents, Desktop, Pictures') }, ['path']),
+  fn('type_text', 'Type text into whatever has focus, like the person typing.', { text: S('What to type') }, ['text']),
+  fn('press_keys', 'Press a key or shortcut, e.g. "enter", "ctrl+s", "alt+tab", "win+d".', { keys: S('The keys') }, ['keys']),
+  fn('click', 'Click a button, link or menu item on screen by its name (Windows UI Automation).', { target: S('Its visible name') }, ['target']),
+  fn('scroll', 'Scroll the window under the mouse.', { direction: S('down or up'), amount: N('How many notches, default 5') }, ['direction']),
+  fn('read_screen', 'Look at the screen (a screenshot) to read or explain what is on it.', { question: S('What to find out') }),
+  fn('list_files', 'List a folder.', { path: S('Full path or Downloads, Documents, Desktop, Pictures, Music, Videos') }, ['path']),
+  fn('make_folder', 'Make a folder.', { path: S('Full path, or e.g. "Documents\\\\Invoices"') }, ['path']),
+  fn('move_files', 'Move files by names or a pattern like "*.pdf" from one folder to another (made if needed).', { from: S('Folder'), to: S('Folder'), names: { type: 'array', items: { type: 'string' } }, pattern: S('e.g. *.jpg') }, ['from', 'to']),
+  fn('delete_files', 'Move files to the Recycle Bin. The person approves first.', { path: S('Folder'), names: { type: 'array', items: { type: 'string' } }, pattern: S('e.g. *.tmp') }, ['path']),
+  fn('set_timer', 'Start a countdown timer.', { seconds: N('Length in seconds'), label: S('Optional label') }, ['seconds']),
+  fn('add_reminder', 'Remind the person at a time with a notification.', { text: S('What to remind'), at: S('Local time YYYY-MM-DDTHH:MM') }, ['text', 'at']),
+  fn('add_task', 'Add a to-do.', { text: S('The task'), due: S('Optional date or time') }, ['text']),
+  fn('list_tasks', 'Read the task list.'),
+  fn('complete_task', 'Mark a task done.', { text: S('Words from the task') }, ['text']),
+  fn('set_volume', 'Set the PC volume.', { level: N('0-100') }, ['level']),
+  fn('media', 'Control music or video playing.', { action: S('play_pause, next, previous or mute') }, ['action']),
+  fn('battery_status', 'Battery level and charging (laptops).'),
+  fn('lock_pc', 'Lock the PC.'),
+  fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question'])
+]
+
 // Run here.
 const SERVER_TOOLS = [fn('web_search', 'Search the web for current information.', { query: S('What to look up') }, ['query'])]
 
@@ -97,7 +147,12 @@ export function assistant ({ fail, limit, authed, clip }) {
       const { u } = await authed(env, username, authKey)
       if (!(await limit(env, 'ai:' + u, 300, 86400))) throw fail('You\'ve used today\'s AI limit. It resets tomorrow.', 429)
       const ctx = context && typeof context === 'object' ? context : {}
-      const sys = SYSTEM + '\nContext: ' + clip(JSON.stringify({ now: ctx.now, timezone: ctx.timezone, battery: ctx.battery, name: ctx.name, language: ctx.language, screenAvailable: !!ctx.screen }), 800)
+      const windows = ctx.platform === 'windows'
+      const tools = windows ? [...WINDOWS_TOOLS, ...SERVER_TOOLS] : [...DEVICE_TOOLS, ...ANDROID_HANDS, ...SERVER_TOOLS]
+      const how = windows
+        ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened.'
+        : '\nYou run on an Android phone.' + (ctx.canAct ? ' To work inside an app like a person (scrolling a feed, sending a message in WhatsApp, changing a setting): open_app, then ui_read, then ui_tap / ui_type / ui_scroll, and ui_read again to check. Send buttons are often an icon labelled "Send". Ask before sending anything the person didn\'t dictate word for word.' : ' Acting inside other apps is off; if asked, tell the person to turn on "Act on screen" in settings.')
+      const sys = SYSTEM.replace('on the user\'s Android phone', windows ? 'on the user\'s Windows PC' : 'on the user\'s Android phone') + how + '\nContext: ' + clip(JSON.stringify({ now: ctx.now, timezone: ctx.timezone, battery: ctx.battery, name: ctx.name, language: ctx.language, screenAvailable: !!ctx.screen }), 800)
       const msgs = [{ role: 'system', content: sys }, ...cleanMessages(messages)]
       // A photo (camera, screenshot or a picked document) goes with the last question, to the vision model.
       const img = typeof image === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) && image.length < 5_500_000 ? image : null
@@ -110,7 +165,7 @@ export function assistant ({ fail, limit, authed, clip }) {
         const o = await groq(env, {
           model,
           messages: msgs,
-          tools: [...DEVICE_TOOLS, ...SERVER_TOOLS],
+          tools,
           tool_choice: 'auto',
           max_tokens: 1500,
           temperature: 0.4,
@@ -144,6 +199,61 @@ export function assistant ({ fail, limit, authed, clip }) {
         }
       }
       return { text: 'That took too many steps. Try asking it a simpler way.' }
+    },
+
+    /**
+     * A lifelike voice (Canopy Labs' Orpheus on Groq). Orpheus takes 200 characters at a time,
+     * so the reply is cut at sentence ends and the pieces are voiced together, returned in order
+     * as WAV (base64). The app plays them back to back, and falls back to the phone's voice on error.
+     */
+    async '/v1/tts' ({ username, authKey, text, voice }, env) {
+      const { u } = await authed(env, username, authKey)
+      if (!(await limit(env, 'ai:' + u, 300, 86400))) throw fail('You\'ve used today\'s AI limit. It resets tomorrow.', 429)
+      const VOICES = ['troy', 'daniel', 'austin', 'autumn', 'diana', 'hannah']
+      const v = VOICES.includes(voice) ? voice : 'troy'
+      const pieces = []
+      let rest = String(text || '').replace(/[*#_`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1200)
+      while (rest && pieces.length < 8) {
+        if (rest.length <= 195) { pieces.push(rest); break }
+        const window = rest.slice(0, 195)
+        const cut = Math.max(window.lastIndexOf('. '), window.lastIndexOf('? '), window.lastIndexOf('! '), window.lastIndexOf(', '), window.lastIndexOf('; '))
+        const at = cut > 60 ? cut + 1 : (window.lastIndexOf(' ') > 60 ? window.lastIndexOf(' ') : 195)
+        pieces.push(rest.slice(0, at).trim()); rest = rest.slice(at).trim()
+      }
+      if (!pieces.length) throw fail('Nothing to say')
+      if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
+      const audio = await Promise.all(pieces.map(async (input) => {
+        const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/audio/speech', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
+          body: JSON.stringify({ model: env.AI_TTS_MODEL || 'canopylabs/orpheus-v1-english', input, voice: v, response_format: 'wav' })
+        })
+        if (!r.ok) { console.log('tts failed', r.status, (await r.text()).slice(0, 300)); throw fail('The studio voice isn\'t available right now', 502) }
+        const b = new Uint8Array(await r.arrayBuffer())
+        let s = ''
+        for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000))
+        return btoa(s)
+      }))
+      return { mime: 'audio/wav', audio }
+    },
+
+    /** Speech to text (Whisper on Groq), for the Windows app: a short recording in, its words out. */
+    async '/v1/stt' ({ username, authKey, audio, mime, language }, env) {
+      const { u } = await authed(env, username, authKey)
+      if (!(await limit(env, 'stt:' + u, 400, 86400))) throw fail('You\'ve used today\'s listening limit. It resets tomorrow.', 429)
+      if (typeof audio !== 'string' || audio.length > 8_000_000) throw fail('That recording is too long')
+      if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
+      const bin = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0))
+      const type = /^audio\/(webm|ogg|wav|mpeg|mp4)/.test(mime || '') ? mime : 'audio/webm'
+      const form = new FormData()
+      form.append('file', new Blob([bin], { type }), 'speech.' + (type.split('/')[1].split(';')[0] || 'webm'))
+      form.append('model', env.AI_STT_MODEL || 'whisper-large-v3-turbo')
+      form.append('response_format', 'json')
+      if (typeof language === 'string' && /^[a-z]{2}$/.test(language)) form.append('language', language)
+      const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/audio/transcriptions', { method: 'POST', headers: { authorization: 'Bearer ' + env.AI_KEY }, body: form })
+      if (!r.ok) { console.log('stt failed', r.status, (await r.text()).slice(0, 300)); throw fail('Listening isn\'t available right now', 502) }
+      const o = await r.json()
+      return { text: String(o.text || '').trim() }
     }
   }
 }

@@ -110,3 +110,18 @@ fun Memory.setVoice(c: Context, name: String) = c.getSharedPreferences("memory",
 /** Where the orb sits: which side, and how far down (0..1). */
 fun Memory.orbSpot(c: Context): Pair<Boolean, Float> = c.getSharedPreferences("memory", Context.MODE_PRIVATE).let { it.getBoolean("orbRight", true) to it.getFloat("orbY", 0.35f) }
 fun Memory.setOrbSpot(c: Context, right: Boolean, y: Float) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("orbRight", right).putFloat("orbY", y).apply()
+/** The person's own button combo: off, down2 (volume down twice), up2, both (both volume keys), updown (up then down). */
+fun Memory.combo(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("combo", "off").orEmpty()
+fun Memory.setCombo(c: Context, v: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("combo", v).apply()
+/** Shake the phone to talk (while the floating orb is on). */
+fun Memory.shake(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getBoolean("shake", false)
+fun Memory.setShake(c: Context, on: Boolean) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("shake", on).apply()
+/** The folder the person let the assistant organise (a tree URI). */
+fun Memory.folder(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("folder", "").orEmpty()
+fun Memory.setFolder(c: Context, uri: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("folder", uri).apply()
+/** The realistic studio voice (online, from the server) instead of the phone's voice. */
+fun Memory.studio(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getBoolean("studio", true)
+fun Memory.setStudio(c: Context, on: Boolean) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("studio", on).apply()
+/** Which studio voice: troy, daniel, austin (male); autumn, diana, hannah (female). */
+fun Memory.studioVoice(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("studioVoice", "troy").orEmpty()
+fun Memory.setStudioVoice(c: Context, v: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("studioVoice", v).apply()

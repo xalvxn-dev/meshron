@@ -85,13 +85,58 @@ object Speaker {
     fun say(c: Context, text: String) {
         val clean = text.replace(Regex("[*#_`]"), "").replace("•", ",").replace(Regex("\\s+"), " ").trim()
         if (clean.isEmpty()) return
+        if (Memory.studio(c) && System.currentTimeMillis() > studioOffUntil) {
+            studioJob = scope.launch { studioLock.lock(); try { if (!studio(c, clean)) device(c, clean) } finally { studioLock.unlock() } }
+            return
+        }
+        device(c, clean)
+    }
+
+    private fun device(c: Context, clean: String) {
         val d = init(c)
         if (d.isCompleted) speakNow(clean) else scope.launch { if (d.await()) speakNow(clean) }
     }
 
+    // ---- The studio voice (lifelike, from the server) ----
+    private var studioOffUntil = 0L
+    private var studioJob: kotlinx.coroutines.Job? = null
+    private val studioLock = kotlinx.coroutines.sync.Mutex()
+    private var player: android.media.MediaPlayer? = null
+
+    /** Fetches the reply as audio and plays it; false (and the phone's voice for 10 minutes) if it can't. */
+    private suspend fun studio(c: Context, text: String): Boolean {
+        val api = Api(c)
+        if (!api.signedIn) return false
+        val clips = runCatching { api.tts(text, Memory.studioVoice(c)).getJSONArray("audio") }.getOrElse {
+            studioOffUntil = System.currentTimeMillis() + 10 * 60_000
+            return false
+        }
+        talking = true; tell(true)
+        try {
+            for (i in 0 until clips.length()) {
+                val f = java.io.File(c.cacheDir, "say$i.wav")
+                f.writeBytes(android.util.Base64.decode(clips.getString(i), android.util.Base64.DEFAULT))
+                playFile(f)
+            }
+        } finally { talking = false; tell(false) }
+        return true
+    }
+
+    private suspend fun playFile(f: java.io.File) = kotlinx.coroutines.suspendCancellableCoroutine<Unit> { cont ->
+        val mp = android.media.MediaPlayer()
+        player = mp
+        runCatching {
+            mp.setDataSource(f.absolutePath)
+            mp.setOnCompletionListener { it.release(); if (player === it) player = null; if (cont.isActive) cont.resume(Unit) {} }
+            mp.setOnErrorListener { p, _, _ -> p.release(); if (player === p) player = null; if (cont.isActive) cont.resume(Unit) {}; true }
+            mp.prepare(); mp.start()
+        }.onFailure { mp.release(); if (cont.isActive) cont.resume(Unit) {} }
+        cont.invokeOnCancellation { runCatching { mp.stop(); mp.release() } }
+    }
+
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private fun speakNow(t: String) { tts?.speak(t, TextToSpeech.QUEUE_ADD, null, "u" + System.nanoTime()) }
-    fun stop() { tts?.stop(); talking = false; tell(false) }
+    fun stop() { studioJob?.cancel(); runCatching { player?.stop(); player?.release() }; player = null; tts?.stop(); talking = false; tell(false) }
 }
 
 /**

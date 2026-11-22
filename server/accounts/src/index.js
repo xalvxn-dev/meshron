@@ -367,7 +367,7 @@ function same (a, b) {
  * appeals) stay in KV so they hold across instances. If KV is out of writes, the call still
  * goes through instead of failing.
  */
-const MEM_LIMITS = /^(ip|ai|ask|chk|chkwarn):/
+const MEM_LIMITS = /^(ip|ai|ask|chk|chkwarn|stt):/
 const memHits = new Map()
 async function limit (env, key, max, seconds) {
   if (MEM_LIMITS.test(key)) {

@@ -66,6 +66,9 @@ class Api(context: Context) {
         return post("/v1/assistant", body)
     }
 
+    /** The studio voice: the reply as WAV clips (base64), in order. */
+    suspend fun tts(text: String, voice: String): JSONObject = post("/v1/tts", JSONObject().put("username", username).put("authKey", auth).put("text", text).put("voice", voice))
+
     private suspend fun post(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {

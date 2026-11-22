@@ -19,6 +19,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- The floating orb over other apps (only after the person allows it) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Organising the gallery (asked only when used) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <!-- Opening apps by name, and the speech recogniser. -->
     <queries>
@@ -110,6 +114,46 @@
             android:foregroundServiceType="microphone|specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="A floating assistant button over other apps that the person turned on" />
         </service>
+
+        <!-- Acting on screen and the button combo (only after the person turns it on in Accessibility). -->
+        <service
+            android:name=".ControlService"
+            android:exported="true"
+            android:label="Meshron Assistant"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility" />
+        </service>
+
+        <!-- Quick Settings tile -->
+        <service
+            android:name=".TalkTile"
+            android:exported="true"
+            android:icon="@drawable/ic_asst_fg"
+            android:label="Meshron"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Home-screen widget -->
+        <receiver android:name=".AssistWidget" android:exported="true" android:label="Meshron Assistant">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
+        </receiver>
+
+        <!-- Asks the system for things (a permission, a delete confirmation, the camera) on behalf of the floating orb. -->
+        <activity
+            android:name=".ProxyActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <receiver android:name=".ReminderReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="true">

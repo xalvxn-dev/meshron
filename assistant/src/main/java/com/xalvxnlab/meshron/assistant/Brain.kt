@@ -56,7 +56,7 @@ class Brain(private val api: Api, private val host: Host) {
 
     private suspend fun converse(firstImage: String?) {
         var image = firstImage
-        repeat(8) {
+        repeat(16) {
             val r = api.step(messages, context(), image)
             image = null
             if (r.has("text")) {
@@ -106,6 +106,8 @@ class Brain(private val api: Api, private val host: Host) {
         .put("name", api.username)
         .put("language", Locale.getDefault().displayLanguage)
         .put("screen", ScreenContext.fresh)
+        .put("platform", "android")
+        .put("canAct", ControlService.on)
 
     private fun online(): Boolean {
         val cm = host.ctx.getSystemService(ConnectivityManager::class.java)
@@ -158,6 +160,17 @@ class Brain(private val api: Api, private val host: Host) {
             return act("open · camera", Outcome("Camera open"))
         }
         if (Regex("^(?:lock (?:the |my )?phone|lockdown)$").matches(s)) return act("lock", device.lock())
+        ControlService.instance?.let { cs ->
+            when {
+                Regex("^(?:go )?home(?: screen)?$").matches(s) -> return act("home", Outcome(cs.global("home")))
+                Regex("^(?:go )?back$").matches(s) -> return act("back", Outcome(cs.global("back")))
+                Regex("^(?:show )?recent(?:s| apps)?$").matches(s) -> return act("recents", Outcome(cs.global("recents")))
+                Regex("^(?:take a )?screenshot$").matches(s) -> return act("screenshot", Outcome(cs.global("screenshot")))
+                Regex("^close (?:this|the)(?: app)?$").matches(s) -> return act("close app", Outcome(cs.closeApp()))
+                Regex("^scroll (up|down)$").find(s) != null -> return act("scroll", Outcome(cs.scroll(Regex("^scroll (up|down)$").find(s)!!.groupValues[1])))
+                Regex("^(?:next|next video|swipe up)$").matches(s) -> return act("next", Outcome(cs.swipe("up")))
+            }
+        }
         return null
     }
 

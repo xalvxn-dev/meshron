@@ -78,6 +78,7 @@ import kotlin.math.roundToInt
 class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host {
     companion object {
         @Volatile var running = false
+        @Volatile var instance: FloatingService? = null
         fun start(c: Context) { if (Settings.canDrawOverlays(c)) androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, FloatingService::class.java)) }
         fun stop(c: Context) { c.stopService(Intent(c, FloatingService::class.java)) }
         /** Restarts it so a new listening mode takes effect. */
@@ -123,7 +124,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         life.currentState = Lifecycle.State.CREATED
         always = Memory.always(this) && Device.granted(this, Manifest.permission.RECORD_AUDIO)
         foreground()
-        running = true
+        running = true; instance = this
+        startShake()
         brain = Brain(Api(this), this)
         brain.onReply = { reply -> show("MESHRON", reply, autoHide = !Memory.speak(this)); if (Memory.speak(this)) Speaker.say(this, reply) }
         Speaker.listeners += speakingHook
@@ -157,7 +159,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     }
 
     override fun onDestroy() {
-        running = false
+        running = false; instance = null
+        stopShake()
         listener?.stop(); listener = null
         Speaker.listeners -= speakingHook
         runCatching { view?.let { wm.removeView(it) } }
@@ -264,6 +267,32 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
 
     private fun openApp() = startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 
+    /** Start listening now (from the button combo, the accessibility button or a shake). */
+    fun wake() = main.post { if (mode != Mode.Listening && !busy) tap() }
+
+    // ---- Shake to talk (optional) ----
+    private var shaker: android.hardware.SensorEventListener? = null
+    private fun startShake() {
+        if (!Memory.shake(this)) return
+        val sm = getSystemService(android.hardware.SensorManager::class.java)
+        val acc = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER) ?: return
+        var last = 0L; var hits = 0; var firstHit = 0L
+        shaker = object : android.hardware.SensorEventListener {
+            override fun onSensorChanged(e: android.hardware.SensorEvent) {
+                val g = kotlin.math.sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]) / android.hardware.SensorManager.GRAVITY_EARTH
+                val now = System.currentTimeMillis()
+                if (g < 2.4f || now - last < 120) return
+                last = now
+                if (now - firstHit > 900) { firstHit = now; hits = 0 }
+                // Two strong shakes within a second: a deliberate shake, not a bump.
+                if (++hits >= 2) { hits = 0; firstHit = 0; wake() }
+            }
+            override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+        }
+        sm.registerListener(shaker, acc, android.hardware.SensorManager.SENSOR_DELAY_UI)
+    }
+    private fun stopShake() { shaker?.let { getSystemService(android.hardware.SensorManager::class.java).unregisterListener(it) }; shaker = null }
+
     // ---- Host (the tools ask the orb, not a screen) ----
     override suspend fun approve(title: String, detail: String): Boolean {
         val d = CompletableDeferred<Boolean>()
@@ -271,9 +300,9 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         if (Memory.speak(this)) Speaker.say(this, title)
         return d.await().also { asking = null }
     }
-    override suspend fun permission(name: String) = Device.granted(this, name)
-    override suspend fun takePhoto(): Bitmap? { show("SYSTEM", "Open the app to use the camera.", true); return null }
-    override suspend fun pickDocument(): Picked? { show("SYSTEM", "Open the app to pick a document.", true); return null }
+    override suspend fun permission(name: String) = Device.granted(this, name) || system(ProxyActivity.Req.Perm(name)) == true
+    override suspend fun takePhoto(): Bitmap? = system(ProxyActivity.Req.Photo) as? Bitmap
+    override suspend fun pickDocument(): Picked? = (system(ProxyActivity.Req.Doc) as? android.net.Uri)?.let { readDocument(this, it) }
 
     // ---- The orb and its strip ----
     @Composable
@@ -297,8 +326,9 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
 
     /** After a drag, the orb settles on the nearest side edge (and remembers where). */
     /** Keep the orb below the status bar and above the gesture bar, where Android owns touches. */
-    private fun maxTop() = (40 * resources.displayMetrics.density).roundToInt()
-    private fun maxBottom() = resources.displayMetrics.heightPixels - (120 * resources.displayMetrics.density).roundToInt()
+    private fun statusBar(): Int = resources.getIdentifier("status_bar_height", "dimen", "android").takeIf { it > 0 }?.let { resources.getDimensionPixelSize(it) } ?: (28 * resources.displayMetrics.density).roundToInt()
+    private fun maxTop() = statusBar() + (56 * resources.displayMetrics.density).roundToInt()
+    private fun maxBottom() = resources.displayMetrics.heightPixels - (170 * resources.displayMetrics.density).roundToInt()
 
     val paramsX get() = params.x
     val paramsY get() = params.y

@@ -1,0 +1,4 @@
+<resources>
+    <string name="control_desc">Lets Meshron Assistant act on screen when you ask: read what\'s shown, tap, type, scroll, go home or back and close apps. It also starts the assistant from your own volume-button combo. It only acts on your requests and never reads the screen on its own.</string>
+    <string name="widget_desc">Talk to Meshron Assistant, plan your day, triage notifications, flashlight.</string>
+</resources>

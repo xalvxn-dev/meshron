@@ -33,6 +33,8 @@ interface Host {
     suspend fun permission(name: String): Boolean
     suspend fun takePhoto(): Bitmap?
     suspend fun pickDocument(): Picked?
+    /** Asks Android for something that needs a screen (see ProxyActivity). */
+    suspend fun system(r: ProxyActivity.Req): Any? = ProxyActivity.ask(ctx, r)
 }
 
 /** A picked document: its text, or a picture of it (photos, the first page of a PDF). */
@@ -42,8 +44,8 @@ class Picked(val name: String, val text: String?, val image: Bitmap?)
 class Outcome(val text: String, val image: Bitmap? = null, val question: String? = null)
 
 /** Runs the tools the model asks for. Anything that sends, calls or replies asks the person first. */
-class Device(private val host: Host) {
-    private val a get() = host.ctx
+class Device(internal val host: Host) {
+    internal val a get() = host.ctx
     private val zone = ZoneId.systemDefault()
 
     suspend fun run(name: String, args: JSONObject): Outcome = runCatching { exec(name, args) }.getOrElse { Outcome("Failed: " + (it.message ?: it.javaClass.simpleName)) }
@@ -147,7 +149,7 @@ class Device(private val host: Host) {
             if (p.text != null) Outcome("Document \"${p.name}\":\n" + p.text.take(12_000)) else Outcome("The document \"${p.name}\" is attached as a picture.", p.image, q)
         }
         "lock_phone" -> lock()
-        else -> Outcome("Unknown tool $name")
+        else -> extra(name, x)
     }
 
     // ---- Helpers ----

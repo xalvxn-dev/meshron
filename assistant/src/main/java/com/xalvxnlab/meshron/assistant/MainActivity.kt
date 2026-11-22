@@ -107,6 +107,8 @@ class MainActivity : ComponentActivity(), Host {
     // The approval panel.
     private val approval = mutableStateOf<Triple<String, String, CompletableDeferred<Boolean>>?>(null)
     private val wakeListening = mutableStateOf(0)
+    /** A request from the home-screen widget, asked as soon as the screen is up. */
+    private val pendingAsk = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -115,6 +117,7 @@ class MainActivity : ComponentActivity(), Host {
         brain = Brain(api, this)
         brain.onReply = { if (Memory.speak(this)) Speaker.say(this, it) }
         if (isAssist(intent)) wakeListening.value++
+        intent?.getStringExtra("ask")?.let { pendingAsk.value = it }
         setContent { App() }
     }
 
@@ -129,6 +132,7 @@ class MainActivity : ComponentActivity(), Host {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (isAssist(intent)) wakeListening.value++
+        intent.getStringExtra("ask")?.let { pendingAsk.value = it }
     }
 
     private fun isAssist(i: Intent?) = i != null && (i.getBooleanExtra("assist", false) || i.action == Intent.ACTION_ASSIST || i.action == Intent.ACTION_VOICE_COMMAND)
@@ -242,6 +246,7 @@ class MainActivity : ComponentActivity(), Host {
             scope.launch { if (permission(Manifest.permission.RECORD_AUDIO)) { listening = true; partial = ""; listener.start() } }
         }
         LaunchedEffect(wakeListening.value) { if (wakeListening.value > 0) listen() }
+        LaunchedEffect(pendingAsk.value) { pendingAsk.value?.let { pendingAsk.value = null; send(it) } }
         LaunchedEffect(brain.lines.size) { if (brain.lines.isNotEmpty()) listState.animateScrollToItem(brain.lines.size - 1) }
 
         val mode = when { listening -> Mode.Listening; thinking -> Mode.Thinking; speaking -> Mode.Speaking; else -> Mode.Idle }
@@ -352,6 +357,47 @@ class MainActivity : ComponentActivity(), Host {
             Section("Signed in as @" + api.username)
             SetRow("Spoken replies", "Read answers and alerts out loud") { Switch(speak, { speak = it; Memory.setSpeak(this@MainActivity, it) }, colors = hudSwitch()) }
             VoicePicker()
+            var studio by remember { mutableStateOf(Memory.studio(this@MainActivity)) }
+            SetRow("Studio voice", "A lifelike AI voice (needs the internet). Off: the phone's own voice below.") { Switch(studio, { studio = it; Memory.setStudio(this@MainActivity, it) }, colors = hudSwitch()) }
+            if (studio) {
+                var sv by remember { mutableStateOf(Memory.studioVoice(this@MainActivity)) }
+                LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(listOf("troy" to "Troy", "daniel" to "Daniel", "austin" to "Austin", "autumn" to "Autumn", "diana" to "Diana", "hannah" to "Hannah")) { (id, label) ->
+                        Text(label, color = if (sv == id) Color(0xFF02060C) else Hud.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sv == id) Hud.cyan else Color.Transparent).border(1.dp, Hud.line, RoundedCornerShape(50))
+                                .clickable { sv = id; Memory.setStudioVoice(this@MainActivity, id); Speaker.stop(); Speaker.say(this@MainActivity, "Hi, I'm $label. This is how I'll sound.") }
+                                .padding(horizontal = 14.dp, vertical = 8.dp))
+                    }
+                }
+            }
+
+            Section("Hands")
+            SetRow("Act on screen", "Lets it tap, type, scroll, go home or back, and close apps when you ask, like \"open Instagram and scroll\" or \"text Sam on WhatsApp\". Turn on Meshron Assistant under Accessibility.") {
+                LinkText(if (ControlService.on) "On" else "Turn on") { openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            }
+            SetRow("Files it can organise", if (Memory.folder(this@MainActivity).isEmpty()) "Pick a folder (like Download or Documents) it may sort, make folders in and clean up." else "A folder is chosen. Pick another to change it.") {
+                LinkText("Choose") { scope.launch { Device(this@MainActivity).run("choose_folder", org.json.JSONObject()) } }
+            }
+
+            Section("Ways to start it")
+            var combo by remember { mutableStateOf(Memory.combo(this@MainActivity)) }
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Button combo", color = Hud.text, fontSize = 16.sp)
+                Text("Starts it from anywhere, even inside other apps. Needs \"Act on screen\" on." + if (!ControlService.on && combo != "off") " (It's off right now.)" else "", color = Hud.dim, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(bottom = 8.dp))
+                for ((v, label) in listOf("off" to "Off", "down2" to "Volume down twice", "up2" to "Volume up twice", "updown" to "Volume up, then down", "both" to "Both volume keys together")) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { combo = v; Memory.setCombo(this@MainActivity, v) }.padding(vertical = 9.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(if (combo == v) Hud.cyan else Hud.line))
+                        Text(label, color = if (combo == v) Hud.text else Hud.dim, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+            }
+            var shake by remember { mutableStateOf(Memory.shake(this@MainActivity)) }
+            SetRow("Shake to talk", "Shake the phone twice, firmly. Works while the floating orb is on.") {
+                Switch(shake, { shake = it; Memory.setShake(this@MainActivity, it); FloatingService.restart(this@MainActivity) }, colors = hudSwitch())
+            }
+            SetRow("Quick Settings tile", "Pull down the shade, tap the pencil, and drag \"Meshron\" into your tiles.") { Text("", color = Hud.dim) }
+            SetRow("Home-screen widget", "Long-press your home screen, tap Widgets, and add \"Meshron Assistant\".") { Text("", color = Hud.dim) }
+
             Section("Floating assistant")
             var floating by remember { mutableStateOf(Memory.floating(this@MainActivity) && overlayAllowed.value) }
             var always by remember { mutableStateOf(Memory.always(this@MainActivity)) }
