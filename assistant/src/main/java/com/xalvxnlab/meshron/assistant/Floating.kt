@@ -79,12 +79,17 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     companion object {
         @Volatile var running = false
         @Volatile var instance: FloatingService? = null
-        fun start(c: Context) { if (Settings.canDrawOverlays(c)) androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, FloatingService::class.java)) }
+        /** Runs for the orb (if it may draw over apps) and for always listening (if the microphone is allowed). */
+        fun start(c: Context) {
+            val orb = Memory.floating(c) && Settings.canDrawOverlays(c)
+            val ears = Memory.always(c) && Device.granted(c, Manifest.permission.RECORD_AUDIO)
+            if (orb || ears) runCatching { androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, FloatingService::class.java)) }
+        }
+        fun wanted(c: Context) = (Memory.floating(c) && Settings.canDrawOverlays(c)) || (Memory.always(c) && Device.granted(c, Manifest.permission.RECORD_AUDIO))
         fun stop(c: Context) { c.stopService(Intent(c, FloatingService::class.java)) }
         /** Restarts it so a new listening mode takes effect. */
         fun restart(c: Context) { if (running) { stop(c); Handler(Looper.getMainLooper()).postDelayed({ start(c) }, 400) } }
         private const val STOP = "stop"
-        private val WAKE = Regex("\\b(?:hey|hi|ok|okay)?\\s*(?:mesh ?ron|meshron|mesh run|mash ?ron)\\b[,.!]?\\s*(.*)", RegexOption.IGNORE_CASE)
     }
 
     // ---- Lifecycle for Compose inside a service window ----
@@ -113,6 +118,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private var always = false
     private var busy = false
     private var wakeErrors = 0
+    private var wakeOnDevice = true
     private var hideJob: Job? = null
     private val speakingHook: (Boolean) -> Unit = { on -> main.post { onSpeaking(on) } }
 
@@ -148,7 +154,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             setViewTreeLifecycleOwner(this@FloatingService)
             setViewTreeSavedStateRegistryOwner(this@FloatingService)
         }
-        wm.addView(view, params)
+        // The orb shows only if it is turned on; otherwise this just listens for the name.
+        if (Memory.floating(this) && Settings.canDrawOverlays(this)) wm.addView(view, params) else view = null
         life.currentState = Lifecycle.State.RESUMED
         if (always) main.postDelayed({ listen(wake = true) }, 800)
     }
@@ -175,8 +182,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val hide = PendingIntent.getService(this, 1, Intent(this, FloatingService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(this, "floating").setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(if (always) "Listening for \"Hey Meshron\"" else "Meshron Assistant is ready")
-            .setContentText(if (always) "Say \"Hey Meshron\" then your request. Tap the orb to talk any time." else "Tap the floating orb to talk.")
+            .setContentTitle(if (always) "Listening for \"Hey " + Memory.name(this) + "\"" else Memory.name(this) + " is ready")
+            .setContentText(if (always) "Say \"Hey " + Memory.name(this) + "\" then your request." else "Tap the floating orb to talk.")
             .setOngoing(true).setContentIntent(open).addAction(0, "Hide", hide).build()
         val type = if (android.os.Build.VERSION.SDK_INT >= 34)
             (if (always) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
@@ -194,7 +201,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             onLevel = { if (!wake) level = it },
             onPartial = { if (!wake) show("LISTENING", it, autoHide = false) },
             onDone = { text, err -> main.post { heard(wake, text, err) } },
-            onDevice = wake)
+            onDevice = wake && wakeOnDevice)
         listener?.start()
     }
 
@@ -202,13 +209,17 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         level = 0f
         if (wake) {
             if (busy || mode == Mode.Speaking) return
-            if (err != null && err != "busy") { if (++wakeErrors >= 5) { always = false; show("SYSTEM", "Always listening stopped: $err", true) ; return } }
+            if (err != null && err != "busy") {
+                // The on-device recogniser may lack this language: fall back to the regular one before giving up.
+                if (++wakeErrors == 3 && wakeOnDevice) { wakeOnDevice = false; wakeErrors = 0 }
+                if (wakeErrors >= 6) { always = false; show("SYSTEM", "Always listening stopped: $err", true); if (Memory.speak(this)) Speaker.say(this, "Always listening stopped. $err"); return }
+            }
             else wakeErrors = 0
-            val m = text?.let { WAKE.find(it) }
+            val cmd = text?.let { Wake.command(it, Memory.name(this)) }
             when {
-                m == null -> main.postDelayed({ if (always && !busy) listen(wake = true) }, if (err == "busy") 1500 else 250)
-                m.groupValues[1].isBlank() -> { Speaker.say(this, "Yes?"); main.postDelayed({ listen(wake = false) }, 700) }
-                else -> run(m.groupValues[1])
+                cmd == null -> main.postDelayed({ if (always && !busy) listen(wake = true) }, if (err == "busy") 1500 else 250)
+                cmd.isBlank() -> { Speaker.say(this, "Yes?"); main.postDelayed({ listen(wake = false) }, 700) }
+                else -> run(cmd)
             }
             return
         }

@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity(), Host {
     override fun onResume() {
         super.onResume()
         overlayAllowed.value = Settings.canDrawOverlays(this)
-        if (Memory.floating(this) && overlayAllowed.value && api.signedIn && !FloatingService.running) FloatingService.start(this)
+        if (api.signedIn && !FloatingService.running && FloatingService.wanted(this)) FloatingService.start(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -253,7 +253,7 @@ class MainActivity : ComponentActivity(), Host {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             // Top bar
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("MESHRON", color = Hud.cyan, fontFamily = FontFamily.Monospace, letterSpacing = 4.sp, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(Memory.name(this@MainActivity).uppercase(), color = Hud.cyan, fontFamily = FontFamily.Monospace, letterSpacing = 4.sp, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 Text(" // ASSISTANT", color = Hud.dim, fontFamily = FontFamily.Monospace, letterSpacing = 2.sp, fontSize = 11.sp)
                 Spacer(Modifier.weight(1f))
                 if (brain.lines.isNotEmpty()) IconTap(Icons.Rounded.Refresh, "New conversation") { brain.reset() }
@@ -264,7 +264,7 @@ class MainActivity : ComponentActivity(), Host {
                 Reactor(mode, level, Modifier.size(if (brain.lines.isEmpty()) 230.dp else 150.dp).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) { listen() })
             }
             Text(
-                when (mode) { Mode.Listening -> partial.ifBlank { "LISTENING" }; Mode.Thinking -> "PROCESSING"; Mode.Speaking -> "SPEAKING"; Mode.Idle -> if (brain.lines.isEmpty()) "TAP THE CORE OR SAY SOMETHING" else "STANDING BY" },
+                when (mode) { Mode.Listening -> partial.ifBlank { "LISTENING" }; Mode.Thinking -> "PROCESSING"; Mode.Speaking -> "SPEAKING"; Mode.Idle -> if (brain.lines.isEmpty()) (if (Memory.always(this@MainActivity)) "SAY \"HEY " + Memory.name(this@MainActivity).uppercase() + "\" OR TAP THE CORE" else "TAP THE CORE OR SAY SOMETHING") else "STANDING BY" },
                 color = if (mode == Mode.Listening && partial.isNotBlank()) Hud.text else Hud.cyan.copy(alpha = 0.8f),
                 fontFamily = if (mode == Mode.Listening && partial.isNotBlank()) FontFamily.Default else FontFamily.Monospace,
                 letterSpacing = if (mode == Mode.Listening && partial.isNotBlank()) 0.sp else 3.sp, fontSize = if (mode == Mode.Listening && partial.isNotBlank()) 17.sp else 11.sp,
@@ -330,7 +330,7 @@ class MainActivity : ComponentActivity(), Host {
         when (l) {
             is Line.You -> Text(l.text, color = Hud.dim, fontSize = 15.sp, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth().padding(start = 48.dp))
             is Line.Me -> Column(Modifier.fillMaxWidth().padding(end = 24.dp)) {
-                Text("MESHRON ›", color = Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 2.sp)
+                Text(Memory.name(this@MainActivity).uppercase() + " ›", color = Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 2.sp)
                 Text(l.text, color = Hud.text, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 3.dp))
             }
             is Line.Act -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -355,6 +355,12 @@ class MainActivity : ComponentActivity(), Host {
                 Text("SYSTEMS", color = Hud.cyan, fontFamily = FontFamily.Monospace, letterSpacing = 4.sp, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
             Section("Signed in as @" + api.username)
+            var name by remember { mutableStateOf(Memory.name(this@MainActivity)) }
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Name", color = Hud.text, fontSize = 16.sp)
+                Text("What it's called, and what you say to wake it (\"Hey $name\"). Short, clear names like Nova, Jarvis or Atlas are heard best.", color = Hud.dim, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(bottom = 8.dp))
+                HudField(name, { name = it.take(24); Memory.setName(this@MainActivity, name) }, "Meshron")
+            }
             SetRow("Spoken replies", "Read answers and alerts out loud") { Switch(speak, { speak = it; Memory.setSpeak(this@MainActivity, it) }, colors = hudSwitch()) }
             VoicePicker()
             var studio by remember { mutableStateOf(Memory.studio(this@MainActivity)) }
@@ -404,7 +410,7 @@ class MainActivity : ComponentActivity(), Host {
             SetRow("Floating orb", "A small orb over every app. Tap it to talk, drag it anywhere, long-press to open this app.") {
                 Switch(floating, { on ->
                     Memory.setFloating(this@MainActivity, on)
-                    if (!on) { floating = false; FloatingService.stop(this@MainActivity) }
+                    if (!on) { floating = false; FloatingService.restart(this@MainActivity) }
                     else if (!Settings.canDrawOverlays(this@MainActivity)) {
                         // Android asks for "Display over other apps" on its own screen; the orb starts on return.
                         openSettings(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -422,7 +428,7 @@ class MainActivity : ComponentActivity(), Host {
                                 if (always == on) return@clickable
                                 scope.launch {
                                     if (on && !permission(Manifest.permission.RECORD_AUDIO)) return@launch
-                                    always = on; Memory.setAlways(this@MainActivity, on); FloatingService.restart(this@MainActivity)
+                                    always = on; Memory.setAlways(this@MainActivity, on); if (FloatingService.running) FloatingService.restart(this@MainActivity) else FloatingService.start(this@MainActivity)
                                 }
                             }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
                             Text(label, color = if (always == on) Color(0xFF02060C) else Hud.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)

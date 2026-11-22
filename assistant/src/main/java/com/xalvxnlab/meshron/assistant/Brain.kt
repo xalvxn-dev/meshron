@@ -107,6 +107,7 @@ class Brain(private val api: Api, private val host: Host) {
         .put("language", Locale.getDefault().displayLanguage)
         .put("screen", ScreenContext.fresh)
         .put("platform", "android")
+        .put("assistantName", Memory.name(host.ctx))
         .put("canAct", ControlService.on)
 
     private fun online(): Boolean {

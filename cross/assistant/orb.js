@@ -50,6 +50,20 @@
   })
   $('orb').addEventListener('contextmenu', (e) => { e.preventDefault(); A.openPanel() })
 
+  /** A soft two-note chime: "I heard my name, go ahead". */
+  function chime () {
+    try {
+      const ctx = new AudioContext()
+      ;[[880, 0], [1320, 0.11]].forEach(([f, at]) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain()
+        o.type = 'sine'; o.frequency.value = f
+        g.gain.setValueAtTime(0, ctx.currentTime + at); g.gain.linearRampToValueAtTime(0.18, ctx.currentTime + at + 0.02); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + 0.25)
+        o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + 0.3)
+      })
+      setTimeout(() => ctx.close(), 700)
+    } catch {}
+  }
+
   let mode = 'idle'
   function tap () {
     if (mode === 'listening') { Voice.listen.cancel && Voice.listen.cancel(); return }
@@ -74,6 +88,7 @@
     if (ev === 'side') setSide(data)
     if (ev === 'listen') startListening()
     if (ev === 'stop') Voice.listen.cancel && Voice.listen.cancel()
+    if (ev === 'chime') chime()
     if (ev === 'say') Voice.say(data, (on) => { if (on) A.mode('speaking'); else if (mode === 'speaking') A.mode('idle') })
   })
   A.state().then(render)

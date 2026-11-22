@@ -152,7 +152,9 @@ export function assistant ({ fail, limit, authed, clip }) {
       const how = windows
         ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened.'
         : '\nYou run on an Android phone.' + (ctx.canAct ? ' To work inside an app like a person (scrolling a feed, sending a message in WhatsApp, changing a setting): open_app, then ui_read, then ui_tap / ui_type / ui_scroll, and ui_read again to check. Send buttons are often an icon labelled "Send". Ask before sending anything the person didn\'t dictate word for word.' : ' Acting inside other apps is off; if asked, tell the person to turn on "Act on screen" in settings.')
-      const sys = SYSTEM.replace('on the user\'s Android phone', windows ? 'on the user\'s Windows PC' : 'on the user\'s Android phone') + how + '\nContext: ' + clip(JSON.stringify({ now: ctx.now, timezone: ctx.timezone, battery: ctx.battery, name: ctx.name, language: ctx.language, screenAvailable: !!ctx.screen }), 800)
+      // The person may have named their assistant (it answers to that name and calls itself by it).
+      const named = typeof ctx.assistantName === 'string' && /^[\p{L}\p{N} .'-]{1,24}$/u.test(ctx.assistantName.trim()) ? ctx.assistantName.trim() : 'Meshron Assistant'
+      const sys = SYSTEM.replace('You are Meshron Assistant,', 'You are ' + named + ' (Meshron Assistant),').replace('on the user\'s Android phone', windows ? 'on the user\'s Windows PC' : 'on the user\'s Android phone') + how + '\nContext: ' + clip(JSON.stringify({ now: ctx.now, timezone: ctx.timezone, battery: ctx.battery, name: ctx.name, language: ctx.language, screenAvailable: !!ctx.screen }), 800)
       const msgs = [{ role: 'system', content: sys }, ...cleanMessages(messages)]
       // A photo (camera, screenshot or a picked document) goes with the last question, to the vision model.
       const img = typeof image === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) && image.length < 5_500_000 ? image : null

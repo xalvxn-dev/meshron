@@ -22,7 +22,7 @@ const dataFile = () => path.join(app.getPath('userData'), 'assistant.json')
 let data = { settings: {}, tasks: [], reminders: [], orb: null }
 function load () { try { data = Object.assign(data, JSON.parse(fs.readFileSync(dataFile(), 'utf8'))) } catch {} }
 function save () { fs.mkdirSync(path.dirname(dataFile()), { recursive: true }); fs.writeFileSync(dataFile(), JSON.stringify(data)) }
-const DEFAULTS = { studio: true, studioVoice: 'troy', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
+const DEFAULTS = { name: 'Meshron', studio: true, studioVoice: 'troy', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
 const settings = () => Object.assign({}, DEFAULTS, data.settings)
 function account () {
   try { return data.account ? JSON.parse(safeStorage.decryptString(Buffer.from(data.account, 'base64'))) : null } catch { return null }
@@ -111,7 +111,7 @@ function approve (title, detail) {
 }
 
 function context () {
-  return { now: new Date().toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T') + ', ' + new Date().toLocaleDateString('en', { weekday: 'long' }), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, name: (account() || {}).u, language: app.getLocale(), platform: 'windows' }
+  return { now: new Date().toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T') + ', ' + new Date().toLocaleDateString('en', { weekday: 'long' }), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, name: (account() || {}).u, language: app.getLocale(), platform: 'windows', assistantName: settings().name }
 }
 
 const toolCtx = {
@@ -207,24 +207,36 @@ function listen () {
 
 // ---- "Hey Meshron": Windows' own offline speech engine listens for the wake phrase only ----
 let wake = null
+/** The phrases Windows listens for: the name alone, or with hey / ok / hi; for the default name also how it's often heard. */
+function wakePhrases () {
+  const n = String(settings().name || 'Meshron').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() || 'meshron'
+  const names = n === 'meshron' ? ['meshron', 'mesh ron', 'mesh run'] : [n]
+  const out = []
+  for (const x of names) for (const p of ['', 'hey ', 'ok ', 'okay ', 'hi ']) out.push("'" + (p + x).replace(/'/g, "''") + "'")
+  return out.join(', ')
+}
+
 function startWake () {
   stopWake()
   if (!settings().always) return
   const script = `
 Add-Type -AssemblyName System.Speech
-try { $r = New-Object System.Speech.Recognition.SpeechRecognitionEngine } catch { [Console]::Out.WriteLine('ERR no speech recogniser'); exit }
+# Prefer an English recogniser (the wake phrases are English); else whichever Windows has.
+$ri = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers() | Sort-Object { if ($_.Culture.Name -like 'en-*') { 0 } else { 1 } } | Select-Object -First 1
+if (-not $ri) { [Console]::Out.WriteLine('ERR Windows has no speech recogniser installed (Settings, Time and language, Speech)'); exit }
+try { $r = New-Object System.Speech.Recognition.SpeechRecognitionEngine($ri) } catch { [Console]::Out.WriteLine('ERR no speech recogniser'); exit }
 try { $r.SetInputToDefaultAudioDevice() } catch { [Console]::Out.WriteLine('ERR no microphone'); exit }
 $c = New-Object System.Speech.Recognition.Choices
-$c.Add([string[]]@('hey meshron', 'okay meshron', 'hi meshron'))
+$c.Add([string[]]@(${wakePhrases()}))
 $r.LoadGrammar((New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($c)))))
-$r.add_SpeechRecognized({ param($s, $e) if ($e.Result.Confidence -gt 0.55) { [Console]::Out.WriteLine('WAKE'); [Console]::Out.Flush() } })
+$r.add_SpeechRecognized({ param($s, $e) if ($e.Result.Confidence -gt 0.4) { [Console]::Out.WriteLine('WAKE'); [Console]::Out.Flush() } })
 $r.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)
 [Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
 while ($true) { Start-Sleep -Seconds 5 }`
   wake = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true })
   wake.stdout.on('data', (b) => {
     for (const l of String(b).split(/\r?\n/)) {
-      if (l === 'WAKE' && !busy && state.mode === 'idle') listen()
+      if (l === 'WAKE' && !busy && state.mode === 'idle') { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
       if (l.startsWith('ERR')) strip('SYSTEM', '"Hey Meshron" isn\'t available: ' + l.slice(4) + '. Use the shortcut or the orb.', true)
     }
   })
@@ -257,7 +269,7 @@ function makeTray () {
 function setSettings (patch) {
   data.settings = Object.assign({}, data.settings, patch); save()
   if ('hotkey' in patch) registerHotkey()
-  if ('always' in patch) startWake()
+  if ('always' in patch || 'name' in patch) startWake()
   if ('startup' in patch) applyStartup()
   if ('orb' in patch && orb) { if (settings().orb) orb.showInactive(); else orb.hide() }
   for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())

@@ -62,7 +62,7 @@
     micBtn = h('button', { class: 'mic', title: 'Talk (' + (settings.hotkey || 'no shortcut') + ')', onClick: () => (input.value.trim() ? (A.ask(input.value.trim()), (input.value = '')) : A.listen()) }, icon(0xE720))
     input.addEventListener('input', () => micBtn.replaceChildren(icon(input.value.trim() ? 0xE724 : 0xE720)))
     root.replaceChildren(hero, convo, h('div', { class: 'composer' }, h('div', { class: 'box' }, input), micBtn),
-      h('div', { class: 'hint' }, 'Press ' + (settings.hotkey || 'the orb') + (settings.always ? ' or say "Hey Meshron"' : '') + ' to talk from anywhere'))
+      h('div', { class: 'hint' }, 'Press ' + (settings.hotkey || 'the orb') + (settings.always ? ' or say "Hey ' + (settings.name || 'Meshron') + '"' : '') + ' to talk from anywhere'))
     renderHome()
     input.focus()
   }
@@ -85,7 +85,7 @@
     const atEnd = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 60
     convo.replaceChildren(...st.lines.map((l) =>
       l.who === 'you' ? h('div', { class: 'you' }, l.text)
-        : l.who === 'me' ? h('div', { class: 'me' }, h('div', { class: 'who' }, 'MESHRON'), l.text)
+        : l.who === 'me' ? h('div', { class: 'me' }, h('div', { class: 'who' }, (settings.name || 'Meshron').toUpperCase()), l.text)
           : l.who === 'act' ? h('div', { class: 'act ' + (l.ok ? 'ok' : 'no') }, h('b', {}, l.ok ? '✓' : '!'), l.text)
             : h('div', { class: 'oops' }, '⚠ ' + l.text)))
     if (atEnd) convo.scrollTop = convo.scrollHeight
@@ -127,6 +127,11 @@
     }
     return f
   }
+  function nameField () {
+    const f = h('input', { class: 'keys', value: settings.name || 'Meshron', maxlength: '24', style: 'text-align:left', spellcheck: 'false' })
+    f.addEventListener('change', async () => { const v = f.value.trim() || 'Meshron'; f.value = v; settings = await A.setSettings({ name: v }); document.querySelector('.appname').textContent = v })
+    return f
+  }
   async function settingsPage () {
     settings = await A.settings()
     const voice = h('select', { onChange: async (e) => { settings = await A.setSettings({ studioVoice: e.target.value }) } },
@@ -136,9 +141,11 @@
       h('button', { class: settings.always === v ? 'on' : '', onClick: async () => { settings = await A.setSettings({ always: v }); settingsPage() } }, l)))
     root.replaceChildren(h('div', { class: 'page' },
       h('h1', {}, 'Settings'),
+      h('div', { class: 'group' }, 'Name'),
+      card(0xE8D4, 'What it\'s called', 'Also the wake word ("Hey ' + (settings.name || 'Meshron') + '"). Short, clear names like Nova, Jarvis or Atlas are heard best.', nameField()),
       h('div', { class: 'group' }, 'Talking'),
       card(0xE765, 'Shortcut', 'Starts listening from anywhere. Click and press your own combo.', hotkeyField()),
-      card(0xE720, 'Listening', settings.always ? 'Say "Hey Meshron" any time (Windows\' offline speech engine listens for the phrase only).' : 'Press the shortcut, click the orb or the mic.', seg),
+      card(0xE720, 'Listening', settings.always ? 'Say "Hey ' + (settings.name || 'Meshron') + '" any time (Windows\' offline speech engine listens for the phrase only).' : 'Press the shortcut, click the orb or the mic.', seg),
       card(0xE767, 'Speak replies', 'Read answers out loud.', toggle('speak')),
       card(0xE8D6, 'Studio voice', 'A lifelike AI voice. Off: Windows\' own voice.', toggle('studio')),
       card(0xE77B, 'Studio voice', 'Who speaks.', voice),
@@ -181,5 +188,5 @@
     if (ev === 'page') { page = data; draw() }
     if (ev === 'settings') { settings = data }
   })
-  ;(async () => { settings = await A.settings(); st = await A.state(); draw(); renderApproval() })()
+  ;(async () => { settings = await A.settings(); st = await A.state(); document.querySelector('.appname').textContent = settings.name || 'Meshron Assistant'; draw(); renderApproval() })()
 })()

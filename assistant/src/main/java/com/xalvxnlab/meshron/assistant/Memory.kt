@@ -125,3 +125,48 @@ fun Memory.setStudio(c: Context, on: Boolean) = c.getSharedPreferences("memory",
 /** Which studio voice: troy, daniel, austin (male); autumn, diana, hannah (female). */
 fun Memory.studioVoice(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("studioVoice", "troy").orEmpty()
 fun Memory.setStudioVoice(c: Context, v: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("studioVoice", v).apply()
+/** What the assistant is called (and the wake word): "Meshron" unless the person renamed it. */
+fun Memory.name(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("name", "Meshron").orEmpty().ifBlank { "Meshron" }
+fun Memory.setName(c: Context, n: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("name", n.trim().take(24)).apply()
+
+/**
+ * Hearing the wake word. Recognisers rarely spell a name the way it's written ("Meshron" comes out
+ * as "mesh run", "machine", "mesh Ron"), so the name is matched loosely: one or two spoken words
+ * that are close to it in spelling count, with or without "hey" / "ok" before them.
+ */
+object Wake {
+    private fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}' ]"), " ").replace(Regex("\\s+"), " ").trim()
+    private fun squash(s: String) = s.replace(" ", "").replace("'", "")
+    private fun distance(a: String, b: String): Int {
+        val d = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            var prev = d[0]; d[0] = i
+            for (j in 1..b.length) { val t = d[j]; d[j] = minOf(d[j] + 1, d[j - 1] + 1, prev + if (a[i - 1] == b[j - 1]) 0 else 1); prev = t }
+        }
+        return d[b.length]
+    }
+    /** Extra spellings recognisers commonly produce for the default name. */
+    private val MESHRON = listOf("meshron", "meshrun", "meshroom", "machine", "mashron", "meshran", "mishron", "marshron", "meshrom")
+
+    /** null: not woken. "": woken, nothing more said. Otherwise the request that followed the name. */
+    fun command(heard: String, name: String): String? {
+        val words = norm(heard).split(' ').filter { it.isNotEmpty() }
+        val target = squash(norm(name))
+        if (words.isEmpty() || target.isEmpty()) return null
+        val allowed = maxOf(1, target.length / 4)
+        val alts = if (target == "meshron") MESHRON else listOf(target)
+        for (i in words.indices) {
+            for (span in 1..2) {
+                if (i + span > words.size) continue
+                val cand = words.subList(i, i + span).joinToString("")
+                if (alts.any { a -> cand == a || (cand.length >= 3 && distance(cand, a) <= allowed) }) {
+                    // Only when it's at the start ("hey Nova…") or after a greeting, so "nova" in a sentence doesn't wake it.
+                    val before = words.subList(0, i)
+                    if (before.isNotEmpty() && !before.all { it in setOf("hey", "hi", "ok", "okay", "yo", "hello", "a") }) continue
+                    return words.drop(i + span).joinToString(" ")
+                }
+            }
+        }
+        return null
+    }
+}
