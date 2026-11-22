@@ -17,5 +17,9 @@ contextBridge.exposeInMainWorld('meshronNative', {
   setBadge: (count) => ipcRenderer.invoke('desk', 'badge', count),
   notify: (n) => ipcRenderer.invoke('desk', 'notify', n),
   keepAwake: (on) => ipcRenderer.invoke('desk', 'awake', !!on),
-  openWifi: () => ipcRenderer.invoke('desk', 'wifi')
+  openWifi: () => ipcRenderer.invoke('desk', 'wifi'),
+  // Going live: list screens and apps, pick one, keep Meshron's window out of the picture.
+  captureSources: () => ipcRenderer.invoke('desk', 'sources'),
+  pickSource: (id, sound) => ipcRenderer.invoke('desk', 'pickSource', { id, sound }),
+  hideFromCapture: (on) => ipcRenderer.invoke('desk', 'hideFromCapture', !!on)
 })

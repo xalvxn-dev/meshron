@@ -3172,166 +3172,357 @@
   M.on('live-welcome', (e) => { if (liveView && e.host === liveView.host) liveView.count.replaceChildren(icon('play', 12), String(e.viewers || 0)) })
   M.on('live-ended', (e) => { if (liveView && e.host === liveView.host) liveEnded(!!e.full) })
 
-  // ---- Going live ----
-  let hostLive = null // { id, el, cam, venc, aenc, ctx, timer, forceKey, viewers }
+  // ---- Going live: the studio ----
+  // Sources on the left (camera, screens, apps), the picture in the middle, settings and chat on
+  // the right. Everything is drawn onto one canvas (the main source plus an optional camera
+  // bubble) and that canvas is what viewers get, so what you see is exactly what goes out.
+  let hostLive = null
+  const QUALITY = { 480: [854, 480, 1_000_000], 720: [1280, 720, 2_200_000], 1080: [1920, 1080, 4_000_000] }
+  const SPOTS = ['br', 'bl', 'tl', 'tr']
+  const SPOT_NAMES = { br: 'Bottom right', bl: 'Bottom left', tl: 'Top left', tr: 'Top right' }
+
   async function goLive() {
     if (hostLive) return
     if (!videoSupported() || typeof AudioEncoder === 'undefined') { toast("Going live isn't supported on this device yet"); return }
-    const preview = h('video', { class: 'st-video', muted: true, playsinline: true, autoplay: true })
-    preview.muted = true
+    const native = M.native || {}
+    const desk = typeof native.captureSources === 'function'
+    const L = hostLive = {
+      cam: null, screen: null, mic: null, mainKind: 'camera', mainId: null,
+      bubble: true, spot: 'br', orient: 'landscape', quality: 720,
+      micId: '', camId: '', micOn: true, sound: true,
+      viewers: 0, peak: 0, bytes: 0, frames: 0, id: null
+    }
+    const vid = () => { const v = h('video', { muted: true, playsinline: true, autoplay: true }); v.muted = true; return v }
+    const mainVid = vid(); const camVid = vid()
+    const stage = h('canvas', { class: 'sd-canvas' })
+    const g = stage.getContext('2d')
+    const waiting = h('div', { class: 'sd-wait' }, h('div', { class: 'spinner' }))
+
+    // Top bar
+    const status = h('span', { class: 'sd-live', hidden: true }, 'LIVE')
+    const clockEl = h('span', { class: 'sd-chip', hidden: true }, '0:00')
+    const count = h('span', { class: 'sd-chip' }, icon('users', 14), '0')
+    const stats = h('span', { class: 'sd-chip sd-stats', hidden: true }, '')
+    const goBtn = h('button', { class: 'sd-go' }, h('span', { class: 'st-dot' }), 'Go live')
+    const closeBtn = h('button', { class: 'icon-btn', title: 'Close', onClick: () => endLive() }, icon('x', 22))
+    const top = h('div', { class: 'sd-top' }, closeBtn, h('div', { class: 'sd-title' }, 'Live studio'), status, clockEl, count, stats, h('span', { style: { flex: 1 } }), goBtn)
+
+    // Sources
+    const srcList = h('div', { class: 'sd-srcs' })
+    const sources = h('div', { class: 'sd-left' },
+      h('div', { class: 'sd-sec' }, h('span', {}, 'Sources'), desk ? h('button', { class: 'sd-refresh', onClick: () => loadSources() }, 'Refresh') : null),
+      srcList)
+
+    // Settings
     const title = h('input', { class: 'st-input', placeholder: 'What is your live about?', maxlength: 100 })
-    const chat = h('div', { class: 'lv-chat' })
-    const count = h('span', { class: 'lv-count' }, icon('play', 12), '0')
-    const status = h('span', { class: 'lv-badge', hidden: true }, 'LIVE')
-    const clockEl = h('span', { class: 'lv-timer', hidden: true }, '0:00')
-    let source = 'camera'
-    const pickSrc = h('div', { class: 'st-seg' })
-    const startBtn = h('button', { class: 'st-go' }, h('span', { class: 'st-dot' }), 'Go live')
-    const noPreview = h('div', { class: 'st-empty' }, h('div', { class: 'spinner' }))
-    // Before going live: a calm studio. A framed preview, a title, camera or screen, one button.
-    const setup = h('div', { class: 'studio' },
-      h('div', { class: 'st-stage' }, preview, noPreview),
-      h('div', { class: 'st-panel' },
-        h('div', { class: 'st-h' }, 'Go live'),
-        h('div', { class: 'st-sub' }, 'Your followers and friends get a LIVE ring on your profile while you stream.'),
-        h('label', { class: 'st-label' }, 'Title'), title,
-        h('label', { class: 'st-label' }, 'Show'), pickSrc,
-        startBtn))
-    const endBtn = h('button', { class: 'lv-end', onClick: () => endLive() }, 'End')
-    const el = h('div', { class: 'live-view studio-mode' }, setup,
-      h('div', { class: 'lv-head' }, avatar(st.me.username, st.me.publicKey, 40), h('div', { style: { minWidth: 0 } }, h('div', { class: 'lv-name' }, st.me.handle ? '@' + st.me.handle : st.me.username), h('div', { class: 'lv-sub' }, 'Your live')),
-        status, clockEl, count, h('span', { style: { flex: 1 } }), endBtn, h('button', { class: 'icon-btn st-close', style: { color: '#fff' }, title: 'Close', onClick: () => endLive() }, icon('x', 24))),
-      chat)
+    const seg = (opts, get, set) => {
+      const el = h('div', { class: 'st-seg' })
+      const draw = () => el.replaceChildren(...opts.map(([v, label]) => h('button', { class: get() === v ? 'on' : '', onClick: () => { set(v); draw() } }, label)))
+      draw()
+      return el
+    }
+    const sw = (get, set) => {
+      const el = h('button', { class: 'switch' + (get() ? ' on' : ''), role: 'switch' })
+      el.onclick = () => { set(!get()); el.classList.toggle('on', get()) }
+      return el
+    }
+    const row = (label, ctl, sub) => h('div', { class: 'sd-row' }, h('div', { class: 'sd-row-t' }, h('div', {}, label), sub ? h('div', { class: 'sd-row-s' }, sub) : null), ctl)
+    const micSel = h('select', { class: 'sd-select', onChange: (e) => { L.micId = e.target.value; openMic() } })
+    const camSel = h('select', { class: 'sd-select', onChange: (e) => { L.camId = e.target.value; openCam() } })
+    const meter = h('div', { class: 'sd-meter' }, h('i'))
+    const micBtn = h('button', { class: 'sd-round on', title: 'Microphone', onClick: () => setMicOn(!L.micOn) }, icon('mic', 20))
+    const spotBtn = h('button', { class: 'sd-pill', onClick: () => { L.spot = SPOTS[(SPOTS.indexOf(L.spot) + 1) % SPOTS.length]; spotBtn.textContent = SPOT_NAMES[L.spot] } }, SPOT_NAMES[L.spot])
+    const bubbleRow = row('Camera bubble', h('div', { class: 'sd-inline' }, spotBtn, sw(() => L.bubble, (v) => { L.bubble = v })), 'Your face over the screen or app')
+    const soundRow = row('PC sound', sw(() => L.sound, (v) => { L.sound = v; if (L.sysGain) L.sysGain.gain.value = v ? 1 : 0 }), 'What the screen or app plays')
+    const settings = h('div', { class: 'sd-pane' },
+      h('label', { class: 'st-label' }, 'Title'), title,
+      h('label', { class: 'st-label' }, 'Layout'),
+      seg([['landscape', 'Landscape'], ['portrait', 'Portrait']], () => L.orient, (v) => { L.orient = v }),
+      h('label', { class: 'st-label' }, 'Quality'),
+      seg([[480, '480p'], [720, '720p'], [1080, '1080p']], () => L.quality, (v) => { L.quality = v }),
+      h('label', { class: 'st-label' }, 'Microphone'),
+      h('div', { class: 'sd-inline' }, micBtn, micSel), meter,
+      h('label', { class: 'st-label' }, 'Camera'), camSel,
+      bubbleRow, soundRow)
+    const chat = h('div', { class: 'lv-chat sd-chat' }, h('div', { class: 'sd-empty' }, 'Comments from viewers show here.'))
+    const chatPane = h('div', { class: 'sd-pane sd-chatpane' }, chat)
+    let tab = 'settings'
+    const tabs = h('div', { class: 'st-seg sd-tabs' })
+    const panel = h('div', { class: 'sd-right' }, tabs, settings, chatPane)
+    const drawTabs = () => {
+      tabs.replaceChildren(...[['settings', 'Settings'], ['chat', 'Chat']].map(([v, label]) => h('button', { class: tab === v ? 'on' : '', onClick: () => { tab = v; drawTabs() } }, label)))
+      settings.hidden = tab !== 'settings'; chatPane.hidden = tab !== 'chat'
+    }
+    drawTabs()
+
+    const el = h('div', { class: 'sd' }, top, h('div', { class: 'sd-body' }, sources, h('div', { class: 'sd-mid' }, h('div', { class: 'sd-stage' }, stage, waiting)), panel))
     document.body.appendChild(el)
-    hostLive = { el, chat, count, status, clockEl, preview, setup, viewers: 0 }
-    const openSource = async () => {
-      if (hostLive.cam) hostLive.cam.getTracks().forEach((t) => t.stop())
-      try {
-        hostLive.cam = source === 'screen'
-          ? await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true })
-          : await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } })
-        preview.srcObject = hostLive.cam
-        await preview.play().catch(() => {})
-        noPreview.hidden = true
-      } catch { toast(source === 'screen' ? "Couldn't share the screen" : "Couldn't open the camera") }
+    Object.assign(L, { el, chat, count, status, clockEl, stats, goBtn, mainVid, camVid, stage })
+
+    // ---- Picture ----
+    const outSize = () => { const [w, hh] = QUALITY[L.quality]; return L.orient === 'portrait' ? [hh, w] : [w, hh] }
+    function fit (v, x, y, w, hh, cover) {
+      const vw = v.videoWidth; const vh = v.videoHeight
+      if (!vw || !vh) return
+      const k = cover ? Math.max(w / vw, hh / vh) : Math.min(w / vw, hh / vh)
+      const dw = vw * k; const dh = vh * k
+      g.drawImage(v, x + (w - dw) / 2, y + (hh - dh) / 2, dw, dh)
     }
-    const drawSrc = () => pickSrc.replaceChildren(...[['camera', 'Camera', 'video'], ...(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia ? [['screen', 'Screen', 'expand']] : [])].map(([id, label, ic]) =>
-      h('button', { class: source === id ? 'on' : '', onClick: () => { if (source === id) return; source = id; drawSrc(); noPreview.hidden = false; openSource() } }, icon(ic, 18), label)))
-    drawSrc()
-    await openSource()
-    startBtn.onclick = async () => {
-      if (!hostLive.cam) return toast('Pick the camera or the screen first')
-      startBtn.disabled = true
-      try { await startHosting(title.value.trim()) } catch (e) { startBtn.disabled = false; oops(e) }
+    function draw () {
+      const [W, H] = outSize()
+      if (stage.width !== W || stage.height !== H) { stage.width = W; stage.height = H; stage.style.aspectRatio = W + ' / ' + H }
+      g.fillStyle = '#000'; g.fillRect(0, 0, W, H)
+      const ready = mainVid.readyState >= 2 && mainVid.videoWidth
+      waiting.hidden = !!ready
+      if (!ready) return false
+      fit(mainVid, 0, 0, W, H, L.mainKind === 'camera')
+      if (L.mainKind === 'screen' && L.bubble && L.cam && camVid.readyState >= 2) {
+        const d = Math.round(Math.min(W, H) * 0.26); const m = Math.round(Math.min(W, H) * 0.04)
+        const x = L.spot[1] === 'r' ? W - d - m : m; const y = L.spot[0] === 'b' ? H - d - m : m
+        g.save(); g.beginPath(); g.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); g.clip()
+        fit(camVid, x, y, d, d, true); g.restore()
+        g.lineWidth = Math.max(3, d * 0.025); g.strokeStyle = '#fff'
+        g.beginPath(); g.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); g.stroke()
+      }
+      return true
     }
-  }
-  async function startHosting(title) {
-    const L = hostLive
-    const s = await M.call('reels.status').catch(() => null)
-    if (!s || !s.ready) throw new Error("Meshron is still connecting. Try again in a moment (check the internet if it doesn't).")
-    const id = Math.random().toString(36).slice(2, 12)
-    await M.call('live.start', { id, title })
-    L.id = id // only once the live really started (ending asks first only then)
-    L.preview.className = 'lv-canvas'
-    L.el.insertBefore(L.preview, L.el.firstChild)
-    L.setup.remove()
-    L.el.classList.remove('studio-mode')
-    L.status.hidden = false; L.clockEl.hidden = false
-    const began = Date.now()
-    L.clock = setInterval(() => { const t = Math.floor((Date.now() - began) / 1000); L.clockEl.textContent = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') }, 1000)
-    // Video: H.264, the same frames as calls (Android viewers decode them the same way).
-    const vid = L.preview
-    const canvas = document.createElement('canvas')
-    const g = canvas.getContext('2d')
-    let seq = 0; let width = 0; let height = 0
-    L.forceKey = true
-    const makeEncoder = () => {
+
+    // ---- Sources ----
+    function tile (key, label, pic, ic, onPick) {
+      const on = (key === 'camera' && L.mainKind === 'camera') || key === L.mainId
+      return h('button', { class: 'sd-src' + (on ? ' on' : ''), onClick: onPick },
+        h('div', { class: 'sd-thumb' }, pic ? h('img', { src: pic, alt: '' }) : icon(ic, 28)),
+        h('div', { class: 'sd-src-name' }, label))
+    }
+    let found = []
+    function drawSources () {
+      const kids = [tile('camera', 'Camera', null, 'video', () => setMain('camera'))]
+      const screens = found.filter((s) => s.kind === 'screen'); const apps = found.filter((s) => s.kind === 'window')
+      if (desk) {
+        if (screens.length) kids.push(h('div', { class: 'sd-sub' }, 'Screens'), ...screens.map((s, i) => tile(s.id, screens.length > 1 ? 'Screen ' + (i + 1) : 'Whole screen', s.thumb, 'expand', () => setMain('screen', s.id))))
+        if (apps.length) kids.push(h('div', { class: 'sd-sub' }, 'Apps'), ...apps.map((s) => tile(s.id, s.name, s.thumb, 'grid', () => setMain('screen', s.id))))
+      } else if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+        kids.push(tile('screen', 'Screen', null, 'expand', () => setMain('screen', 'screen')))
+      }
+      srcList.replaceChildren(...kids)
+    }
+    async function loadSources () {
+      if (desk) found = await native.captureSources().catch(() => [])
+      drawSources()
+    }
+
+    async function openCam () {
+      if (L.cam) L.cam.getTracks().forEach((t) => t.stop())
+      L.cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: L.camId ? { exact: L.camId } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }).catch(() => null)
+      camVid.srcObject = L.cam
+      if (L.mainKind === 'camera') mainVid.srcObject = L.cam
+      if (!L.cam) toast("Couldn't open the camera")
+      camVid.play().catch(() => {}); mainVid.play().catch(() => {})
+    }
+    async function setMain (kind, id) {
+      if (kind === 'camera') {
+        if (L.screen) L.screen.getTracks().forEach((t) => t.stop())
+        L.screen = null; L.mainKind = 'camera'; L.mainId = null
+        if (native.hideFromCapture) native.hideFromCapture(false)
+        if (!L.cam) await openCam()
+        mainVid.srcObject = L.cam
+        mainVid.play().catch(() => {})
+        connectSys()
+      } else {
+        if (desk) await native.pickSource(id, true)
+        // A screen shows Meshron itself: leave this window out, or the live repeats inside itself forever.
+        if (native.hideFromCapture) await native.hideFromCapture(true)
+        const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true }).catch(() => null)
+        if (!s) { toast("Couldn't share that"); if (L.mainKind === 'camera' && native.hideFromCapture) native.hideFromCapture(false); return }
+        if (L.screen) L.screen.getTracks().forEach((t) => t.stop())
+        L.screen = s; L.mainKind = 'screen'; L.mainId = id
+        mainVid.srcObject = s
+        mainVid.play().catch(() => {})
+        // The app was closed (or sharing stopped): back to the camera.
+        const vt = s.getVideoTracks()[0]
+        if (vt) vt.onended = () => { if (hostLive === L && L.screen === s) { toast('That app or screen stopped sharing'); setMain('camera') } }
+        connectSys()
+        if (!L.cam && L.bubble) openCam()
+      }
+      drawSources()
+    }
+
+    // ---- Sound: microphone + the screen's sound, mixed, Opus like calls ----
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
+    L.ctx = ctx
+    try {
+      await ctx.audioWorklet.addModule('audio-worklet.js')
+      L.mix = new AudioWorkletNode(ctx, 'mesh-mic')
+      L.micGain = ctx.createGain(); L.sysGain = ctx.createGain()
+      L.micGain.connect(L.mix); L.sysGain.connect(L.mix)
+      L.mix.port.onmessage = (e) => onAudio(e.data)
+    } catch {}
+    let level = 0
+    async function openMic () {
+      if (L.micSrc) try { L.micSrc.disconnect() } catch {}
+      if (L.mic) L.mic.getTracks().forEach((t) => t.stop())
+      L.mic = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: L.micId ? { exact: L.micId } : undefined, echoCancellation: true, noiseSuppression: true, channelCount: 1 } }).catch(() => null)
+      if (L.mic && L.micGain) { L.micSrc = ctx.createMediaStreamSource(L.mic); L.micSrc.connect(L.micGain) }
+    }
+    function connectSys () {
+      if (L.sysSrc) try { L.sysSrc.disconnect() } catch {}
+      L.sysSrc = null
+      const tracks = L.screen ? L.screen.getAudioTracks() : []
+      if (tracks.length && L.sysGain) { L.sysSrc = ctx.createMediaStreamSource(new MediaStream(tracks)); L.sysSrc.connect(L.sysGain) }
+      L.sysGain && (L.sysGain.gain.value = L.sound ? 1 : 0)
+    }
+    function setMicOn (on) {
+      L.micOn = on
+      if (L.micGain) L.micGain.gain.value = on ? 1 : 0
+      micBtn.classList.toggle('on', on)
+      micBtn.replaceChildren(icon(on ? 'mic' : 'micOff', 20))
+    }
+    const RATE = 48000; const FRAME = RATE / 50
+    let pending = new Float32Array(0); let ts = 0
+    function onAudio (data) {
+      let sum = 0
+      for (let i = 0; i < data.length; i += 8) sum += data[i] * data[i]
+      level = Math.max(level * 0.85, Math.min(1, Math.sqrt(sum / (data.length / 8)) * 4))
+      if (!L.aenc || L.aenc.state !== 'configured') return
+      const merged = new Float32Array(pending.length + data.length); merged.set(pending); merged.set(data, pending.length)
+      let o = 0
+      while (merged.length - o >= FRAME) { L.aenc.encode(new AudioData({ format: 'f32', sampleRate: RATE, numberOfFrames: FRAME, numberOfChannels: 1, timestamp: ts, data: merged.slice(o, o + FRAME) })); ts += 20000; o += FRAME }
+      pending = merged.slice(o)
+    }
+
+    async function listDevices () {
+      const all = await navigator.mediaDevices.enumerateDevices().catch(() => [])
+      const opts = (kind, sel, cur) => {
+        const list = all.filter((d) => d.kind === kind)
+        sel.replaceChildren(...list.map((d, i) => h('option', { value: d.deviceId, selected: d.deviceId === cur }, d.label || (kind === 'audioinput' ? 'Microphone ' : 'Camera ') + (i + 1))))
+        sel.disabled = !list.length
+      }
+      opts('audioinput', micSel, L.micId); opts('videoinput', camSel, L.camId)
+    }
+
+    // ---- The loop: draw, meter, and (when live) encode ----
+    L.loop = setInterval(() => {
+      const ok = draw()
+      meter.firstChild.style.width = Math.round((L.micOn ? level : 0) * 100) + '%'
+      level *= 0.9
+      if (ok && L.venc) encodeFrame()
+    }, 33)
+    L.statTimer = setInterval(() => {
+      if (!L.id) return
+      stats.textContent = Math.round(L.bytes * 8 / 1000) + ' kbps · ' + L.frames + ' fps'
+      L.bytes = 0; L.frames = 0
+    }, 1000)
+
+    let seq = 0; let encW = 0; let encH = 0; let lastKey = 0
+    function makeEncoder () {
       if (L.venc) try { L.venc.close() } catch {}
+      encW = stage.width; encH = stage.height
       L.venc = new VideoEncoder({
         output: (chunk) => {
           const body = new Uint8Array(chunk.byteLength); chunk.copyTo(body)
           const p = new Uint8Array(10 + body.length); const dv = new DataView(p.buffer)
-          dv.setUint32(0, seq++); p[4] = chunk.type === 'key' ? 1 : 0; p[5] = 0; dv.setUint16(6, width); dv.setUint16(8, height); p.set(body, 10)
+          dv.setUint32(0, seq++); p[4] = chunk.type === 'key' ? 1 : 0; p[5] = 0; dv.setUint16(6, encW); dv.setUint16(8, encH); p.set(body, 10)
+          L.bytes += p.length; L.frames++
           M.call('live.frame', { kind: 'v', data: b64(p) }).catch(() => {})
         },
         error: () => {}
       })
-      L.venc.configure({ codec: 'avc1.42E01F', width, height, bitrate: 1_800_000, framerate: 30, latencyMode: 'realtime', avc: { format: 'annexb' } })
+      // Baseline H.264 like calls (Android viewers decode it in hardware); level 4 for 1080p.
+      const big = encW * encH > 1280 * 720
+      L.venc.configure({ codec: big ? 'avc1.420028' : 'avc1.42E01F', width: encW, height: encH, bitrate: QUALITY[L.quality][2], framerate: 30, latencyMode: 'realtime', avc: { format: 'annexb' } })
+      L.forceKey = true
     }
-    let lastKey = 0
-    L.timer = setInterval(() => {
-      if (!L.cam || vid.readyState < 2 || !vid.videoWidth) return
-      // 720p at most, even sizes.
-      const k = Math.min(1, 1280 / Math.max(vid.videoWidth, vid.videoHeight))
-      const w = Math.round(vid.videoWidth * k) & ~1; const hh = Math.round(vid.videoHeight * k) & ~1
-      if (w !== width || hh !== height || !L.venc) { width = w; height = hh; canvas.width = w; canvas.height = hh; makeEncoder(); L.forceKey = true }
-      g.drawImage(vid, 0, 0, w, hh)
+    function encodeFrame () {
+      if (stage.width !== encW || stage.height !== encH) makeEncoder()
+      if (L.venc.encodeQueueSize > 4) return // the PC can't keep up: drop a frame rather than lag
       const now = Date.now()
       if (now - lastKey > 2000) L.forceKey = true
-      const frame = new VideoFrame(canvas, { timestamp: now * 1000 })
+      const frame = new VideoFrame(stage, { timestamp: now * 1000 })
       try { L.venc.encode(frame, { keyFrame: L.forceKey }) } catch {}
       if (L.forceKey) lastKey = now
       L.forceKey = false
       frame.close()
-    }, 33)
-    // Sound: the microphone (and the screen's sound when sharing a screen), Opus like calls.
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
-      await ctx.audioWorklet.addModule('audio-worklet.js')
-      L.ctx = ctx
-      const micNode = new AudioWorkletNode(ctx, 'mesh-mic')
-      L.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }).catch(() => null)
-      if (L.mic) ctx.createMediaStreamSource(L.mic).connect(micNode)
-      if (L.cam.getAudioTracks().length) ctx.createMediaStreamSource(new MediaStream(L.cam.getAudioTracks())).connect(micNode)
-      let aseq = 0; let frames = []
-      L.aenc = new AudioEncoder({
-        output: (chunk) => {
-          const f = new Uint8Array(chunk.byteLength); chunk.copyTo(f); frames.push(f)
-          if (frames.length === 2) {
-            const size = 3 + frames.reduce((n, x) => n + 2 + x.length, 0)
-            const p = new Uint8Array(size); const dv = new DataView(p.buffer)
-            dv.setUint16(0, aseq++ & 0xffff); p[2] = frames.length
-            let o = 3
-            for (const x of frames) { dv.setUint16(o, x.length); p.set(x, o + 2); o += 2 + x.length }
-            frames = []
-            M.call('live.frame', { kind: 'a', data: b64(p) }).catch(() => {})
-          }
-        },
-        error: () => {}
-      })
-      const RATE = 48000; const FRAME = RATE / 50
-      L.aenc.configure({ codec: 'opus', sampleRate: RATE, numberOfChannels: 1, bitrate: 64000, opus: { frameDuration: 20000 } })
-      let pending = new Float32Array(0); let ts = 0
-      micNode.port.onmessage = (e) => {
-        if (!L.aenc || L.aenc.state !== 'configured') return
-        const merged = new Float32Array(pending.length + e.data.length); merged.set(pending); merged.set(e.data, pending.length)
-        let o = 0
-        while (merged.length - o >= FRAME) { L.aenc.encode(new AudioData({ format: 'f32', sampleRate: RATE, numberOfFrames: FRAME, numberOfChannels: 1, timestamp: ts, data: merged.slice(o, o + FRAME) })); ts += 20000; o += FRAME }
-        pending = merged.slice(o)
-      }
-    } catch {}
+    }
+
+    L.start = async () => {
+      const s = await M.call('reels.status').catch(() => null)
+      if (!s || !s.ready) throw new Error("Meshron is still connecting. Try again in a moment (check the internet if it doesn't).")
+      const id = Math.random().toString(36).slice(2, 12)
+      await M.call('live.start', { id, title: title.value.trim() })
+      L.id = id // only once the live really started (ending asks first only then)
+      makeEncoder()
+      try {
+        L.aenc = new AudioEncoder({
+          output: (chunk) => {
+            const f = new Uint8Array(chunk.byteLength); chunk.copyTo(f); L.aframes.push(f)
+            if (L.aframes.length === 2) {
+              const size = 3 + L.aframes.reduce((n, x) => n + 2 + x.length, 0)
+              const p = new Uint8Array(size); const dv = new DataView(p.buffer)
+              dv.setUint16(0, L.aseq++ & 0xffff); p[2] = L.aframes.length
+              let o = 3
+              for (const x of L.aframes) { dv.setUint16(o, x.length); p.set(x, o + 2); o += 2 + x.length }
+              L.aframes = []
+              L.bytes += p.length
+              M.call('live.frame', { kind: 'a', data: b64(p) }).catch(() => {})
+            }
+          },
+          error: () => {}
+        })
+        L.aseq = 0; L.aframes = []
+        L.aenc.configure({ codec: 'opus', sampleRate: RATE, numberOfChannels: 1, bitrate: 64000, opus: { frameDuration: 20000 } })
+      } catch {}
+      el.classList.add('on-air')
+      status.hidden = false; clockEl.hidden = false; stats.hidden = false
+      goBtn.className = 'sd-end'; goBtn.replaceChildren('End live'); goBtn.disabled = false
+      goBtn.onclick = () => endLive()
+      tab = 'chat'; drawTabs()
+      const began = Date.now()
+      L.clock = setInterval(() => { const t = Math.floor((Date.now() - began) / 1000); clockEl.textContent = (t >= 3600 ? Math.floor(t / 3600) + ':' + String(Math.floor(t / 60) % 60).padStart(2, '0') : Math.floor(t / 60)) + ':' + String(t % 60).padStart(2, '0') }, 1000)
+    }
+    goBtn.onclick = async () => {
+      if (!mainVid.srcObject) return toast('Pick a source first')
+      goBtn.disabled = true
+      try { await L.start() } catch (e) { goBtn.disabled = false; oops(e) }
+    }
+
+    // Open: camera + microphone, then the lists (device names appear once allowed).
+    await Promise.all([openCam(), openMic()])
+    setMicOn(true)
+    await listDevices()
+    await loadSources()
   }
+
   async function endLive() {
     const L = hostLive
     if (!L) return
     if (L.id && !(await confirmBox('End your live?', 'Everyone watching will see that it ended.', 'End live', true))) return
+    if (hostLive !== L) return
     hostLive = null
-    clearInterval(L.timer); clearInterval(L.clock)
+    clearInterval(L.loop); clearInterval(L.clock); clearInterval(L.statTimer)
     if (L.id) M.call('live.stop', { id: L.id }).catch(() => {})
     try { L.venc && L.venc.close() } catch {}
     try { L.aenc && L.aenc.close() } catch {}
     try { L.ctx && L.ctx.close() } catch {}
-    for (const s of [L.cam, L.mic]) if (s) s.getTracks().forEach((t) => t.stop())
+    for (const s of [L.cam, L.screen, L.mic]) if (s) s.getTracks().forEach((t) => t.stop())
+    if (M.native && M.native.hideFromCapture) M.native.hideFromCapture(false)
     L.el.remove()
-    if (L.id) toast('Your live ended')
+    if (L.id) toast('Your live ended' + (L.peak ? ' · ' + L.peak + ' watched at most' : ''))
   }
   M.on('live-key', () => { if (hostLive) hostLive.forceKey = true })
-  M.on('live-viewers', (e) => { if (hostLive) hostLive.count.replaceChildren(icon('play', 12), String(e.n || 0)) })
+  M.on('live-viewers', (e) => {
+    if (!hostLive) return
+    const n = e.n || 0
+    hostLive.peak = Math.max(hostLive.peak, n)
+    hostLive.count.replaceChildren(icon('users', 14), String(n))
+  })
   M.on('live-chat', (e) => {
     if (!hostLive || e.host) return
-    hostLive.chat.appendChild(h('div', { class: 'lv-msg' }, h('b', {}, (e.name || 'Someone') + ' '), e.joined ? 'joined' : e.text))
-    while (hostLive.chat.children.length > 40) hostLive.chat.firstChild.remove()
-    hostLive.chat.scrollTop = hostLive.chat.scrollHeight
+    const chat = hostLive.chat
+    const empty = chat.querySelector('.sd-empty')
+    if (empty) empty.remove()
+    chat.appendChild(h('div', { class: 'lv-msg' + (e.joined ? ' joined' : '') }, h('b', {}, (e.name || 'Someone') + ' '), e.joined ? 'joined' : e.text))
+    while (chat.children.length > 200) chat.firstChild.remove()
+    chat.scrollTop = chat.scrollHeight
   })
 
   // ---- Call flow ----
@@ -3696,7 +3887,7 @@
   }
 
   // Shared with reels.js.
-  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, closeChat, manualRefresh }
+  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, goLive, closeChat, manualRefresh }
 
   async function start() {
     try {

@@ -131,6 +131,7 @@ ipcMain.handle('host-call', async (_e, method, args) => {
 })
 
 let awakeId = null
+let liveSource = null // { id, sound }: the screen or app picked for going live
 ipcMain.handle('desk', async (_e, what, arg) => {
   if (what === 'openPath') {
     const err = await shell.openPath(String(arg))
@@ -145,6 +146,23 @@ ipcMain.handle('desk', async (_e, what, arg) => {
     // Calls: keep the display on (and the PC awake) until the call ends.
     if (arg && awakeId == null) awakeId = powerSaveBlocker.start('prevent-display-sleep')
     else if (!arg && awakeId != null) { powerSaveBlocker.stop(awakeId); awakeId = null }
+  } else if (what === 'sources') {
+    // Going live: every screen and open app (with a small picture), except Meshron itself.
+    const { desktopCapturer } = require('electron')
+    const own = win && !win.isDestroyed() ? win.getMediaSourceId() : null
+    const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true })
+    // Leave out Meshron and system layers nobody streams (overlays, taskbars).
+    const skip = /^(Meshron|Program Manager)$|Overlay$|Taskbar$/i
+    return list.filter((s) => s.id !== own && !skip.test(s.name) && !s.thumbnail.isEmpty()).map((s) => ({
+      id: s.id, name: s.name, kind: s.id.startsWith('screen:') ? 'screen' : 'window',
+      thumb: s.thumbnail.toDataURL(), icon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.resize({ width: 32, height: 32 }).toDataURL() : null
+    }))
+  } else if (what === 'pickSource') {
+    liveSource = { id: String(arg.id || ''), sound: arg.sound !== false }
+  } else if (what === 'hideFromCapture') {
+    // While streaming a screen, Meshron's own window is left out of the picture (no endless
+    // mirror of the live inside itself). Anonymous mode always hides it.
+    if (win && !win.isDestroyed()) win.setContentProtection(anonMode || !!arg)
   } else if (what === 'notify') {
     if (!Notification.isSupported()) return
     const n = new Notification({ title: String(arg.title || 'Meshron'), body: String(arg.body || '').slice(0, 200), icon: iconPath, silent: true })
@@ -262,13 +280,15 @@ app.whenReady().then(() => {
   }
   pendingLink = linkFrom(process.argv)
   // Starting with Windows only happens when "Alerts when Meshron is closed" is on (see prefs below).
-  // Going live with the screen: share the main screen, with the PC's sound.
+  // Going live with a screen or an app: the one picked in the studio (else the main screen),
+  // with the PC's sound if asked.
   try {
     const { session, desktopCapturer } = require('electron')
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-      desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-        if (!sources.length) return callback({})
-        callback({ video: sources[0], audio: 'loopback' })
+      desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+        const pick = (liveSource && sources.find((s) => s.id === liveSource.id)) || sources.find((s) => s.id.startsWith('screen:'))
+        if (!pick) return callback({})
+        callback(liveSource && liveSource.sound === false ? { video: pick } : { video: pick, audio: 'loopback' })
       }).catch(() => callback({}))
     })
   } catch {}
