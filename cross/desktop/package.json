@@ -32,7 +32,10 @@
   },
   "devDependencies": {
     "electron": "45.3.0",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "kokoro-js": "1.2.1",
+    "kokoro-ort": "npm:@huggingface/transformers@3.5.1"
   },
   "build": {
     "appId": "com.xalvxnlab.meshron.desktop",

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' data: blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; media-src 'self' data: blob:; connect-src 'self' blob: data: https://huggingface.co https://*.huggingface.co https://*.hf.co ">
   <title>Meshron orb</title>
   <style>
     html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: none; }
@@ -32,6 +32,7 @@
   </div>
   <script src="reactor.js"></script>
   <script src="voice.js"></script>
+  <script type="module" src="kokoro.mjs"></script>
   <script src="orb.js"></script>
 </body>
 </html>

@@ -10,6 +10,11 @@ fs.cpSync(from, out, { recursive: true })
 fs.mkdirSync(path.join(out, 'vendor'), { recursive: true })
 fs.copyFileSync(path.join(__dirname, '..', 'mod', 'vendor', 'argon2.umd.min.js'), path.join(out, 'vendor', 'argon2.umd.min.js'))
 fs.copyFileSync(path.join(__dirname, '..', 'mod', 'vendor', 'hash-wasm-LICENSE'), path.join(out, 'vendor', 'hash-wasm-LICENSE'))
+// Kokoro (Apache-2.0): the self-contained web build, run in the orb window.
+fs.copyFileSync(path.join(__dirname, 'node_modules', 'kokoro-js', 'dist', 'kokoro.web.js'), path.join(out, 'vendor', 'kokoro.web.js'))
+// Its speech engine (ONNX Runtime), shipped with the app instead of fetched from a CDN at run time;
+// the exact version Kokoro's build expects (transformers 3.5.1, installed as "kokoro-ort").
+for (const f of ['ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm']) fs.copyFileSync(path.join(__dirname, 'node_modules', 'kokoro-ort', 'dist', f), path.join(out, 'vendor', f))
 
 // The icon: a dark disc, broken cyan / blue / lime rings and a bright core (GDI+, 512 px).
 const icons = path.join(out, 'icons')

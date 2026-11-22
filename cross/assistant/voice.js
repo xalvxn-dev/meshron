@@ -81,12 +81,28 @@
     queue = queue.then(async () => {
       onState && onState(true)
       const s = await A.settings()
-      if (!(s.studio && (await studio(text)))) await windowsVoice(text)
+      // Kokoro voices run on this PC (no server); the others come from the server; Windows' voice is last.
+      const local = s.studio && String(s.studioVoice || '').startsWith('kokoro:') && window.Kokoro && (await kokoro(text, s.studioVoice.slice(7)))
+      if (!local && !(s.studio && (await studio(text)))) await windowsVoice(text)
       onState && onState(false)
     })
     return queue
   }
-  function hush () { speechSynthesis.cancel(); if (current) { current.pause(); current = null } }
+  /** Kokoro: generate on this PC and play each sentence as it's ready. */
+  async function kokoro (text, voice) {
+    try {
+      await window.Kokoro.speak(text, voice, (blob) => new Promise((resolve) => {
+        if (current === null && stopped) return resolve(true)
+        const a = new Audio(URL.createObjectURL(blob))
+        current = a
+        a.onended = a.onerror = () => { URL.revokeObjectURL(a.src); resolve(stopped) }
+        a.play().catch(() => resolve(false))
+      }), (pct) => A.partial && A.mode && window.dispatchEvent(new CustomEvent('kokoro-progress', { detail: pct })))
+      return true
+    } catch (e) { console.warn('kokoro', e); return false }
+  }
+  let stopped = false
+  function hush () { stopped = true; setTimeout(() => { stopped = false }, 300); speechSynthesis.cancel(); if (current) { current.pause(); current = null } }
 
   window.Voice = { listen, say, hush }
 })()
