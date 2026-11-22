@@ -4,7 +4,13 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('meshronNative', {
-  invoke: (method, args) => ipcRenderer.invoke('host-call', method, args || {}),
+  // Electron wraps errors as "Error invoking remote method 'host-call': Error: …"; pass on only
+  // the message itself, and say timeouts from peers in plain words.
+  invoke: (method, args) => ipcRenderer.invoke('host-call', method, args || {}).catch((err) => {
+    let msg = String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': /, '').replace(/^Error: /, '')
+    if (/REQUEST_TIMEOUT|timed out/i.test(msg)) msg = "Couldn't reach anyone who has this right now. Try again in a moment."
+    throw new Error(msg)
+  }),
   onEvent: (fn) => ipcRenderer.on('host-event', (_e, ev, data) => fn(ev, data)),
   openPath: (path) => ipcRenderer.invoke('desk', 'openPath', path),
   showInFolder: (path) => ipcRenderer.invoke('desk', 'showInFolder', path),

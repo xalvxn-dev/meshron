@@ -204,8 +204,21 @@
         v.src = await videoUrl(it)
       } catch (err) {
         card.classList.remove('loading')
-        card.querySelector('.reel-err').textContent = (err && err.message) || "Couldn't load this video"
+        const msg = String((err && err.message) || '')
+        // A peer timeout means the creator (and everyone with a copy) is offline right now.
+        const offline = /REQUEST_TIMEOUT|timed out|Couldn't reach/i.test(msg)
+        card.querySelector('.reel-err').textContent = offline ? "The creator is offline. Tap to try again." : (msg || "Couldn't load this video") + ' Tap to try again.'
         card.classList.add('failed')
+        // Try again on a tap, and once by itself after a while.
+        const retry = () => {
+          clearTimeout(card._retry)
+          card.removeEventListener('click', retry)
+          card.classList.remove('failed')
+          if (card.isConnected) start(card, it)
+        }
+        card.addEventListener('click', retry)
+        clearTimeout(card._retry)
+        card._retry = setTimeout(() => { if (card.isConnected && card.classList.contains('failed')) retry() }, 30000)
         return
       }
       card.classList.remove('loading')
