@@ -1,6 +1,7 @@
 import { sendMail } from './mail.js'
 import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT, RULES_PROMPT } from './moderation.js'
 import { PANEL_HTML } from './panel.js'
+import { d1Store, migrateStep } from './store.js'
 // Meshron accounts: usernames, email codes and the locked account copy for public profiles.
 //
 // What the server knows: username, email, public key, whether 2-step is on, and a locked blob.
@@ -11,7 +12,8 @@ import { PANEL_HTML } from './panel.js'
 // With 2-step on, the blob is only handed out after a code sent to the email, so a stolen
 // password alone can't sign in on a new device.
 //
-// Storage: one KV namespace (ACCOUNTS). Secrets: BREVO_KEY (or RESEND_KEY). Vars: BREVO_SENDER / FROM (sender address).
+// Storage: the D1 database (DB), through the KV-like store in store.js; without DB (local tests)
+// the KV namespace ACCOUNTS. Secrets: BREVO_KEY (or RESEND_KEY). Vars: BREVO_SENDER / FROM (sender address).
 
 const USER = /^[a-z0-9_]{3,24}$/
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i
@@ -22,7 +24,14 @@ let lastCode = null
 const mailer = { last: null } // local tests: the last moderator email
 
 export default {
+  // Every minute until it's done: copy the old KV data into D1 (see store.js).
+  async scheduled (_event, env) {
+    if (!env.DB || !env.ACCOUNTS) return
+    try { console.log('migrate:', await migrateStep(env.DB, env.ACCOUNTS)) } catch (e) { console.log('migrate failed:', e.message) }
+  },
+
   async fetch (req, env) {
+    if (env.DB) env = { ...env, ACCOUNTS: d1Store(env.DB, env.ACCOUNTS) }
     if (req.method === 'OPTIONS') return cors(new Response(null, { status: 204 }))
     // The moderator panel (a web page; sign-in happens inside it).
     if (req.method === 'GET' && new URL(req.url).pathname === '/panel') {
@@ -36,7 +45,7 @@ export default {
     try { body = await req.json() } catch { return json({ error: 'Bad request' }, 400) }
     const ip = req.headers.get('cf-connecting-ip') || 'unknown'
     // Everyone: at most 60 calls a minute per address.
-    if (!(await limit(env, 'ip:' + ip, 60, 60))) return json({ error: 'Too many requests. Try again in a minute.' }, 429)
+    if (env.DEV_CODES !== '1' && !(await limit(env, 'ip:' + ip, 60, 60))) return json({ error: 'Too many requests. Try again in a minute.' }, 429)
     try {
       lastCode = null
       mailer.last = null

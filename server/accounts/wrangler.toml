@@ -2,6 +2,10 @@ name = "meshron-accounts"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
+# Copies the old KV data into D1, a little each minute, until done (src/store.js migrateStep).
+[triggers]
+crons = ["* * * * *"]
+
 [vars]
 # Change to your own domain's address once it's verified in Resend, e.g. "Meshron <codes@meshron.app>".
 FROM = "Meshron <onboarding@resend.dev>"
@@ -18,6 +22,13 @@ MOD_EMAIL = "xalvxn@gmail.com"
 # Usernames that are Meshron admins (can appoint moderators). Founders: reserved usernames.
 ADMINS = "alvinpieterson,clementyeboah,xalvxn"
 
+# Storage (see src/store.js). D1 free plan: 100,000 writes and 5 million reads a day.
+[[d1_databases]]
+binding = "DB"
+database_name = "meshron"
+database_id = "bf8d54fc-589d-4703-a594-076000d32195"
+
+# The old KV namespace (its data was copied to D1 on 2026-11-22). Kept for local tests and as a backup.
 [[kv_namespaces]]
 binding = "ACCOUNTS"
 # Filled in by: npx wrangler kv namespace create ACCOUNTS
@@ -34,6 +45,11 @@ AI_URL = "http://127.0.0.1:8800"
 AI_MODEL = "auto"
 MOD_EMAIL = "xalvxn@gmail.com"
 ADMINS = "alvinpieterson,clementyeboah,modtester"
+
+[[env.test.d1_databases]]
+binding = "DB"
+database_name = "meshron-test"
+database_id = "local-test"
 
 [[env.test.kv_namespaces]]
 binding = "ACCOUNTS"
