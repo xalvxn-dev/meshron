@@ -216,6 +216,22 @@ function wakePhrases () {
   return out.join(', ')
 }
 
+// Windows' speech engine can lose its microphone stream when the app's own recording (your
+// request) starts and stops, and then hears nothing more. So the listener is restarted after
+// every conversation, and whenever it goes quiet (no heartbeat for 25 s).
+let lastTick = Date.now()
+let wakeRestart = null
+function refreshWake (why) {
+  if (!settings().always) return
+  clearTimeout(wakeRestart)
+  wakeRestart = setTimeout(() => {
+    if (busy || state.mode !== 'idle') return refreshWake(why) // wait until the conversation is over
+    wakeLog('restarting the listener (' + why + ')')
+    startWake()
+  }, 600)
+}
+setInterval(() => { if (settings().always && wake && Date.now() - lastTick > 25000) { lastTick = Date.now(); refreshWake('it went quiet') } }, 10000)
+
 /** What the wake listener heard, for checking (wake.log next to the settings, and the Settings page). */
 let lastHeard = ''
 function wakeLog (text) {
@@ -244,6 +260,7 @@ while ($true) {
   try { $res = $r.Recognize([TimeSpan]::FromSeconds(10)) } catch { Start-Sleep -Milliseconds 500; continue }
   # Report everything it hears with how sure it is; the app decides (and logs it for checking).
   if ($res) { [Console]::Out.WriteLine('HEARD ' + [math]::Round($res.Confidence, 2) + ' ' + $res.Text); [Console]::Out.Flush() }
+  [Console]::Out.WriteLine('TICK'); [Console]::Out.Flush()
 }`
   wake = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true })
   wake.stdout.on('data', (b) => {
@@ -255,11 +272,13 @@ while ($true) {
         wakeLog(m[2] + ' (' + Math.round(conf * 100) + '% sure) ' + (woke ? 'woke up' : conf < 0.3 ? 'too unsure' : 'busy, ignored'))
         if (woke) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
       }
+      if (l === 'READY' || l === 'TICK') lastTick = Date.now()
       if (l === 'READY') wakeLog('listening for "' + settings().name + '"')
       if (l.startsWith('ERR')) { wakeLog('error: ' + l.slice(4)); strip('SYSTEM', '"Hey ' + settings().name + '" isn\'t available: ' + l.slice(4) + '. Use the shortcut or the orb.', true) }
     }
   })
-  wake.on('exit', () => { wake = null })
+  const proc = wake
+  proc.on('exit', () => { if (wake === proc) wake = null })
 }
 function stopWake () { if (wake) { try { wake.kill() } catch {} wake = null } }
 
@@ -312,6 +331,7 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'ask': ask(arg); return true
     case 'listen': listen(); return true
     case 'heard': { // the orb's recording, as words
+      refreshWake('after listening')
       if (!arg) { setMode('idle'); state.strip = null; broadcast(); return true }
       ask(arg); return true
     }
