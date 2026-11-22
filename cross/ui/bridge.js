@@ -72,6 +72,7 @@
         captureSources: () => n.captureSources(),
         pickSource: (id, sound) => n.pickSource(id, sound),
         hideFromCapture: (on) => n.hideFromCapture(on),
+        liveOverlay: (o) => n.liveOverlay(o),
         // Message alerts are shown by the app itself (main.js), even while the window is hidden.
         alertsInBackground: true,
         focusState: () => document.hasFocus()

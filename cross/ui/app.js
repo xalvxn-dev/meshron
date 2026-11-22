@@ -3178,8 +3178,10 @@
   // bubble) and that canvas is what viewers get, so what you see is exactly what goes out.
   let hostLive = null
   const QUALITY = { 480: [854, 480, 1_000_000], 720: [1280, 720, 2_200_000], 1080: [1920, 1080, 4_000_000] }
-  const SPOTS = ['br', 'bl', 'tl', 'tr']
-  const SPOT_NAMES = { br: 'Bottom right', bl: 'Bottom left', tl: 'Top left', tr: 'Top right' }
+  // The picture's layers, in fractions of the output so they survive a change of layout or quality:
+  // main = the camera, screen or app (a box it fits or fills); cam = the camera bubble (top-left
+  // corner, size as a share of the shorter side).
+  const freshLayout = () => ({ main: { x: 0, y: 0, w: 1, h: 1 }, cam: { x: 0.70, y: 0.60, s: 0.32 }, shape: 'circle', border: true, fit: { camera: 'fill', screen: 'fit' } })
 
   async function goLive() {
     if (hostLive) return
@@ -3188,14 +3190,18 @@
     const desk = typeof native.captureSources === 'function'
     const L = hostLive = {
       cam: null, screen: null, mic: null, mainKind: 'camera', mainId: null,
-      bubble: true, spot: 'br', orient: 'landscape', quality: 720,
+      bubble: true, lay: Object.assign(freshLayout(), (() => { try { return JSON.parse(localStorage.getItem('meshron.liveLayout') || 'null') } catch { return null } })() || {}), sel: null, overlay: true, orient: 'landscape', quality: 720,
       micId: '', camId: '', micOn: true, sound: true,
       viewers: 0, peak: 0, bytes: 0, frames: 0, id: null
     }
     const vid = () => { const v = h('video', { muted: true, playsinline: true, autoplay: true }); v.muted = true; return v }
     const mainVid = vid(); const camVid = vid()
+    // `out` is what viewers get; `stage` is what you see: the same picture plus the handles for
+    // moving and resizing (those never go out).
+    const out = document.createElement('canvas')
+    const g = out.getContext('2d')
     const stage = h('canvas', { class: 'sd-canvas' })
-    const g = stage.getContext('2d')
+    const sg = stage.getContext('2d')
     const waiting = h('div', { class: 'sd-wait' }, h('div', { class: 'spinner' }))
 
     // Top bar
@@ -3231,8 +3237,20 @@
     const camSel = h('select', { class: 'sd-select', onChange: (e) => { L.camId = e.target.value; openCam() } })
     const meter = h('div', { class: 'sd-meter' }, h('i'))
     const micBtn = h('button', { class: 'sd-round on', title: 'Microphone', onClick: () => setMicOn(!L.micOn) }, icon('mic', 20))
-    const spotBtn = h('button', { class: 'sd-pill', onClick: () => { L.spot = SPOTS[(SPOTS.indexOf(L.spot) + 1) % SPOTS.length]; spotBtn.textContent = SPOT_NAMES[L.spot] } }, SPOT_NAMES[L.spot])
-    const bubbleRow = row('Camera bubble', h('div', { class: 'sd-inline' }, spotBtn, sw(() => L.bubble, (v) => { L.bubble = v })), 'Your face over the screen or app')
+    const keepLayout = () => { try { localStorage.setItem('meshron.liveLayout', JSON.stringify(L.lay)) } catch {} }
+    const fitSeg = h('div')
+    const drawFit = () => fitSeg.replaceChildren(seg([['fit', 'Fit'], ['fill', 'Fill']], () => L.lay.fit[L.mainKind], (v) => { L.lay.fit[L.mainKind] = v; keepLayout() }))
+    drawFit()
+    const layoutBox = h('div', { class: 'sd-layout' },
+      h('div', { class: 'sd-hint' }, 'Drag on the picture to move the screen or the camera. Drag a corner, or scroll over it, to resize. Double-click to reset one.'),
+      row('Picture', fitSeg, 'Fit shows all of it; Fill covers the box'),
+      row('Camera bubble', sw(() => L.bubble, (v) => { L.bubble = v }), 'Your face over the screen or app'),
+      h('label', { class: 'st-label' }, 'Bubble shape'),
+      seg([['circle', 'Circle'], ['rounded', 'Rounded'], ['square', 'Square'], ['wide', 'Wide']], () => L.lay.shape, (v) => { L.lay.shape = v; keepLayout() }),
+      row('Bubble border', sw(() => L.lay.border, (v) => { L.lay.border = v; keepLayout() })),
+      h('button', { class: 'sd-pill sd-reset', onClick: () => { const f = freshLayout(); L.lay.main = f.main; L.lay.cam = f.cam; keepLayout() } }, 'Reset positions'))
+    const bubbleRow = layoutBox
+    const overlayRow = desk ? row('Chat over other apps', sw(() => L.overlay, (v) => { L.overlay = v; if (L.id) native.liveOverlay(v ? { on: true } : { on: false }) }), 'While live, comments float over your game or app. Viewers never see it.') : null
     const soundRow = row('PC sound', sw(() => L.sound, (v) => { L.sound = v; if (L.sysGain) L.sysGain.gain.value = v ? 1 : 0 }), 'What the screen or app plays')
     const settings = h('div', { class: 'sd-pane' },
       h('label', { class: 'st-label' }, 'Title'), title,
@@ -3243,9 +3261,17 @@
       h('label', { class: 'st-label' }, 'Microphone'),
       h('div', { class: 'sd-inline' }, micBtn, micSel), meter,
       h('label', { class: 'st-label' }, 'Camera'), camSel,
-      bubbleRow, soundRow)
+      soundRow, overlayRow,
+      h('label', { class: 'st-label' }, 'Arrange'), bubbleRow)
     const chat = h('div', { class: 'lv-chat sd-chat' }, h('div', { class: 'sd-empty' }, 'Comments from viewers show here.'))
-    const chatPane = h('div', { class: 'sd-pane sd-chatpane' }, chat)
+    const say = h('input', { class: 'st-input', placeholder: 'Say something to everyone', maxlength: 200 })
+    say.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !say.value.trim()) return
+      if (!L.id) return toast('Go live first')
+      M.call('live.chat', { host: '', text: say.value.trim() }).catch(oops)
+      say.value = ''
+    })
+    const chatPane = h('div', { class: 'sd-pane sd-chatpane' }, chat, say)
     let tab = 'settings'
     const tabs = h('div', { class: 'st-seg sd-tabs' })
     const panel = h('div', { class: 'sd-right' }, tabs, settings, chatPane)
@@ -3268,24 +3294,130 @@
       const dw = vw * k; const dh = vh * k
       g.drawImage(v, x + (w - dw) / 2, y + (hh - dh) / 2, dw, dh)
     }
+    const showBubble = () => L.mainKind === 'screen' && L.bubble && L.cam && camVid.readyState >= 2
+    // Where each layer is, in output pixels.
+    function rectOf (which) {
+      const W = out.width; const H = out.height
+      if (which === 'main') { const m = L.lay.main; return { x: m.x * W, y: m.y * H, w: m.w * W, h: m.h * H } }
+      const c = L.lay.cam; const d = c.s * Math.min(W, H)
+      return { x: c.x * W, y: c.y * H, w: L.lay.shape === 'wide' ? d * 16 / 9 : d, h: d }
+    }
+    function shapePath (ctx, r) {
+      ctx.beginPath()
+      if (L.lay.shape === 'circle') ctx.ellipse(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, r.h / 2, 0, 0, Math.PI * 2)
+      else ctx.roundRect(r.x, r.y, r.w, r.h, L.lay.shape === 'square' ? 0 : Math.min(r.w, r.h) * (L.lay.shape === 'wide' ? 0.08 : 0.2))
+    }
     function draw () {
       const [W, H] = outSize()
-      if (stage.width !== W || stage.height !== H) { stage.width = W; stage.height = H; stage.style.aspectRatio = W + ' / ' + H }
+      if (out.width !== W || out.height !== H) { out.width = W; out.height = H; stage.width = W; stage.height = H; stage.style.aspectRatio = W + ' / ' + H }
       g.fillStyle = '#000'; g.fillRect(0, 0, W, H)
       const ready = mainVid.readyState >= 2 && mainVid.videoWidth
       waiting.hidden = !!ready
-      if (!ready) return false
-      fit(mainVid, 0, 0, W, H, L.mainKind === 'camera')
-      if (L.mainKind === 'screen' && L.bubble && L.cam && camVid.readyState >= 2) {
-        const d = Math.round(Math.min(W, H) * 0.26); const m = Math.round(Math.min(W, H) * 0.04)
-        const x = L.spot[1] === 'r' ? W - d - m : m; const y = L.spot[0] === 'b' ? H - d - m : m
-        g.save(); g.beginPath(); g.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); g.clip()
-        fit(camVid, x, y, d, d, true); g.restore()
-        g.lineWidth = Math.max(3, d * 0.025); g.strokeStyle = '#fff'
-        g.beginPath(); g.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); g.stroke()
+      if (!ready) { sg.drawImage(out, 0, 0); return false }
+      const m = rectOf('main')
+      g.save(); g.beginPath(); g.rect(m.x, m.y, m.w, m.h); g.clip()
+      fit(mainVid, m.x, m.y, m.w, m.h, L.lay.fit[L.mainKind] === 'fill')
+      g.restore()
+      if (showBubble()) {
+        const r = rectOf('cam')
+        g.save(); shapePath(g, r); g.clip(); fit(camVid, r.x, r.y, r.w, r.h, true); g.restore()
+        if (L.lay.border) { g.lineWidth = Math.max(3, r.h * 0.025); g.strokeStyle = '#fff'; shapePath(g, r); g.stroke() }
+      }
+      // What you see: the picture, plus a dashed frame and corner handles on the chosen layer.
+      sg.drawImage(out, 0, 0)
+      const s = L.sel === 'cam' && !showBubble() ? null : L.sel
+      if (s) {
+        const r = rectOf(s); const k = W / stage.getBoundingClientRect().width || 1
+        sg.save(); sg.setLineDash([10 * k, 6 * k]); sg.lineWidth = 2 * k; sg.strokeStyle = '#8e9bff'; sg.strokeRect(r.x, r.y, r.w, r.h); sg.setLineDash([])
+        sg.fillStyle = '#fff'
+        for (const [cx, cy] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) { sg.fillRect(cx - 6 * k, cy - 6 * k, 12 * k, 12 * k); sg.strokeRect(cx - 6 * k, cy - 6 * k, 12 * k, 12 * k) }
+        sg.restore()
       }
       return true
     }
+
+    // ---- Moving and resizing the layers right on the picture ----
+    const toOut = (e) => { const b = stage.getBoundingClientRect(); return { x: (e.clientX - b.left) * out.width / b.width, y: (e.clientY - b.top) * out.height / b.height, k: out.width / b.width } }
+    const inside = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
+    function hit (p) {
+      for (const which of showBubble() ? ['cam', 'main'] : ['main']) {
+        const r = rectOf(which); const t = 14 * p.k
+        const corners = { tl: [r.x, r.y], tr: [r.x + r.w, r.y], bl: [r.x, r.y + r.h], br: [r.x + r.w, r.y + r.h] }
+        if (L.sel === which) for (const [c, [cx, cy]] of Object.entries(corners)) if (Math.abs(p.x - cx) <= t && Math.abs(p.y - cy) <= t) return { which, corner: c }
+        if (inside(p, r)) return { which, corner: null }
+      }
+      return null
+    }
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+    function setRect (which, r) {
+      const W = out.width; const H = out.height
+      if (which === 'main') {
+        const w = clamp(r.w, W * 0.1, W * 2); const hh = clamp(r.h, H * 0.1, H * 2)
+        L.lay.main = { x: clamp(r.x, -w * 0.9, W * 0.9) / W, y: clamp(r.y, -hh * 0.9, H * 0.9) / H, w: w / W, h: hh / H }
+      } else {
+        const side = Math.min(W, H); const d = clamp(r.h, side * 0.08, side)
+        const w = L.lay.shape === 'wide' ? d * 16 / 9 : d
+        L.lay.cam = { x: clamp(r.x, 0, W - w) / W, y: clamp(r.y, 0, H - d) / H, s: d / side }
+      }
+    }
+    let grab = null
+    stage.addEventListener('pointerdown', (e) => {
+      const p = toOut(e); const t = hit(p)
+      L.sel = t ? t.which : null
+      if (!t) return
+      grab = { ...t, p, r: rectOf(t.which) }
+      stage.setPointerCapture(e.pointerId)
+    })
+    stage.addEventListener('pointermove', (e) => {
+      const p = toOut(e)
+      if (!grab) {
+        const t = hit(p)
+        stage.style.cursor = !t ? 'default' : t.corner ? (t.corner === 'tl' || t.corner === 'br' ? 'nwse-resize' : 'nesw-resize') : 'move'
+        return
+      }
+      const dx = p.x - grab.p.x; const dy = p.y - grab.p.y; const r = { ...grab.r }
+      if (!grab.corner) { r.x += dx; r.y += dy } else if (grab.which === 'cam') {
+        // The bubble keeps its shape: resize by the larger pull, anchored on the opposite corner.
+        const sx = grab.corner[1] === 'r' ? 1 : -1; const sy = grab.corner[0] === 'b' ? 1 : -1
+        const ratio = r.w / r.h
+        const dh = Math.max(sx * dx / ratio, sy * dy)
+        r.h = grab.r.h + dh; r.w = r.h * ratio
+        if (sx < 0) r.x = grab.r.x + grab.r.w - r.w
+        if (sy < 0) r.y = grab.r.y + grab.r.h - r.h
+      } else {
+        // The screen box: free resize, or keep its shape with Shift.
+        if (grab.corner[1] === 'r') r.w += dx; else { r.x += dx; r.w -= dx }
+        if (grab.corner[0] === 'b') r.h += dy; else { r.y += dy; r.h -= dy }
+        if (e.shiftKey) { const ratio = grab.r.w / grab.r.h; r.h = r.w / ratio; if (grab.corner[0] === 't') r.y = grab.r.y + grab.r.h - r.h }
+      }
+      setRect(grab.which, r)
+    })
+    const drop = () => { if (grab) { grab = null; keepLayout() } }
+    stage.addEventListener('pointerup', drop)
+    stage.addEventListener('pointercancel', drop)
+    stage.addEventListener('wheel', (e) => {
+      const t = hit(toOut(e))
+      if (!t) return
+      e.preventDefault()
+      L.sel = t.which
+      const r = rectOf(t.which); const k = e.deltaY < 0 ? 1.06 : 1 / 1.06
+      const n = { x: r.x + r.w / 2 - r.w * k / 2, y: r.y + r.h / 2 - r.h * k / 2, w: r.w * k, h: r.h * k }
+      setRect(t.which, n); keepLayout()
+    }, { passive: false })
+    stage.addEventListener('dblclick', (e) => {
+      const t = hit(toOut(e))
+      if (!t) return
+      L.lay[t.which] = freshLayout()[t.which]; keepLayout()
+    })
+    document.addEventListener('keydown', function nudge (e) {
+      if (hostLive !== L) return document.removeEventListener('keydown', nudge)
+      if (!L.sel || /INPUT|SELECT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName)) return
+      const step = e.shiftKey ? 20 : 4; const r = rectOf(L.sel)
+      if (e.key === 'ArrowLeft') r.x -= step; else if (e.key === 'ArrowRight') r.x += step
+      else if (e.key === 'ArrowUp') r.y -= step; else if (e.key === 'ArrowDown') r.y += step
+      else if (e.key === 'Escape') { L.sel = null; return } else return
+      e.preventDefault(); setRect(L.sel, r); keepLayout()
+    })
 
     // ---- Sources ----
     function tile (key, label, pic, ic, onPick) {
@@ -3313,7 +3445,13 @@
 
     async function openCam () {
       if (L.cam) L.cam.getTracks().forEach((t) => t.stop())
-      L.cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: L.camId ? { exact: L.camId } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }).catch(() => null)
+      const want = (id) => navigator.mediaDevices.getUserMedia({ video: { deviceId: id ? { exact: id } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }).catch(() => null)
+      L.cam = await want(L.camId)
+      // That camera is busy or broken (a virtual camera whose app isn't running, say): try the others.
+      if (!L.cam) {
+        const cams = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'videoinput' && d.deviceId && d.deviceId !== L.camId)
+        for (const c of cams) { L.cam = await want(c.deviceId); if (L.cam) { L.camId = c.deviceId; if (camSel.options.length) camSel.value = c.deviceId; toast('Using ' + (c.label || 'another camera')); break } }
+      }
       camVid.srcObject = L.cam
       if (L.mainKind === 'camera') mainVid.srcObject = L.cam
       if (!L.cam) toast("Couldn't open the camera")
@@ -3345,6 +3483,7 @@
         if (!L.cam && L.bubble) openCam()
       }
       drawSources()
+      drawFit()
     }
 
     // ---- Sound: microphone + the screen's sound, mixed, Opus like calls ----
@@ -3416,7 +3555,7 @@
     let seq = 0; let encW = 0; let encH = 0; let lastKey = 0
     function makeEncoder () {
       if (L.venc) try { L.venc.close() } catch {}
-      encW = stage.width; encH = stage.height
+      encW = out.width; encH = out.height
       L.venc = new VideoEncoder({
         output: (chunk) => {
           const body = new Uint8Array(chunk.byteLength); chunk.copyTo(body)
@@ -3433,11 +3572,11 @@
       L.forceKey = true
     }
     function encodeFrame () {
-      if (stage.width !== encW || stage.height !== encH) makeEncoder()
+      if (out.width !== encW || out.height !== encH) makeEncoder()
       if (L.venc.encodeQueueSize > 4) return // the PC can't keep up: drop a frame rather than lag
       const now = Date.now()
       if (now - lastKey > 2000) L.forceKey = true
-      const frame = new VideoFrame(stage, { timestamp: now * 1000 })
+      const frame = new VideoFrame(out, { timestamp: now * 1000 })
       try { L.venc.encode(frame, { keyFrame: L.forceKey }) } catch {}
       if (L.forceKey) lastKey = now
       L.forceKey = false
@@ -3472,6 +3611,7 @@
         L.aenc.configure({ codec: 'opus', sampleRate: RATE, numberOfChannels: 1, bitrate: 64000, opus: { frameDuration: 20000 } })
       } catch {}
       el.classList.add('on-air')
+      if (desk && L.overlay) native.liveOverlay({ on: true, began: Date.now(), title: title.value.trim() })
       status.hidden = false; clockEl.hidden = false; stats.hidden = false
       goBtn.className = 'sd-end'; goBtn.replaceChildren('End live'); goBtn.disabled = false
       goBtn.onclick = () => endLive()
@@ -3505,6 +3645,7 @@
     try { L.ctx && L.ctx.close() } catch {}
     for (const s of [L.cam, L.screen, L.mic]) if (s) s.getTracks().forEach((t) => t.stop())
     if (M.native && M.native.hideFromCapture) M.native.hideFromCapture(false)
+    if (M.native && M.native.liveOverlay) M.native.liveOverlay({ on: false })
     L.el.remove()
     if (L.id) toast('Your live ended' + (L.peak ? ' · ' + L.peak + ' watched at most' : ''))
   }

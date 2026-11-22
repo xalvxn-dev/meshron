@@ -21,5 +21,9 @@ contextBridge.exposeInMainWorld('meshronNative', {
   // Going live: list screens and apps, pick one, keep Meshron's window out of the picture.
   captureSources: () => ipcRenderer.invoke('desk', 'sources'),
   pickSource: (id, sound) => ipcRenderer.invoke('desk', 'pickSource', { id, sound }),
-  hideFromCapture: (on) => ipcRenderer.invoke('desk', 'hideFromCapture', !!on)
+  hideFromCapture: (on) => ipcRenderer.invoke('desk', 'hideFromCapture', !!on),
+  // The floating live chat over other apps.
+  liveOverlay: (o) => ipcRenderer.invoke('desk', 'liveOverlay', o || {}),
+  overlayClose: () => ipcRenderer.invoke('desk', 'overlayClose'),
+  showMain: () => ipcRenderer.invoke('desk', 'showMain')
 })

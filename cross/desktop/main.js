@@ -29,6 +29,8 @@ let anonMode = false
 try { anonMode = JSON.parse(fs.readFileSync(path.join(dataDir, 'mode.json'), 'utf8')).anon === true } catch {}
 
 let win = null
+let overlay = null // the floating live chat (see openOverlay)
+let overlayInfo = null // { began, title }
 let tray = null
 let quitting = false
 let pendingLink = null
@@ -74,6 +76,8 @@ function emit(ev, data) {
     if (app.isPackaged) try { app.setLoginItemSettings({ openAtLogin: settings.background === true, args: ['--hidden'] }) } catch {}
   }
   if (ev === 'incoming') notifyMessage(data)
+  // The floating live chat gets the host's own live events (comments, hearts, viewers).
+  if (overlay && !overlay.isDestroyed() && /^live-(chat|hearts|viewers)$/.test(ev) && !(data && data.host)) overlay.webContents.send('host-event', ev, data)
   // Switched between public and anonymous: start again as the other identity.
   if (ev === 'restart') {
     setTimeout(() => {
@@ -163,6 +167,13 @@ ipcMain.handle('desk', async (_e, what, arg) => {
     // While streaming a screen, Meshron's own window is left out of the picture (no endless
     // mirror of the live inside itself). Anonymous mode always hides it.
     if (win && !win.isDestroyed()) win.setContentProtection(anonMode || !!arg)
+  } else if (what === 'liveOverlay') {
+    // While live: comments float over the game or app being streamed (never in the stream).
+    if (arg && arg.on) { overlayInfo = { ...(overlayInfo || {}), ...arg }; openOverlay() } else { overlayInfo = null; closeOverlay() }
+  } else if (what === 'overlayClose') {
+    closeOverlay()
+  } else if (what === 'showMain') {
+    showWindow()
   } else if (what === 'notify') {
     if (!Notification.isSupported()) return
     const n = new Notification({ title: String(arg.title || 'Meshron'), body: String(arg.body || '').slice(0, 200), icon: iconPath, silent: true })
@@ -230,6 +241,7 @@ function createWindow() {
     }
   })
   win.on('focus', () => win.flashFrame(false))
+  for (const e of ['focus', 'blur', 'minimize', 'restore', 'hide', 'show']) win.on(e, syncOverlay)
   win.on('close', (e) => {
     if (quitting) return
     // Closing quits Meshron (nothing left running, no battery used) unless the person turned on
@@ -238,6 +250,56 @@ function createWindow() {
     e.preventDefault()
     win.hide()
   })
+}
+
+// ---- Floating live chat ----------------------------------------------------------------
+// A small always-on-top window with the live's comments, hearts and viewers, and a reply box.
+// It shows while Meshron itself is in the background (so you can stay in your game or app),
+// hides when you come back to Meshron, and is left out of screen capture.
+
+const overlayFile = path.join(dataDir, 'overlay.json')
+
+function openOverlay() {
+  if (overlay && !overlay.isDestroyed()) { overlay.webContents.send('host-event', 'overlay-info', overlayInfo); return syncOverlay() }
+  const { screen } = require('electron')
+  const wa = screen.getPrimaryDisplay().workArea
+  let b = null
+  try { b = JSON.parse(fs.readFileSync(overlayFile, 'utf8')) } catch {}
+  const onScreen = b && screen.getAllDisplays().some((d) => b.x >= d.bounds.x - 50 && b.y >= d.bounds.y - 50 && b.x < d.bounds.x + d.bounds.width - 50 && b.y < d.bounds.y + d.bounds.height - 50)
+  overlay = new BrowserWindow({
+    width: (onScreen && b.width) || 340, height: (onScreen && b.height) || 460,
+    x: onScreen ? b.x : wa.x + wa.width - 360, y: onScreen ? b.y : wa.y + 80,
+    minWidth: 240, minHeight: 180, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    alwaysOnTop: true, skipTaskbar: true, resizable: true, show: false, title: 'Meshron live chat', icon: iconPath,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  })
+  overlay.setAlwaysOnTop(true, 'screen-saver')
+  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  overlay.setContentProtection(true) // viewers never see it
+  overlay.loadFile(path.join(bundle, 'ui', 'overlay.html'))
+  const save = () => { try { if (overlay && !overlay.isDestroyed()) fs.writeFileSync(overlayFile, JSON.stringify(overlay.getBounds())) } catch {} }
+  overlay.on('moved', save)
+  overlay.on('resized', save)
+  overlay.webContents.on('did-finish-load', () => { if (overlay) overlay.webContents.send('host-event', 'overlay-info', overlayInfo) })
+  overlay.on('closed', () => { overlay = null })
+  overlay.once('ready-to-show', syncOverlay)
+}
+
+function closeOverlay() {
+  if (overlay && !overlay.isDestroyed()) overlay.destroy()
+  overlay = null
+}
+
+/** Shown while Meshron is in the background; hidden when you're in Meshron. */
+let syncTimer = null
+function syncOverlay() {
+  clearTimeout(syncTimer)
+  // Focus moves in two steps (one window blurs, then the other focuses): look once it settles.
+  syncTimer = setTimeout(() => {
+    if (!overlay || overlay.isDestroyed()) return
+    const inMeshron = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+    if (inMeshron) { if (overlay.isVisible()) overlay.hide() } else if (!overlay.isVisible()) overlay.showInactive()
+  }, 150)
 }
 
 function showWindow() {

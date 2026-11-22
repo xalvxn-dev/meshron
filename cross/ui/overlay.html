@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Meshron live chat</title>
+  <link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+  <!-- The floating live chat (Windows): over the game or app being streamed, never in the stream. -->
+  <div id="panel">
+    <header id="bar">
+      <span class="live">LIVE</span>
+      <span id="time" class="chip">0:00</span>
+      <span id="viewers" class="chip" title="Watching now">0</span>
+      <span id="hearts" class="chip heart" title="Hearts">0</span>
+      <span class="grow"></span>
+      <input id="fade" type="range" min="25" max="100" value="85" title="See-through">
+      <button id="open" title="Open Meshron">⤢</button>
+      <button id="close" title="Hide for this live">✕</button>
+    </header>
+    <div id="list"><div class="empty">Comments show here while you're live.</div></div>
+    <div id="burst"></div>
+    <input id="say" placeholder="Reply to everyone…" maxlength="200" autocomplete="off">
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>
