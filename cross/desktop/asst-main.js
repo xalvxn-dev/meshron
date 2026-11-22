@@ -216,6 +216,14 @@ function wakePhrases () {
   return out.join(', ')
 }
 
+/** What the wake listener heard, for checking (wake.log next to the settings, and the Settings page). */
+let lastHeard = ''
+function wakeLog (text) {
+  lastHeard = new Date().toLocaleTimeString() + '  ' + text
+  try { fs.appendFileSync(path.join(app.getPath('userData'), 'wake.log'), lastHeard + '\n') } catch {}
+  if (panel && !panel.isDestroyed()) panel.webContents.send('a-event', 'heard', lastHeard)
+}
+
 function startWake () {
   stopWake()
   if (!settings().always) return
@@ -234,13 +242,21 @@ $r.LoadGrammar((New-Object System.Speech.Recognition.Grammar((New-Object System.
 [Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
 while ($true) {
   try { $res = $r.Recognize([TimeSpan]::FromSeconds(10)) } catch { Start-Sleep -Milliseconds 500; continue }
-  if ($res -and $res.Confidence -gt 0.5) { [Console]::Out.WriteLine('WAKE ' + $res.Text); [Console]::Out.Flush() }
+  # Report everything it hears with how sure it is; the app decides (and logs it for checking).
+  if ($res) { [Console]::Out.WriteLine('HEARD ' + [math]::Round($res.Confidence, 2) + ' ' + $res.Text); [Console]::Out.Flush() }
 }`
   wake = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true })
   wake.stdout.on('data', (b) => {
     for (const l of String(b).split(/\r?\n/)) {
-      if (l.startsWith('WAKE') && !busy && state.mode === 'idle') { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
-      if (l.startsWith('ERR')) strip('SYSTEM', '"Hey Meshron" isn\'t available: ' + l.slice(4) + '. Use the shortcut or the orb.', true)
+      const m = /^HEARD ([\d.]+) (.*)$/.exec(l)
+      if (m) {
+        const conf = +m[1]
+        const woke = conf >= 0.3 && !busy && state.mode === 'idle'
+        wakeLog(m[2] + ' (' + Math.round(conf * 100) + '% sure) ' + (woke ? 'woke up' : conf < 0.3 ? 'too unsure' : 'busy, ignored'))
+        if (woke) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
+      }
+      if (l === 'READY') wakeLog('listening for "' + settings().name + '"')
+      if (l.startsWith('ERR')) { wakeLog('error: ' + l.slice(4)); strip('SYSTEM', '"Hey ' + settings().name + '" isn\'t available: ' + l.slice(4) + '. Use the shortcut or the orb.', true) }
     }
   })
   wake.on('exit', () => { wake = null })
@@ -284,6 +300,7 @@ ipcMain.handle('a', async (e, what, arg) => {
   switch (what) {
     case 'state': return Object.assign({}, state, { signedIn: !!account(), user: (account() || {}).u || '' })
     case 'settings': return settings()
+    case 'lastHeard': return lastHeard
     case 'setSettings': return setSettings(arg || {})
     case 'signIn': {
       const u = String(arg.u || '').trim().replace(/^@/, '').toLowerCase(); const a = String(arg.a || '')

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('Assistant', {
   on: (fn) => ipcRenderer.on('a-event', (_e, ev, data) => fn(ev, data)),
   state: () => call('state'),
   settings: () => call('settings'),
+  lastHeard: () => call('lastHeard'),
   setSettings: (p) => call('setSettings', p),
   signIn: (u, a) => call('signIn', { u, a }),
   signOut: () => call('signOut'),

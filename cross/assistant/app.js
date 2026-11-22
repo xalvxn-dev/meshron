@@ -132,7 +132,9 @@
     f.addEventListener('change', async () => { const v = f.value.trim() || 'Meshron'; f.value = v; settings = await A.setSettings({ name: v }); document.querySelector('.appname').textContent = v })
     return f
   }
+  async function fetchHeard () { const t = await A.lastHeard(); const el = document.getElementById('heard'); if (el && t) el.textContent = t }
   async function settingsPage () {
+    setTimeout(fetchHeard, 0)
     settings = await A.settings()
     const voice = h('select', { onChange: async (e) => { settings = await A.setSettings({ studioVoice: e.target.value }) } },
       [['george', 'George · warm, British'], ['daniel', 'Daniel · newsreader, British'], ['brian', 'Brian · deep, American'], ['adam', 'Adam · American'], ['sarah', 'Sarah · soft, American'], ['charlotte', 'Charlotte · Swedish-English'], ['lily', 'Lily · British'], ['rachel', 'Rachel · calm, American']]
@@ -146,6 +148,7 @@
       h('div', { class: 'group' }, 'Talking'),
       card(0xE765, 'Shortcut', 'Starts listening from anywhere. Click and press your own combo.', hotkeyField()),
       card(0xE720, 'Listening', settings.always ? 'Say "Hey ' + (settings.name || 'Meshron') + '" any time (Windows\' offline speech engine listens for the phrase only).' : 'Press the shortcut, click the orb or the mic.', seg),
+      settings.always ? card(0xE9D9, 'Last heard', h('span', { id: 'heard' }, 'Nothing yet. Say "Hey ' + (settings.name || 'Meshron') + '" and watch here. If nothing shows, Windows is listening to another microphone: set your mic as the default in Sound settings.'), h('button', { class: 'btn', onClick: () => fetchHeard() }, 'Refresh')) : null,
       card(0xE767, 'Speak replies', 'Read answers out loud.', toggle('speak')),
       card(0xE8D6, 'Studio voice', 'A lifelike AI voice. Off: Windows\' own voice.', toggle('studio')),
       card(0xE77B, 'Studio voice', 'Who speaks.', voice),
@@ -187,6 +190,7 @@
     }
     if (ev === 'page') { page = data; draw() }
     if (ev === 'settings') { settings = data }
+    if (ev === 'heard') { const el = document.getElementById('heard'); if (el) el.textContent = data }
   })
   ;(async () => { settings = await A.settings(); st = await A.state(); document.querySelector('.appname').textContent = settings.name || 'Meshron Assistant'; draw(); renderApproval() })()
 })()
