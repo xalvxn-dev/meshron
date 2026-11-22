@@ -135,7 +135,7 @@
   async function settingsPage () {
     settings = await A.settings()
     const voice = h('select', { onChange: async (e) => { settings = await A.setSettings({ studioVoice: e.target.value }) } },
-      [['troy', 'Troy (male)'], ['daniel', 'Daniel (male)'], ['austin', 'Austin (male)'], ['autumn', 'Autumn (female)'], ['diana', 'Diana (female)'], ['hannah', 'Hannah (female)']]
+      [['george', 'George · warm, British'], ['daniel', 'Daniel · newsreader, British'], ['brian', 'Brian · deep, American'], ['adam', 'Adam · American'], ['sarah', 'Sarah · soft, American'], ['charlotte', 'Charlotte · Swedish-English'], ['lily', 'Lily · British'], ['rachel', 'Rachel · calm, American']]
         .map(([v, l]) => h('option', { value: v, selected: settings.studioVoice === v }, l)))
     const seg = h('div', { class: 'seg' }, [[false, 'Push to talk'], [true, 'Always listening']].map(([v, l]) =>
       h('button', { class: settings.always === v ? 'on' : '', onClick: async () => { settings = await A.setSettings({ always: v }); settingsPage() } }, l)))

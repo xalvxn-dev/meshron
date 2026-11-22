@@ -368,7 +368,7 @@ class MainActivity : ComponentActivity(), Host {
             if (studio) {
                 var sv by remember { mutableStateOf(Memory.studioVoice(this@MainActivity)) }
                 LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(listOf("troy" to "Troy", "daniel" to "Daniel", "austin" to "Austin", "autumn" to "Autumn", "diana" to "Diana", "hannah" to "Hannah")) { (id, label) ->
+                    items(listOf("george" to "George", "daniel" to "Daniel", "brian" to "Brian", "adam" to "Adam", "sarah" to "Sarah", "charlotte" to "Charlotte", "lily" to "Lily", "rachel" to "Rachel")) { (id, label) ->
                         Text(label, color = if (sv == id) Color(0xFF02060C) else Hud.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sv == id) Hud.cyan else Color.Transparent).border(1.dp, Hud.line, RoundedCornerShape(50))
                                 .clickable { sv = id; Memory.setStudioVoice(this@MainActivity, id); Speaker.stop(); Speaker.say(this@MainActivity, "Hi, I'm $label. This is how I'll sound.") }

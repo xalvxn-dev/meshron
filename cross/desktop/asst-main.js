@@ -22,7 +22,7 @@ const dataFile = () => path.join(app.getPath('userData'), 'assistant.json')
 let data = { settings: {}, tasks: [], reminders: [], orb: null }
 function load () { try { data = Object.assign(data, JSON.parse(fs.readFileSync(dataFile(), 'utf8'))) } catch {} }
 function save () { fs.mkdirSync(path.dirname(dataFile()), { recursive: true }); fs.writeFileSync(dataFile(), JSON.stringify(data)) }
-const DEFAULTS = { name: 'Meshron', studio: true, studioVoice: 'troy', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
+const DEFAULTS = { name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
 const settings = () => Object.assign({}, DEFAULTS, data.settings)
 function account () {
   try { return data.account ? JSON.parse(safeStorage.decryptString(Buffer.from(data.account, 'base64'))) : null } catch { return null }
@@ -229,14 +229,17 @@ try { $r.SetInputToDefaultAudioDevice() } catch { [Console]::Out.WriteLine('ERR 
 $c = New-Object System.Speech.Recognition.Choices
 $c.Add([string[]]@(${wakePhrases()}))
 $r.LoadGrammar((New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($c)))))
-$r.add_SpeechRecognized({ param($s, $e) if ($e.Result.Confidence -gt 0.4) { [Console]::Out.WriteLine('WAKE'); [Console]::Out.Flush() } })
-$r.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)
+# Listen in a plain loop: PowerShell can't run event handlers on the engine's own thread
+# (they were silently dropped), so each phrase is read here, one at a time.
 [Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
-while ($true) { Start-Sleep -Seconds 5 }`
+while ($true) {
+  try { $res = $r.Recognize([TimeSpan]::FromSeconds(10)) } catch { Start-Sleep -Milliseconds 500; continue }
+  if ($res -and $res.Confidence -gt 0.5) { [Console]::Out.WriteLine('WAKE ' + $res.Text); [Console]::Out.Flush() }
+}`
   wake = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true })
   wake.stdout.on('data', (b) => {
     for (const l of String(b).split(/\r?\n/)) {
-      if (l === 'WAKE' && !busy && state.mode === 'idle') { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
+      if (l.startsWith('WAKE') && !busy && state.mode === 'idle') { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
       if (l.startsWith('ERR')) strip('SYSTEM', '"Hey Meshron" isn\'t available: ' + l.slice(4) + '. Use the shortcut or the orb.', true)
     }
   })

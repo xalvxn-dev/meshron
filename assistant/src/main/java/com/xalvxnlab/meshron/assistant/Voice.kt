@@ -107,14 +107,15 @@ object Speaker {
     private suspend fun studio(c: Context, text: String): Boolean {
         val api = Api(c)
         if (!api.signedIn) return false
-        val clips = runCatching { api.tts(text, Memory.studioVoice(c)).getJSONArray("audio") }.getOrElse {
+        var mime = "audio/wav"
+        val clips = runCatching { api.tts(text, Memory.studioVoice(c)).also { mime = it.optString("mime", mime) }.getJSONArray("audio") }.getOrElse {
             studioOffUntil = System.currentTimeMillis() + 10 * 60_000
             return false
         }
         talking = true; tell(true)
         try {
             for (i in 0 until clips.length()) {
-                val f = java.io.File(c.cacheDir, "say$i.wav")
+                val f = java.io.File(c.cacheDir, "say$i" + if (mime.contains("mpeg")) ".mp3" else ".wav")
                 f.writeBytes(android.util.Base64.decode(clips.getString(i), android.util.Base64.DEFAULT))
                 playFile(f)
             }

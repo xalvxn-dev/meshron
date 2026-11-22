@@ -66,30 +66,46 @@
 
   let mode = 'idle'
   function tap () {
-    if (mode === 'listening') { Voice.listen.cancel && Voice.listen.cancel(); return }
-    if (mode === 'speaking') { Voice.hush(); A.mode('idle'); return }
+    if (mode === 'listening') { voiceTurn = false; Voice.listen.cancel && Voice.listen.cancel(); return }
+    if (mode === 'speaking') { voiceTurn = false; Voice.hush(); A.mode('idle'); return }
     if (mode === 'idle') A.listen()
   }
 
-  async function startListening () {
+  // Conversation: after it answers something you said, it listens again (5 s) for your reply,
+  // so you don't have to wake it for every turn. Saying nothing ends the conversation.
+  let voiceTurn = false
+  let prevMode = 'idle'
+  let speakOn = true
+  A.settings().then((s) => { speakOn = s.speak !== false })
+
+  async function startListening (followUp) {
     if (mode === 'listening') return
     Voice.hush()
     A.mode('listening')
     try {
-      const text = await Voice.listen((lv) => { reactor.level = lv })
+      const text = await Voice.listen((lv) => { reactor.level = lv }, followUp ? 5000 : 6000)
+      voiceTurn = !!text
       if (text) A.heard(text); else { A.mode('idle'); A.heard('') }
     } catch (e) {
+      voiceTurn = false
       A.mode('idle'); A.heard('')
     }
   }
+  const followUp = () => { if (voiceTurn) setTimeout(() => { if (mode === 'idle' && voiceTurn) startListening(true) }, 350) }
 
   A.on((ev, data) => {
-    if (ev === 'state') { mode = data.mode; render(data) }
+    if (ev === 'state') {
+      mode = data.mode; render(data)
+      // Replies that aren't spoken: listen again as soon as the answer is shown.
+      if (prevMode === 'thinking' && mode === 'idle' && !speakOn && !data.asking) followUp()
+      prevMode = mode
+    }
+    if (ev === 'settings') speakOn = data.speak !== false
     if (ev === 'side') setSide(data)
-    if (ev === 'listen') startListening()
-    if (ev === 'stop') Voice.listen.cancel && Voice.listen.cancel()
+    if (ev === 'listen') startListening(false)
+    if (ev === 'stop') { voiceTurn = false; Voice.listen.cancel && Voice.listen.cancel() }
     if (ev === 'chime') chime()
-    if (ev === 'say') Voice.say(data, (on) => { if (on) A.mode('speaking'); else if (mode === 'speaking') A.mode('idle') })
+    if (ev === 'say') Voice.say(data, (on) => { if (on) A.mode('speaking'); else { if (mode === 'speaking') { A.mode('idle'); mode = 'idle' } followUp() } })
   })
   A.state().then(render)
 })()

@@ -119,6 +119,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private var busy = false
     private var wakeErrors = 0
     private var wakeOnDevice = true
+    private var voiceTurn = false
     private var hideJob: Job? = null
     private val speakingHook: (Boolean) -> Unit = { on -> main.post { onSpeaking(on) } }
 
@@ -219,15 +220,15 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             when {
                 cmd == null -> main.postDelayed({ if (always && !busy) listen(wake = true) }, if (err == "busy") 1500 else 250)
                 cmd.isBlank() -> { Speaker.say(this, "Yes?"); main.postDelayed({ listen(wake = false) }, 700) }
-                else -> run(cmd)
+                else -> { voiceTurn = true; run(cmd) }
             }
             return
         }
         mode = Mode.Idle
         when {
-            !text.isNullOrBlank() -> run(text)
+            !text.isNullOrBlank() -> { voiceTurn = true; run(text) }
             err != null && err != "busy" -> show("SYSTEM", err, true)
-            else -> { strip = null; resumeWake() }
+            else -> { voiceTurn = false; strip = null; resumeWake() }
         }
     }
 
@@ -249,7 +250,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         else {
             if (mode == Mode.Speaking) mode = if (busy) Mode.Thinking else Mode.Idle
             hideSoon(4000)
-            resumeWake()
+            // Conversation: after answering something said out loud, listen again for the reply (no wake word).
+            if (voiceTurn && asking == null) main.postDelayed({ if (mode == Mode.Idle && !busy) listen(wake = false) }, 400) else resumeWake()
         }
     }
 

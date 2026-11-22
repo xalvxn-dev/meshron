@@ -7,7 +7,7 @@
   const A = window.Assistant
 
   /** Records one request. onLevel(0..1) while it listens. Resolves with the words, or '' if nothing was said. */
-  async function listen (onLevel) {
+  async function listen (onLevel, waitMs = 6000) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
     const ctx = new AudioContext()
     const an = ctx.createAnalyser(); an.fftSize = 1024
@@ -28,12 +28,12 @@
       onLevel && onLevel(level)
       const now = performance.now()
       if (level > 0.12) { spoke = true; quietSince = now }
-      // Stop after 1.2 s of quiet once you've spoken, 6 s of nothing at all, or 15 s in total.
-      if ((spoke && now - quietSince > 1200) || (!spoke && now - start > 6000) || now - start > 15000) { rec.stop(); return }
-      stopTimer = requestAnimationFrame(tick)
+      // Stop after 2 s of quiet once you've spoken (room for pauses), after waitMs if nothing was said, or 30 s in total.
+      if ((spoke && now - quietSince > 2000) || (!spoke && now - start > waitMs) || now - start > 30000) { rec.stop(); return }
+      stopTimer = setTimeout(tick, 50) // a timer, not animation frames: those pause while the orb is hidden
     }
     tick()
-    listen.cancel = () => { cancelAnimationFrame(stopTimer); spoke = false; if (rec.state === 'recording') rec.stop() }
+    listen.cancel = () => { clearTimeout(stopTimer); spoke = false; if (rec.state === 'recording') rec.stop() }
     await done
     stream.getTracks().forEach((t) => t.stop()); ctx.close()
     onLevel && onLevel(0)
@@ -67,7 +67,7 @@
     if (!r || !r.audio || !r.audio.length) return false
     for (const clip of r.audio) {
       await new Promise((resolve) => {
-        const a = new Audio('data:audio/wav;base64,' + clip)
+        const a = new Audio('data:' + (r.mime || 'audio/wav') + ';base64,' + clip)
         current = a
         a.onended = a.onerror = () => resolve()
         a.play().catch(() => resolve())
