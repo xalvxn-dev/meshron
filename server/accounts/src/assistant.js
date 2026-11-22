@@ -94,7 +94,8 @@ const WINDOWS_TOOLS = [
   fn('media', 'Control music or video playing.', { action: S('play_pause, next, previous or mute') }, ['action']),
   fn('battery_status', 'Battery level and charging (laptops).'),
   fn('lock_pc', 'Lock the PC.'),
-  fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question'])
+  fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question']),
+  fn('showcase', 'Show something visually: the orb moves to the centre of the screen and displays it around itself. Use when the person asks to see or pick voices, their storage / disk space, CPU, GPU or memory use, or the battery.', { kind: S('voices, storage, system or battery') }, ['kind'])
 ]
 
 // Run here.

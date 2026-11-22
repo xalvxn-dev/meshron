@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('Assistant', {
   mode: (m) => call('mode', m),
   partial: (t) => call('partial', t),
   approve: (ok) => call('approve', ok),
+  pickVoice: (id, name) => call('pickVoice', { id, name }),
+  stageClose: () => call('stageClose'),
   reset: () => call('reset'),
   stt: (audio, mime) => call('stt', { audio, mime }),
   tts: (text) => call('tts', text),

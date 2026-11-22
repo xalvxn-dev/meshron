@@ -8,6 +8,7 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const tools = require('./asst-tools')
+const showcase = require('./asst-show')
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0) }
 app.setAppUserModelId('com.xalvxnlab.meshron.assistant.desktop')
@@ -122,6 +123,7 @@ const toolCtx = {
   },
   tasks: () => data.tasks,
   saveTasks (t) { data.tasks = t; save() },
+  showcase: (kind) => stageShow(kind),
   async pickFile () {
     const r = await dialog.showOpenDialog(panel || undefined, { properties: ['openFile'], filters: [{ name: 'Documents and pictures', extensions: ['txt', 'md', 'csv', 'json', 'log', 'png', 'jpg', 'jpeg', 'webp'] }] })
     return r.canceled ? null : r.filePaths[0]
@@ -137,10 +139,30 @@ function arm (r) {
   }, ms)
 }
 
+/** Plays a showcase (voices, storage, system, battery) and says what it shows. */
+async function stageShow (kind) {
+  let from = null
+  if (orb && !orb.isDestroyed() && orb.isVisible()) {
+    const b = orb.getBounds(); const right = (data.orb || {}).right !== false
+    from = { x: b.x + (right ? b.width - 44 : 44), y: b.y + b.height / 2 }
+  }
+  const shown = await showcase.show(kind, from, {
+    hideOrb: () => { if (orb && !orb.isDestroyed()) orb.hide() },
+    showOrb: () => { if (orb && !orb.isDestroyed() && settings().orb) orb.showInactive() },
+    current: () => settings().studioVoice
+  })
+  return shown ? showcase.describe(kind, shown) : 'I can\'t show that.'
+}
+
 /** Commands that work at once, even offline. */
 async function local (t) {
   const s = t.toLowerCase().trim().replace(/[.!?]+$/, '')
   let m
+  // Showcases: the orb takes centre stage for these.
+  if (/\b(recommend|suggest|show|change|pick|choose)\b.*\bvoices?\b|^voices$/.test(s)) return stageShow('voices')
+  if (/\b(storage|disk space|drive space|how much space|free space|my drives?)\b/.test(s)) return stageShow('storage')
+  if (/\b(cpu|gpu|processor|graphics card|ram|memory usage|system usage|performance|how'?s my (pc|computer|laptop))\b/.test(s)) return stageShow('system')
+  if (/^(?:show |what'?s |how'?s )?(?:my |the )?battery(?: level| status)?$/.test(s)) return stageShow('battery')
   if ((m = /^(?:please )?(?:open|launch|start)(?: the)? (.+?)(?: app)?$/.exec(s))) return (await tools.run('open_app', { name: m[1] }, toolCtx)).text
   if (/^(?:show (?:the )?desktop|go home|minimi[sz]e (?:everything|all))$/.test(s)) return (await tools.run('show_desktop', {}, toolCtx)).text
   if (/^lock(?: the| my)? (?:pc|computer|screen)$/.test(s)) return (await tools.run('lock_pc', {}, toolCtx)).text
@@ -338,6 +360,12 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'mode': setMode(arg); if (arg === 'listening') strip('LISTENING', '…', false); return true
     case 'partial': strip('LISTENING', arg, false); return true
     case 'approve': if (approval) approval(!!arg); return true
+    case 'pickVoice': { // a bubble in the voices showcase
+      setSettings({ studio: true, studioVoice: String(arg.id || '') })
+      say('Hi, I\'m ' + String(arg.name || 'your new voice') + '. This is how I\'ll sound from now on.')
+      return true
+    }
+    case 'stageClose': showcase.close(true); return true
     case 'reset': messages = []; state.lines = []; broadcast(); return true
     case 'stt': return post('/v1/stt', { audio: arg.audio, mime: arg.mime, language: app.getLocale().slice(0, 2) })
     case 'tts': return post('/v1/tts', { text: arg, voice: settings().studioVoice })

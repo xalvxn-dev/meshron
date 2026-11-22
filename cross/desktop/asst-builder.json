@@ -4,7 +4,7 @@
   "copyright": "© 2026 xalvxnLab",
   "extraMetadata": { "main": "asst-main.js", "name": "meshron-assistant", "productName": "Meshron Assistant", "version": "1.0.0", "dependencies": {} },
   "directories": { "output": "dist-asst", "buildResources": "asst-bundle/icons" },
-  "files": ["asst-main.js", "asst-tools.js", "asst-preload.js", "asst-bundle/**/*", "package.json", "!node_modules/**/*"],
+  "files": ["asst-main.js", "asst-tools.js", "asst-show.js", "asst-preload.js", "asst-bundle/**/*", "package.json", "!node_modules/**/*"],
   "win": { "icon": "asst-bundle/icons/icon.png", "target": [{ "target": "nsis", "arch": ["x64"] }] },
   "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "Meshron-Assistant-Setup-${version}.${ext}", "shortcutName": "Meshron Assistant" }
 }

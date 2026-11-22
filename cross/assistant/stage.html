@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Meshron showcase</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: #E6F7FF; user-select: none; }
+    /* The whole show flies in from the orb's spot on the edge, and back out. */
+    #world { position: absolute; inset: 0; transform: translate(var(--fx), var(--fy)) scale(.18); opacity: 0; transition: transform .7s cubic-bezier(.2, .9, .25, 1), opacity .45s; }
+    #world.in { transform: none; opacity: 1; }
+    #world.out { transform: translate(var(--fx), var(--fy)) scale(.18); opacity: 0; transition: transform .55s cubic-bezier(.6, 0, .8, .4), opacity .5s .1s; }
+    #halo { position: absolute; inset: 8%; border-radius: 50%; background: radial-gradient(circle, rgba(10, 18, 32, .82) 0%, rgba(4, 6, 12, .55) 55%, rgba(4, 6, 12, 0) 72%); }
+    #fx { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #core { position: absolute; left: 50%; top: 50%; width: 30%; height: 30%; transform: translate(-50%, -50%); }
+    #title { position: absolute; left: 0; right: 0; top: 9%; text-align: center; font: 700 13px "Cascadia Mono", Consolas, monospace; letter-spacing: 5px; color: #22D3C5; }
+    #caption { position: absolute; left: 10%; right: 10%; bottom: 7%; text-align: center; font-size: 14px; color: #A9C3D6; text-shadow: 0 1px 6px #000; }
+    .bubble { position: absolute; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 50%; display: grid; place-items: center; text-align: center; cursor: pointer;
+      background: radial-gradient(circle at 35% 30%, rgba(34, 211, 197, .32), rgba(10, 18, 32, .92) 70%); border: 1px solid rgba(34, 211, 197, .45); box-shadow: 0 0 22px rgba(34, 211, 197, .25); transition: transform .2s, box-shadow .2s, border-color .2s; }
+    .bubble:hover { transform: scale(1.12); box-shadow: 0 0 34px rgba(34, 211, 197, .55); }
+    .bubble.on { border-color: #B6F36A; box-shadow: 0 0 30px rgba(182, 243, 106, .5); }
+    .bubble.kokoro { background: radial-gradient(circle at 35% 30%, rgba(110, 123, 255, .38), rgba(10, 18, 32, .92) 70%); border-color: rgba(110, 123, 255, .55); }
+    .bubble b { display: block; font-size: 15px; } .bubble span { display: block; font-size: 10.5px; color: #9FB3C8; margin-top: 2px; padding: 0 8px; }
+    #x { position: absolute; right: 13%; top: 13%; width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(34, 211, 197, .35); background: rgba(4, 6, 12, .7); color: #E6F7FF; cursor: pointer; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="world">
+    <div id="halo"></div>
+    <canvas id="fx"></canvas>
+    <canvas id="core"></canvas>
+    <div id="title"></div>
+    <div id="bubbles"></div>
+    <div id="caption"></div>
+    <button id="x" title="Close">✕</button>
+  </div>
+  <script src="reactor.js"></script>
+  <script src="stage.js"></script>
+</body>
+</html>

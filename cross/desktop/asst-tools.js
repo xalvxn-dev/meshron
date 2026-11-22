@@ -290,6 +290,7 @@ $r = $hit.Current.BoundingRectangle
       const text = (await fs.promises.readFile(f)).subarray(0, 60000).toString('utf8')
       return ok('Document "' + path.basename(f) + '":\n' + text.slice(0, 12000))
     }
+    case 'showcase': return ok(await ctx.showcase(String(x.kind || '')))
     default: return ok('Unknown tool ' + name)
   }
 }
