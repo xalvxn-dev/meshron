@@ -18,9 +18,10 @@
     mod.badgeOf(id).then((b) => {
       if (!b || (b.title !== 'founder' && b.title !== 'cofounder')) return
       const founder = b.title === 'founder'
-      box.replaceChildren(h('div', { style: { margin: '8px 24px', padding: '14px', borderRadius: '18px', border: '1.5px solid transparent', background: 'linear-gradient(var(--bg,#0b0d14),var(--bg,#0b0d14)) padding-box,' + (founder ? GOLD : SILVER) + ' border-box', textAlign: 'center' } },
-        h('span', { style: { display: 'inline-block', padding: '3px 12px', borderRadius: '99px', background: founder ? GOLD : SILVER, color: founder ? '#3D2A00' : '#1F242C', fontWeight: 900, fontSize: '12px' } }, '★ ' + (founder ? 'CEO & Founder of Meshron' : 'Co-CEO & Co-founder of Meshron')),
-        bio ? h('div', { style: { marginTop: '8px', whiteSpace: 'pre-wrap' } }, bio) : null))
+      // A small metallic chip above the bio (the full title shows on hover).
+      box.replaceChildren(h('div', { style: { textAlign: 'center', margin: '4px 24px 0' } },
+        h('span', { title: founder ? 'CEO & Founder of Meshron' : 'Co-CEO & Co-founder of Meshron', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 9px', borderRadius: '99px', background: founder ? GOLD : SILVER, color: founder ? '#3D2A00' : '#1F242C', fontWeight: 800, fontSize: '11px', letterSpacing: '.2px' } }, '★ ' + (founder ? 'Founder' : 'Co-founder')),
+        bio ? h('div', { class: 'me-bio-text', style: { marginTop: '6px', padding: '0 4px', whiteSpace: 'pre-wrap' } }, bio) : null))
     })
     return box
   }

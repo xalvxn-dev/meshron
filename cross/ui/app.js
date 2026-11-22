@@ -492,12 +492,25 @@
 
   /** Create: a video, a moment, a chat or a group (the round + button). */
   function showCreate(e) {
-    const r = e && e.currentTarget ? e.currentTarget.getBoundingClientRect() : { left: innerWidth - 40, top: innerHeight - 80 }
-    menu(r.left, r.top, [
-      st.anon ? null : { icon: 'play', label: 'Post a video', onClick: () => { setTab('reels'); setTimeout(() => window.MeshronReels.openCreate(), 50) } },
-      { icon: 'plus', label: 'Share a moment', onClick: () => openComposer() },
-      st.anon ? null : { icon: 'video', label: 'Go live', onClick: () => goLive() }
-    ].filter(Boolean))
+    const r = e && e.currentTarget ? e.currentTarget.getBoundingClientRect() : { left: innerWidth - 40, top: innerHeight - 80, right: innerWidth - 16, bottom: innerHeight - 80 }
+    const items = [
+      st.anon ? null : { icon: 'play', tint: 'var(--g1)', label: 'Post a video', sub: 'Share a clip on Reels', onClick: () => { setTab('reels'); setTimeout(() => window.MeshronReels.openCreate(), 50) } },
+      { icon: 'clock', tint: 'var(--g2)', label: 'Share a moment', sub: 'Gone after 24 hours', onClick: () => openComposer() },
+      st.anon ? null : { icon: 'video', tint: '#ff2d55', label: 'Go live', sub: 'Camera, screen or a game', onClick: () => goLive() }
+    ].filter(Boolean)
+    // A solid panel next to the + button: an icon in a tinted circle, a title and one line on what it does.
+    closeMenu()
+    const el = h('div', { class: 'create-menu', id: 'menu' }, items.map((it) => h('button', { onClick: () => { closeMenu(); it.onClick() } },
+      h('span', { class: 'cm-ic', style: { color: it.tint, background: 'color-mix(in srgb, ' + it.tint + ' 16%, transparent)' } }, icon(it.icon, 20)),
+      h('span', { class: 'cm-tx' }, h('b', {}, it.label), h('span', {}, it.sub)))))
+    layer.appendChild(h('div', { class: 'menu-catcher', id: 'menu-catcher', onMousedown: closeMenu }))
+    layer.appendChild(el)
+    const m = el.getBoundingClientRect()
+    // Open upward from a button near the bottom, downward from one near the top.
+    const up = r.top > innerHeight / 2
+    el.style.top = Math.max(8, up ? r.top - m.height - 10 : r.bottom + 10) + 'px'
+    el.style.left = Math.max(8, Math.min(r.left, innerWidth - m.width - 8)) + 'px'
+    el.style.transformOrigin = (up ? 'bottom ' : 'top ') + (r.left > innerWidth / 2 ? 'right' : 'left')
   }
 
   function setTab(id) {

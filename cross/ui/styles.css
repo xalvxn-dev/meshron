@@ -541,3 +541,13 @@ textarea.input { resize: none; }
 .sd-canvas { touch-action: none; }
 .sd-chatpane > .st-input { margin-top: 8px; flex: none; }
 .sd-row .st-seg { min-width: 130px; }
+
+/* The + menu: a solid panel, one row per thing to make. */
+.create-menu { position: fixed; z-index: 46; width: 280px; padding: 6px; border-radius: 18px; background: var(--s1); border: 1px solid var(--hair); box-shadow: 0 18px 48px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 2px; animation: menuIn .22s var(--spring, ease) both; }
+.create-menu button { display: flex; align-items: center; gap: 12px; padding: 10px; border: 0; border-radius: 12px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.create-menu button:hover { background: var(--s2); }
+.cm-ic { width: 38px; height: 38px; flex: none; border-radius: 50%; display: grid; place-items: center; }
+.cm-ic svg { fill: currentColor; }
+.cm-tx { display: flex; flex-direction: column; min-width: 0; }
+.cm-tx b { font-size: 15px; font-weight: 600; }
+.cm-tx span { font-size: 12.5px; color: var(--text2); margin-top: 1px; }
