@@ -35,10 +35,15 @@
     const st = UI.st
     const me = st.me
     const p = st.profiles.me || {}
-    const nums = h('div', { class: 'me-stats', style: { display: 'flex', justifyContent: 'center', gap: '22px', margin: '12px 0 4px' } }, stat('…', 'Following'), stat('…', 'Followers'), stat('…', 'Likes'))
+    // The last numbers show at once (no '…' flash on every refresh), then update quietly.
+    const last = head.last || { following: '…', followers: '…', likes: '…' }
+    const nums = h('div', { class: 'me-stats', style: { display: 'flex', justifyContent: 'center', gap: '22px', margin: '12px 0 4px' } }, stat(last.following, 'Following', () => people('following')), stat(last.followers, 'Followers', () => people('followers')), stat(last.likes, 'Likes'))
     Promise.all([M.call('reels.people', { kind: 'following' }).catch(() => null), M.call('reels.status').then((s) => (s.ch ? M.call('reels.profile', { ch: s.ch }) : null)).catch(() => null)]).then(([pp, pr]) => {
       const c = (pp && pp.counts) || {}
-      nums.replaceChildren(stat(fmt(c.following), 'Following', () => people('following')), stat(fmt(c.followers), 'Followers', () => people('followers')), stat(fmt(pr ? pr.likes : 0), 'Likes'))
+      const now = { following: fmt(c.following), followers: fmt(c.followers), likes: fmt(pr ? pr.likes : 0) }
+      if (JSON.stringify(now) === JSON.stringify(head.last)) return
+      head.last = now
+      nums.replaceChildren(stat(now.following, 'Following', () => people('following')), stat(now.followers, 'Followers', () => people('followers')), stat(now.likes, 'Likes'))
     })
     return h('div', { class: 'me-head', style: { display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '14px' } },
       h('div', { style: { padding: '4px', borderRadius: '50%', background: 'linear-gradient(135deg,#19D3C5,#4F7BFF,#8B5CFF)' } }, h('div', { style: { padding: '3px', borderRadius: '50%', background: 'var(--bg,#0b0d14)' } }, avatar(me.username, me.publicKey, 96))),

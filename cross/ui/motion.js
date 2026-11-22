@@ -105,6 +105,28 @@
     } else { d.el.style.transform = '' }
   }, { passive: true })
 
+  // Pull down from the top of a list to refresh (phones), like iOS.
+  let pull = null
+  document.addEventListener('touchstart', (e) => {
+    const list = e.target.closest && e.target.closest('.side-body')
+    if (!list || list.scrollTop > 0 || e.touches.length !== 1) return
+    pull = { list, y0: e.touches[0].clientY, d: 0 }
+  }, { passive: true })
+  document.addEventListener('touchmove', (e) => {
+    if (!pull) return
+    pull.d = Math.max(0, e.touches[0].clientY - pull.y0)
+    if (pull.list.scrollTop > 0) { pull.list.style.transform = ''; pull = null; return }
+    pull.list.style.transform = 'translateY(' + Math.min(70, pull.d * 0.45) + 'px)'
+  }, { passive: true })
+  document.addEventListener('touchend', () => {
+    if (!pull) return
+    const p = pull; pull = null
+    p.list.style.transition = 'transform .3s cubic-bezier(.32,.72,0,1)'
+    p.list.style.transform = ''
+    setTimeout(() => { p.list.style.transition = '' }, 320)
+    if (p.d > 120 && window.MeshronUI && window.MeshronUI.manualRefresh) window.MeshronUI.manualRefresh()
+  }, { passive: true })
+
   // Pages slide out when their back button is tapped (a short delay before they go).
   document.addEventListener('click', (e) => {
     const b = e.target.closest && e.target.closest('.page-full .phead button, .r-page .r-page-head > button:first-child')

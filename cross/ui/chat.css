@@ -219,3 +219,10 @@ html.anon {
 .pill-btn.strong { background: var(--accent-strong); color: #fff; }
 .pill-btn[disabled] { opacity: .7; }
 .bubble { border-radius: 22px; padding: 10px 14px 7px; }
+
+.tick.seen { color: #22d3c5; }
+.msg.mine .meta .tick.seen { color: #b6f36a; }
+.seen-note { font-size: 11px; font-weight: 700; text-align: right; opacity: .8; margin-top: 2px; }
+
+.day.call-note { display: inline-flex; align-items: center; gap: 4px; }
+.day.call-note.missed { color: var(--danger); }

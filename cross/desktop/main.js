@@ -68,7 +68,11 @@ function emit(ev, data) {
     unread = data.reduce((n, s) => n + s.unread, 0)
     updateTray()
   }
-  if (ev === 'prefs' && data && data.settings) settings = data.settings
+  if (ev === 'prefs' && data && data.settings) {
+    settings = data.settings
+    // Start with Windows (quietly, in the tray) only when the person allowed background alerts.
+    if (app.isPackaged) try { app.setLoginItemSettings({ openAtLogin: settings.background === true, args: ['--hidden'] }) } catch {}
+  }
   if (ev === 'incoming') notifyMessage(data)
   // Switched between public and anonymous: start again as the other identity.
   if (ev === 'restart') {
@@ -201,12 +205,11 @@ function createWindow() {
   win.on('focus', () => win.flashFrame(false))
   win.on('close', (e) => {
     if (quitting) return
+    // Closing quits Meshron (nothing left running, no battery used) unless the person turned on
+    // "Alerts when Meshron is closed" in Settings; then it stays in the tray to receive messages.
+    if (settings.background !== true) { quitting = true; return app.quit() }
     e.preventDefault()
     win.hide()
-    if (!app.__toldTray && Notification.isSupported()) {
-      app.__toldTray = true
-      new Notification({ title: 'Meshron is still running', body: 'You stay reachable from the tray. Right-click the tray icon to quit.', icon: iconPath, silent: true }).show()
-    }
   })
 }
 
@@ -249,15 +252,7 @@ app.whenReady().then(() => {
     host.call('init').then((s) => s.identity || host.call('identity.create', { name: process.env.MESHRON_TEST_NAME, handle: '' })).catch((e) => console.error(e))
   }
   pendingLink = linkFrom(process.argv)
-  // Start with Windows, quietly in the tray, so messages and alerts arrive after a restart.
-  // (Can be switched off in Task Manager → Startup apps.)
-  if (app.isPackaged) {
-    const flag = path.join(app.getPath('userData'), 'login-item-set')
-    if (!fs.existsSync(flag)) {
-      app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] })
-      try { fs.writeFileSync(flag, '1') } catch {}
-    }
-  }
+  // Starting with Windows only happens when "Alerts when Meshron is closed" is on (see prefs below).
   // Going live with the screen: share the main screen, with the PC's sound.
   try {
     const { session, desktopCapturer } = require('electron')

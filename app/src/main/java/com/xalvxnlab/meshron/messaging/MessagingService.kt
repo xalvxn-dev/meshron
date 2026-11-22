@@ -358,6 +358,13 @@ class MessagingService(
         dao.updateBody(m.peerKey, m.id, body)
     }
 
+    /** A note only this phone keeps (calls: missed, declined, how long). Never sent. */
+    suspend fun callNote(peer: String, text: String, outgoing: Boolean) {
+        val now = System.currentTimeMillis()
+        dao.insert(MessageEntity(peerKey = peer, id = "n" + newId(), outgoing = outgoing, body = text.take(200), sentAt = now, localTime = now,
+            status = MessageEntity.DELIVERED, signature = null, read = true, kind = "call"))
+    }
+
     /** Deletes my own message for everyone: their copies lose the content too. */
     suspend fun unsend(m: MessageEntity) {
         if (!m.outgoing || m.kind !in UNSENDABLE) return

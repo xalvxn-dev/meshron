@@ -457,6 +457,8 @@ fun ChatScreen(
                                 .padding(top = if (first) 8.dp else 2.dp),
                         ) {
                             if (newDay) DaySeparator(dayLabel(m.localTime))
+                            // Calls: a small centred note, like WhatsApp.
+                            if (m.kind == "call") { DaySeparator(m.body + " · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(m.localTime))); return@Column }
                             val quote = remember(m.body) { MessagingService.REPLY.find(m.body)?.groupValues?.get(1) }
                             // Who wrote the quoted message: the newest earlier message it matches.
                             val quoted = remember(quote, ordered.size) {

@@ -217,13 +217,23 @@ const routes = {
       await sendCode(env, 'login:' + u, a.email, 'Your Meshron sign-in code')
       return { needCode: true, email: hint(a.email) }
     }
-    return { blob: a.blob, publicKey: a.pk, twoFactor: false, email: hint(a.email) }
+    return { blob: a.blob, publicKey: a.pk, twoFactor: false, email: hint(a.email), birth: a.birth || '' }
+  },
+
+  /** Keeps the birthday with the account (asked once; a login on a new device brings it back). */
+  async '/v1/account/birth' ({ username, authKey, birth }, env) {
+    const { u, a } = await authed(env, username, authKey)
+    const b = String(birth || '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b) || isNaN(Date.parse(b))) throw fail('Bad date')
+    a.birth = b
+    await env.ACCOUNTS.put('u:' + u, JSON.stringify(a))
+    return { ok: true }
   },
 
   async '/v1/login/code' ({ username, authKey, code }, env) {
     const { u, a } = await authed(env, username, authKey)
     await checkCode(env, 'login:' + u, code)
-    return { blob: a.blob, publicKey: a.pk, twoFactor: true, email: hint(a.email) }
+    return { blob: a.blob, publicKey: a.pk, twoFactor: true, email: hint(a.email), birth: a.birth || '' }
   },
 
   /** A code for changing security settings (turning 2-step off, new password, deleting). */

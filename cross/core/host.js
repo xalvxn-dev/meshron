@@ -22,6 +22,7 @@ const BARE_ID = /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/
 const PENDING = 0 // saved, not yet in my log
 const SENT = 1 // appended to my log; replicates when peers are online
 const DELIVERED = 2 // 1:1 only: peer stored it and acknowledged
+const READ = 3 // 1:1 only: peer opened the chat and saw it (read receipts, like Android)
 const RECEIVED = 3 // incoming
 const GROUP = 'g:'
 // Stories, view receipts, edits, unsends and reactions are log entries but not chat bubbles.
@@ -39,7 +40,7 @@ const MAX_FILE = 25 * 1024 * 1024
 const MAX_REQUESTS = 30
 const FILE_CHUNK = 48 * 1024
 
-const DEFAULT_SETTINGS = { useInternet: true, carry: true, notifications: true, sounds: true, enterSends: true, previews: true, hideIp: false, disappearHours: 0, allowRequests: true, legalVersion: 0, noticesSeen: 0, cmFrom: 'everyone' }
+const DEFAULT_SETTINGS = { useInternet: true, carry: true, notifications: true, sounds: true, enterSends: true, previews: true, hideIp: false, disappearHours: 0, allowRequests: true, legalVersion: 0, noticesSeen: 0, cmFrom: 'everyone', background: false }
 // Anonymous mode starts with every privacy option on.
 const ANON_SETTINGS = { hideIp: true, disappearHours: 24, previews: false }
 
@@ -523,6 +524,15 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
         const rows = c.rows.filter((r) => r.outgoing && r.seq != null && r.seq < e.length && r.status < DELIVERED)
         if (!rows.length) return
         for (const r of rows) r.status = DELIVERED
+        c.file.save()
+        return changed(e.key, rows)
+      }
+      case 'read': {
+        // They saw my messages (Android and Meshron on Windows/iPhone send this).
+        const c = chat(e.key)
+        const rows = c.rows.filter((r) => r.outgoing && r.seq != null && r.seq < e.length && r.status < READ)
+        if (!rows.length) return
+        for (const r of rows) r.status = READ
         c.file.save()
         return changed(e.key, rows)
       }
@@ -1092,6 +1102,13 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     insertRow(row)
     if (net.status === 'online') appendRow(row)
     return row
+  }
+
+  /** A note in a chat that only this device keeps (calls: missed, declined, how long). Never sent. */
+  function noteRow(conv, text, outgoing) {
+    const t = now()
+    insertRow({ peerKey: conv, id: 'n' + randomHex(12), outgoing: !!outgoing, body: String(text || '').slice(0, 200), sentAt: t, localTime: t,
+      status: SENT, signature: null, read: true, seq: null, senderKey: null, kind: 'call', localPath: null, local: true })
   }
 
   /** Remembers how far a chat was read, so deleting rows doesn't make them come back. */
@@ -1670,6 +1687,7 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       if (!row || !row.localPath) throw new Error('Not downloaded yet')
       return { data: b4a.toString(fs.readFileSync(row.localPath), 'base64') }
     },
+    async 'chat.note'({ conv, text, outgoing }) { if (HEX64.test(conv)) noteRow(conv, text, outgoing) },
     async 'chat.markRead'({ conv }) {
       const c = chat(conv)
       const rows = c.rows.filter((r) => !r.outgoing && !r.read)
@@ -1677,6 +1695,11 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       for (const r of rows) r.read = true
       c.file.save()
       changed(conv, rows)
+      // Read receipt: tell them (1:1, while connected), like Android.
+      if (HEX64.test(conv) && net.status === 'online') {
+        const top = Math.max(-1, ...c.rows.filter((x) => !x.outgoing && x.seq != null).map((x) => x.seq))
+        if (top >= 0) cmd({ cmd: 'read', key: conv, length: top + 1 })
+      }
     },
     async 'chat.deleteMessage'({ conv, id }) {
       const c = chat(conv)

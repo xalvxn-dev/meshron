@@ -79,7 +79,11 @@ class AccountService(context: Context, private val identity: IdentityRepository)
      * Creates the account. With [existing] = true, the ID already on this phone gets the
      * username and password (nothing is lost); otherwise a new ID is made.
      */
+    /** Keeps the birthday with the account (so a new phone or a login doesn't ask again). */
+    suspend fun saveBirthday(date: java.time.LocalDate) { runCatching { postAsMe("/v1/account/birth", JSONObject().put("birth", date.toString())) } }
+
     suspend fun signUp(name: String, username: String, email: String, password: String, code: String, existing: Boolean = false, invite: String = "") {
+        val birthday = com.xalvxnlab.meshron.settings.Age.birthday?.toString()
         val u = username.trim().removePrefix("@").lowercase()
         val keys = withContext(Dispatchers.Default) { AccountCrypto.derive(u, password) }
         val seed = if (existing) identity.withSeed { it.copyOf() } else ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -91,8 +95,14 @@ class AccountService(context: Context, private val identity: IdentityRepository)
                     .put("authKey", keys.authHex).put("blob", AccountCrypto.lock(keys.lockKey, seed))
                     .put("publicKey", pk.hex()).put("sig", sig.hex()).apply { if (invite.isNotBlank()) put("invite", invite.trim()) },
             )
-            if (existing) identity.setHandle(u) else identity.adopt(seed.copyOf(), name, u)
-            remember(u, email.trim(), keys.authHex, false)
+            // Remember the account first, and finish even if the screen goes away: adopting the new
+            // ID switches the app to the home screen, which used to cancel this before the account
+            // was saved (so people were asked to make a second account).
+            withContext(kotlinx.coroutines.NonCancellable) {
+                remember(u, email.trim(), keys.authHex, false)
+                birthday?.let { runCatching { post("/v1/account/birth", JSONObject().put("username", u).put("authKey", keys.authHex).put("birth", it)) } }
+                if (existing) identity.setHandle(u) else identity.adopt(seed.copyOf(), name, u)
+            }
         } finally {
             seed.fill(0); keys.wipe()
         }
@@ -131,8 +141,13 @@ class AccountService(context: Context, private val identity: IdentityRepository)
         val seed = try { AccountCrypto.unlock(keys.lockKey, r.getString("blob")) } catch (e: Exception) { throw ApiError("Couldn't open the account", 0) }
         try {
             check(Ed25519.publicKeyFromSeed(seed).hex() == r.optString("publicKey")) { "Account data doesn't match" }
-            identity.adopt(seed.copyOf(), u, u)
-            remember(u, r.optString("email"), keys.authHex, r.optBoolean("twoFactor"))
+            // Same as sign-up: save the account before the app switches to the home screen.
+            withContext(kotlinx.coroutines.NonCancellable) {
+                remember(u, r.optString("email"), keys.authHex, r.optBoolean("twoFactor"))
+                // The birthday comes with the account, so it isn't asked again on a new phone.
+                r.optString("birth").takeIf { it.length == 10 }?.let { b -> runCatching { com.xalvxnlab.meshron.settings.Age.set(java.time.LocalDate.parse(b)) } }
+                identity.adopt(seed.copyOf(), r.optString("name").ifBlank { u }, u)
+            }
         } finally {
             seed.fill(0); keys.wipe()
         }

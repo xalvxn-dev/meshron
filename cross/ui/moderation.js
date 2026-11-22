@@ -110,6 +110,11 @@
       } catch {}
     }, 150)
   }
+  /** Asks again for every badge on screen (a manual refresh, or coming back to the app). */
+  function refreshBadges () {
+    asked.clear()
+    wantBadges([...new Set([...document.querySelectorAll('[data-badge]')].map((el) => el.dataset.badge).concat([...badges.keys()]))])
+  }
   /** The person's badges, when they're known (asks the server if needed). */
   function badgeOf (id) {
     if (badges.has(id)) return Promise.resolve(badges.get(id))
@@ -241,5 +246,5 @@
     })
   }
 
-  window.MeshronMod = { notices, appeal, check, guard, badgeOf, hiddenAmong, badgeEl, wantBadges, report, showNotices, unseenNotices, requestVerification, ACCOUNTS }
+  window.MeshronMod = { refreshBadges, notices, appeal, check, guard, badgeOf, hiddenAmong, badgeEl, wantBadges, report, showNotices, unseenNotices, requestVerification, ACCOUNTS }
 })()

@@ -438,3 +438,35 @@ textarea.input { resize: none; }
 @media (min-width: 821px) { #shell { grid-template-columns: 88px minmax(400px, 480px) 1fr !important; } }
 .lv-setup { position: relative; margin-top: auto; padding: 14px 14px calc(16px + var(--safe-b)); background: linear-gradient(transparent, rgba(0,0,0,.75)); }
 .lv-setup + .lv-chat { display: none; }
+
+/* Go live: the studio before the stream starts. A framed 16:9 preview with the controls beside it. */
+.live-view.studio-mode { background: #0b0c10; }
+.live-view.studio-mode .lv-head .lv-badge, .live-view.studio-mode .lv-head .lv-timer, .live-view.studio-mode .lv-head .lv-count, .live-view.studio-mode .lv-end, .live-view.studio-mode .lv-chat { display: none; }
+.live-view.studio-mode .lv-head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; }
+.studio { flex: 1; display: flex; align-items: center; justify-content: center; gap: 32px; padding: 72px 32px calc(24px + var(--safe-b)); min-height: 0; }
+.st-stage { position: relative; flex: 1 1 auto; max-width: 880px; aspect-ratio: 16 / 9; border-radius: 20px; overflow: hidden; background: #15171d; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.st-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-empty { position: absolute; inset: 0; display: grid; place-items: center; }
+.st-empty[hidden] { display: none; }
+.st-panel { width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; gap: 8px; }
+.st-h { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
+.st-sub { font-size: 14px; color: rgba(255,255,255,.6); line-height: 1.45; margin-bottom: 12px; }
+.st-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: rgba(255,255,255,.5); margin-top: 8px; }
+.st-input { background: #1b1e26; border: 1px solid transparent; color: #fff; border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 15px; outline: none; }
+.st-input:focus { border-color: rgba(255,255,255,.25); }
+.st-seg { display: flex; background: #1b1e26; border-radius: 12px; padding: 4px; gap: 4px; }
+.st-seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: transparent; color: rgba(255,255,255,.7); font: inherit; font-weight: 600; font-size: 14px; padding: 9px 0; border-radius: 9px; cursor: pointer; }
+.st-seg button.on { background: #fff; color: #000; }
+.st-go { margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 999px; background: #ff2d55; color: #fff; font: inherit; font-weight: 800; font-size: 16px; padding: 14px 0; cursor: pointer; }
+.st-go[disabled] { opacity: .5; cursor: default; }
+.st-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.lv-end { background: #ff2d55; color: #fff; border: 0; border-radius: 999px; padding: 8px 18px; font: inherit; font-weight: 800; cursor: pointer; }
+.lv-timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; background: rgba(0,0,0,.45); padding: 3px 8px; border-radius: 6px; }
+.lv-badge[hidden], .lv-timer[hidden] { display: none; }
+.live-view:not(.studio-mode) .st-close { display: none; }
+@media (max-width: 820px) {
+  .studio { flex-direction: column; justify-content: flex-start; gap: 18px; padding: calc(68px + var(--safe-t)) 16px calc(20px + var(--safe-b)); overflow-y: auto; }
+  .st-stage { width: 100%; flex: none; aspect-ratio: 3 / 4; max-height: 52vh; }
+  .st-panel { width: 100%; flex: none; }
+  .st-h { display: none; }
+}

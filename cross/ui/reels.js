@@ -302,13 +302,25 @@
     if (menu) menu(e.clientX, e.clientY, items)
   }
   /** Repost, optionally with a thought your followers see on it. */
-  function repostSheet (it) {
-    const { h, M, toast, oops, modal } = U()
-    const thought = h('textarea', { class: 'input', rows: 3, maxlength: 300, placeholder: 'Add a thought (optional)', style: { width: '100%', resize: 'none' } })
-    modal({ title: 'Repost', body: h('div', {}, h('p', { class: 'dim', style: { marginTop: 0 } }, 'Your followers will see this video in their Following feed.'), thought), buttons: [
-      { label: 'Cancel', onClick: (m) => m.close() },
-      { label: 'Repost', kind: 'primary', onClick: async (m) => { try { await M.call('reels.repost', { ch: it.ch, id: it.id, on: true, quote: thought.value.trim() }); it.reposted = true; m.close(); toast('Reposted to your followers') } catch (err) { oops(err) } } }] })
-    setTimeout(() => thought.focus(), 50)
+  // Like Instagram: one tap reposts; a small bar then offers to add a thought (optional).
+  async function repostSheet (it) {
+    const { h, M, oops, icon } = U()
+    try { await M.call('reels.repost', { ch: it.ch, id: it.id, on: true, quote: '' }) } catch (err) { oops(err); return }
+    it.reposted = true
+    const input = h('input', { placeholder: 'Add a thought…', maxlength: 300 })
+    const bar = h('div', { class: 'rp-bar' },
+      h('div', { class: 'rp-done' }, icon('check', 18), 'Reposted'),
+      h('div', { class: 'rp-row' }, input, h('button', { class: 'cm-send', title: 'Add', onClick: save }, icon('send', 18))))
+    root.appendChild(bar)
+    let timer = setTimeout(() => out(), 4500)
+    input.addEventListener('focus', () => clearTimeout(timer))
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save() })
+    function out () { bar.classList.add('out'); setTimeout(() => bar.remove(), 260) }
+    async function save () {
+      const q = input.value.trim()
+      if (!q) return out()
+      try { await M.call('reels.repost', { ch: it.ch, id: it.id, on: true, quote: q }); out() } catch (err) { oops(err) }
+    }
   }
   function dropCard (card, p) {
     const i = p.cards.indexOf(card)
@@ -404,45 +416,89 @@
 
   // ---- Comments ----------------------------------------------------------------------
 
+  /**
+   * Comments: a sheet from the bottom on phones, a panel on the right on Windows (no pop-up card).
+   * Replies sit under their comment; any comment can be replied to or reposted.
+   */
   function openComments (it, card) {
-    const { h, M, modal, oops, icon } = U()
-    const list = h('div', { class: 'r-comments' }, h('div', { class: 'spinner' }))
+    const { h, M, oops, icon, toast } = U()
+    if (openComments.current) openComments.current.close()
+    const AI = window.MeshronAI
+    let replyTo = null // { cid, name }
+    const shown = new Set() // comments whose replies are open
+    const title = h('div', { class: 'cm-title' }, fmt(it.comments) + ' comments')
+    const list = h('div', { class: 'cm-list' })
     const input = h('input', { placeholder: 'Add a comment… (@meshronai for AI)', maxlength: 300, autocomplete: 'off' })
-    const sendBtn = h('button', { class: 'icon-btn send', title: 'Post' }, icon('send', 20))
-    // The creator decides who may comment.
+    const sendBtn = h('button', { class: 'cm-send', title: 'Post' }, icon('send', 20))
+    const replyBar = h('div', { class: 'cm-replying', hidden: true })
     const cm = (it.author && it.author.cm) || 'everyone'
     const isFriend = (U().st.contacts || []).some((c) => c.keyHex === it.author.id && c.status === 'ADDED')
     const closed = it.mine ? null : cm === 'off' ? 'Comments are turned off' : cm === 'followers' && !it.author.following && !isFriend ? 'Only followers can comment. Follow to join in.' : cm === 'friends' && !isFriend ? 'Only friends can comment on this video.' : null
-    const compose = closed ? h('p', { class: 'dim r-none' }, closed) : h('div', { class: 'r-compose' }, input, sendBtn)
-    const m = modal({ title: fmt(it.comments) + ' comments', body: h('div', {}, list, compose), onClose: () => { openComments.current = null } })
+    const compose = closed ? h('p', { class: 'dim cm-closed' }, closed) : h('div', {}, replyBar, h('div', { class: 'cm-compose' }, input, sendBtn))
+    const sheet = h('div', { class: 'cm-sheet' },
+      h('div', { class: 'cm-grab' }),
+      h('div', { class: 'cm-head' }, title, h('button', { class: 'icon-btn', title: 'Close', onClick: () => close() }, icon('x', 22))),
+      list, compose)
+    const scrim = h('div', { class: 'cm-scrim', onClick: () => close() })
+    root.append(scrim, sheet)
+    function close () { sheet.classList.add('out'); scrim.classList.add('out'); setTimeout(() => { sheet.remove(); scrim.remove() }, 280); openComments.current = null }
+    function setReply (c) {
+      replyTo = c ? { cid: c.cid, name: c.name || 'Someone' } : null
+      replyBar.hidden = !replyTo
+      replyBar.replaceChildren(...(replyTo ? [h('span', {}, 'Replying to ', h('b', {}, replyTo.name)), h('button', { class: 'icon-btn', title: 'Cancel', onClick: () => setReply(null) }, icon('x', 16))] : []))
+      input.placeholder = replyTo ? 'Reply to ' + replyTo.name + '…' : 'Add a comment… (@meshronai for AI)'
+      if (replyTo) input.focus()
+    }
+    function row (c, reply) {
+      const isAi = c.by === AI.AI_ID
+      const txt = h('div', { class: 'cm-text selectable' }, isAi ? AI.clean(c.text) : c.text)
+      if (!c.mine && !isAi) AI.translateInto('c:' + it.ch + ':' + it.id + ':' + c.cid, c.text, txt)
+      return h('div', { class: 'cm-row' + (reply ? ' reply' : ''), 'data-cid': c.cid },
+        isAi ? AI.aiAvatar(reply ? 28 : 36) : c.photo ? h('div', { class: 'avatar has-photo', style: { width: (reply ? 28 : 36) + 'px', height: (reply ? 28 : 36) + 'px' } }, h('img', { src: imgSrc(c.photo), alt: '' })) : U().avatar(c.name || '?', c.by, reply ? 28 : 36),
+        h('div', { class: 'grow' },
+          h('div', { class: 'cm-name' }, isAi ? 'Meshron AI' : (c.name || 'Someone'), window.MeshronMod ? window.MeshronMod.badgeEl(c.by, 11) : null,
+            c.by === it.author.id ? h('span', { class: 'r-creator' }, 'Creator') : null, h('span', { class: 'dim' }, ' · ' + ago(c.ts) + (c.sent ? '' : ' · on its way'))),
+          txt,
+          h('div', { class: 'cm-actions' },
+            closed ? null : h('button', { onClick: () => setReply(reply ? { cid: c.re, name: c.name } : c) }, 'Reply'),
+            h('button', { onClick: () => repostComment(c) }, 'Repost'),
+            c.canDelete ? h('button', { onClick: async () => { await M.call('reels.uncomment', { ch: it.ch, cid: c.cid }).catch(oops); reload() } }, 'Delete') : null)))
+    }
+    async function repostComment (c) {
+      try { await M.call('reels.repost', { ch: it.ch, id: it.id, on: true, cid: c.cid, quote: c.text }); it.reposted = true; toast('Reposted with ' + (c.mine ? 'your' : (c.name || 'their')) + ' comment') } catch (err) { oops(err) }
+    }
     async function reload () {
       try {
         const rows = await M.call('reels.comments', { ch: it.ch, id: it.id })
         it.comments = rows.length
         if (card) setCounts(card, it)
-        m.box.querySelector('h2').textContent = rows.length === 1 ? '1 comment' : fmt(rows.length) + ' comments'
-        // My comments first (newest on top), so they're easy to find and delete.
-        const mineFirst = rows.filter((c) => c.mine).sort((a, b) => b.ts - a.ts).concat(rows.filter((c) => !c.mine))
-        const AI = window.MeshronAI
-        list.replaceChildren(...(rows.length ? mineFirst.map((c) => { const txt = h('div', { class: 'r-c-text selectable' }, c.by === AI.AI_ID ? AI.clean(c.text) : c.text); if (!c.mine && c.by !== AI.AI_ID) AI.translateInto('c:' + it.ch + ':' + it.id + ':' + c.cid, c.text, txt); return h('div', { class: 'r-comment' },
-          c.by === AI.AI_ID ? AI.aiAvatar(36) : c.photo ? h('div', { class: 'avatar has-photo', style: { width: '36px', height: '36px' } }, h('img', { src: imgSrc(c.photo), alt: '' })) : U().avatar(c.name || '?', c.by, 36),
-          h('div', { class: 'grow' },
-            h('div', { class: 'r-c-name' }, c.by === AI.AI_ID ? 'Meshron AI' : (c.name || 'Someone'), window.MeshronMod ? window.MeshronMod.badgeEl(c.by, 11) : null, c.by === it.author.id ? h('span', { class: 'r-creator' }, 'Creator') : null, h('span', { class: 'dim' }, ' · ' + (c.sent ? ago(c.ts) : 'sending…'))),
-            txt),
-          c.canDelete ? h('button', { class: 'icon-btn', title: 'Delete', onClick: async () => { await M.call('reels.uncomment', { ch: it.ch, cid: c.cid }).catch(oops); reload() } }, icon('trash', 16)) : null) })
-          : [h('p', { class: 'dim r-none' }, 'No comments yet. Say something nice.')]))
-      } catch (err) { list.replaceChildren(h('p', { class: 'dim r-none' }, err.message)) }
+        title.textContent = rows.length === 1 ? '1 comment' : fmt(rows.length) + ' comments'
+        const tops = rows.filter((c) => !c.re || !rows.some((p) => p.cid === c.re))
+        const kids = rows.filter((c) => c.re && rows.some((p) => p.cid === c.re))
+        const ordered = tops.filter((c) => c.mine).sort((x, y) => y.ts - x.ts).concat(tops.filter((c) => !c.mine))
+        const els = []
+        for (const c of ordered) {
+          els.push(row(c, false))
+          const replies = kids.filter((k) => k.re === c.cid).sort((x, y) => x.ts - y.ts)
+          if (!replies.length) continue
+          if (shown.has(c.cid) || replies.length <= 1) els.push(...replies.map((r) => row(r, true)))
+          else els.push(h('button', { class: 'cm-more', onClick: () => { shown.add(c.cid); reload() } }, '— View ' + replies.length + ' replies'))
+        }
+        patchKids(list, els.length ? els : [h('p', { class: 'dim cm-empty' }, 'No comments yet. Say something nice.')])
+      } catch (err) { list.replaceChildren(h('p', { class: 'dim cm-empty' }, err.message)) }
     }
     async function post () {
       const text = input.value.trim()
       if (!text) return
       input.value = ''
+      const re = replyTo ? replyTo.cid : null
+      if (re) shown.add(re)
+      setReply(null)
       try {
-        const cid = await M.call('reels.comment', { ch: it.ch, id: it.id, text }); await reload(); list.scrollTop = 0
-        // Tagged @meshronai: Meshron AI answers under the comment, as its own account.
-        if (cid && window.MeshronAI.tagged(text)) {
+        const cid = await M.call('reels.comment', { ch: it.ch, id: it.id, text, re }); await reload()
+        if (cid && AI.tagged(text)) {
           const rows = await M.call('reels.comments', { ch: it.ch, id: it.id }).catch(() => [])
-          const a = await window.MeshronAI.ask(it.ch + ':' + it.id, cid, text, it.cap, (it.author && (it.author.handle ? '@' + it.author.handle : it.author.name)) || '', rows.slice(-10).map((c) => (c.name || 'Someone') + ': ' + c.text))
+          const a = await AI.ask(it.ch + ':' + it.id, cid, text, it.cap, (it.author && (it.author.handle ? '@' + it.author.handle : it.author.name)) || '', rows.slice(-10).map((c) => (c.name || 'Someone') + ': ' + c.text))
           await M.call('reels.aiComment', { ch: it.ch, id: it.id, text: a.text, re: a.re, sig: a.sig })
           await reload()
         }
@@ -450,8 +506,15 @@
     }
     sendBtn.onclick = post
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') post() })
-    openComments.current = { it, reload }
+    openComments.current = { it, reload, close }
+    list.replaceChildren(h('div', { class: 'spinner', style: { margin: '30px auto' } }))
     reload()
+  }
+  /** Updates a list in place: unchanged items stay put (no flicker), only changes are swapped. */
+  function patchKids (parent, kids) {
+    const old = [...parent.childNodes]
+    kids.forEach((n, i) => { const o = old[i]; if (o && o.isEqualNode(n)) return; if (o) parent.replaceChild(n, o); else parent.appendChild(n) })
+    for (let i = kids.length; i < old.length; i++) old[i].remove()
   }
 
   // ---- Profiles, sounds, search (pages over the feed) ---------------------------------

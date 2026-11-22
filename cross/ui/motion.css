@@ -89,3 +89,7 @@ button:active:not([disabled]), .story:active, .chip:active, .tile-v:active, .not
 /* Pop-ups always above full-screen views (lives, pages), so their buttons can be pressed. */
 #layer { z-index: 45; }
 #toasts { z-index: 50; }
+
+/* Refresh: a small spinner at the top, only when you ask for it. */
+.refresh-bar { position: fixed; top: calc(12px + var(--safe-t)); left: 50%; transform: translateX(-50%); z-index: 60; width: 40px; height: 40px; border-radius: 50%; background: rgba(30,34,45,.9); display: grid; place-items: center; animation: toastIn .3s var(--spring) both; }
+.refresh-bar.out { opacity: 0; transition: opacity .25s; }

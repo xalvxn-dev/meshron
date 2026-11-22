@@ -119,6 +119,8 @@ class MeshronApp : Application() {
             override fun onActivityStarted(activity: Activity) {
                 started++
                 inForeground = true
+                // Coming back to the app: fresh badges (newly verified people show without a reinstall).
+                if (started == 1) appScope.launch { runCatching { moderation.refreshBadges() } }
                 // App lock: back after more than a minute away locks again.
                 if (started == 1 && leftAt > 0 && System.currentTimeMillis() - leftAt > 60_000) locked.value = true
                 notifier.clearMessages()

@@ -181,3 +181,45 @@
 @keyframes lvfloat { to { transform: translateY(-260px) scale(1.4); opacity: 0; } }
 
 .r-page .reels-empty { position: static; min-height: 60vh; }
+
+/* ---- Comments: a sheet (phones) / a right-side panel (Windows), not a pop-up card ---- */
+.cm-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); animation: fade .25s both; }
+.cm-sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 72%; z-index: 21; display: flex; flex-direction: column; background: var(--bg); border-radius: 22px 22px 0 0; animation: cmUp .42s cubic-bezier(.32,.72,0,1) both; padding-bottom: var(--safe-b); }
+.cm-sheet.out { animation: cmDown .28s cubic-bezier(.32,.72,0,1) both; }
+.cm-scrim.out { opacity: 0; transition: opacity .28s; }
+@keyframes cmUp { from { transform: translateY(100%); } }
+@keyframes cmDown { to { transform: translateY(100%); } }
+.cm-grab { width: 38px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 8px auto 0; }
+.cm-head { display: flex; align-items: center; justify-content: center; position: relative; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+.cm-head .icon-btn { position: absolute; right: 8px; }
+.cm-title { font-weight: 800; font-size: 15px; }
+.cm-list { flex: 1; overflow-y: auto; padding: 8px 0; overscroll-behavior: contain; }
+.cm-row { display: flex; gap: 10px; padding: 10px 16px; }
+.cm-row.reply { padding-left: 62px; padding-top: 4px; }
+.cm-row .grow { flex: 1; min-width: 0; }
+.cm-name { font-size: 13px; font-weight: 700; color: var(--text2); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cm-text { font-size: 15px; margin-top: 2px; overflow-wrap: anywhere; }
+.cm-actions { display: flex; gap: 16px; margin-top: 6px; }
+.cm-actions button { color: var(--text3); font-size: 13px; font-weight: 700; }
+.cm-actions button:hover { color: var(--text); }
+.cm-more { margin: 0 0 6px 62px; color: var(--text3); font-size: 13px; font-weight: 700; }
+.cm-empty, .cm-closed { text-align: center; padding: 30px 20px; }
+.cm-replying { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; color: var(--text2); font-size: 13px; background: var(--s1); }
+.cm-compose { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--hair); }
+.cm-compose input { flex: 1; height: 44px; border-radius: 22px; border: 0; background: var(--s2); color: var(--text); padding: 0 16px; outline: none; -webkit-user-select: text; user-select: text; }
+.cm-send { width: 44px; height: 44px; border-radius: 50%; background: var(--grad); color: #fff; display: grid; place-items: center; flex: none; }
+@media (min-width: 821px) {
+  .cm-scrim { background: transparent; }
+  .cm-sheet { left: auto; top: 0; height: auto; width: 420px; border-radius: 0; border-left: 1px solid var(--hair); animation-name: cmIn; }
+  .cm-sheet.out { animation-name: cmOut; }
+  .cm-grab { display: none; }
+  @keyframes cmIn { from { transform: translateX(100%); } }
+  @keyframes cmOut { to { transform: translateX(100%); } }
+}
+/* Repost: a small bar at the bottom (no pop-up), like Instagram. */
+.rp-bar { position: absolute; left: 12px; right: 12px; bottom: calc(96px + var(--safe-b)); z-index: 22; background: rgba(30,34,45,.92); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border-radius: 20px; padding: 10px 12px; display: grid; gap: 8px; animation: cmUp .38s cubic-bezier(.32,.72,0,1) both; max-width: 520px; margin: 0 auto; }
+.rp-bar.out { animation: cmDown .26s cubic-bezier(.32,.72,0,1) both; }
+.rp-done { display: flex; align-items: center; gap: 6px; font-weight: 800; color: var(--online); }
+.rp-row { display: flex; gap: 8px; }
+.rp-row input { flex: 1; height: 42px; border-radius: 21px; border: 0; background: var(--s2); color: var(--text); padding: 0 14px; outline: none; -webkit-user-select: text; user-select: text; }
+@media (min-width: 821px) { .rp-bar { bottom: 24px; } }

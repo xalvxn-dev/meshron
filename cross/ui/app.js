@@ -8,7 +8,7 @@
   const DOWNLOAD_URL = 'https://github.com/xalvxn-dev/meshron/releases/latest'
   const PRIVACY_URL = 'https://xalvxn-dev.github.io/meshron/PRIVACY'
   const GROUP = 'g:'
-  const PENDING = 0, SENT = 1, DELIVERED = 2
+  const PENDING = 0, SENT = 1, DELIVERED = 2, READ = 3
   const PAGE = 120
 
   // ---- Tiny DOM helpers ----------------------------------------------------------
@@ -107,7 +107,7 @@
     svg.setAttribute('height', size)
     if (name === 'logo') {
       // The Meshron "M": one stroke, blue -> teal -> lime (Brand.kt MeshronLogo).
-      const id = 'mg' + Math.random().toString(36).slice(2, 8)
+      const id = 'meshron-mark' // same every time, so redrawn logos are identical (no flicker)
       svg.setAttribute('viewBox', '0 0 100 100')
       svg.innerHTML = '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6E7BFF"/><stop offset=".5" stop-color="#22D3C5"/><stop offset="1" stop-color="#B6F36A"/></linearGradient></defs>' +
         '<path d="M8 86 L22 16 L50 62 L78 16 L92 86" fill="none" stroke="url(#' + id + ')" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>'
@@ -436,7 +436,7 @@
 
   function renderRail() {
     const [label, cls] = netLabel()
-    $('#rail').replaceChildren(
+    patchKids($('#rail'), [
       h('div', { class: 'logo' }, icon('logo', 24)),
       ...TABS.map(([id, text, ic]) => {
         const n = id === 'chats' ? unreadTotal() : id === 'contacts' ? requestCount() : 0
@@ -444,7 +444,7 @@
           icon(ic, 24), h('span', { class: 'label' }, text), n && st.tab !== id ? h('span', { class: 'badge' }, n > 99 ? '99+' : n) : null)
       }),
       h('div', { class: 'rail-spacer' }),
-      h('button', { class: 'rail-btn rail-net', title: label, onClick: showConnection }, h('span', { class: 'net-dot ' + cls }), h('span', { class: 'label' }, label)))
+      h('button', { class: 'rail-btn rail-net', title: label, onClick: showConnection }, h('span', { class: 'net-dot ' + cls }), h('span', { class: 'label' }, label))])
     // The round create button next to the tabs (phones).
     if (!$('#create-btn')) $('#shell').appendChild(h('button', { id: 'create-btn', title: 'Create', onClick: (e) => showCreate(e) }, h('span', {}, h('span', {}, icon('plus', 30)))))
     const pill = $('#status-pill')
@@ -453,6 +453,31 @@
     document.title = (total ? `(${total}) ` : '') + 'Meshron'
     if (M.native.badge) try { M.native.badge(total) } catch {}
   }
+
+  /** Refresh on purpose (Ctrl+R on Windows, pull down on phones): fresh lists, badges and videos. */
+  let refreshing = false
+  async function manualRefresh() {
+    if (refreshing) return
+    refreshing = true
+    const bar = h('div', { class: 'refresh-bar' }, h('div', { class: 'spinner' }))
+    document.body.appendChild(bar)
+    try {
+      const init = await M.call('init')
+      Object.assign(st, { contacts: init.contacts, groups: init.groups, summaries: init.summaries, stories: init.stories || st.stories, profiles: init.profiles || st.profiles, prefs: init.prefs })
+      st.activeAt = 0; st.noticeCache = null; st.meCache = {}
+      if (window.MeshronMod && window.MeshronMod.refreshBadges) window.MeshronMod.refreshBadges()
+      if (st.tab === 'reels' && window.MeshronReels) { window.MeshronReels.hide(); window.MeshronReels.show() } else renderSide()
+      renderRail()
+    } catch {}
+    setTimeout(() => { bar.classList.add('out'); setTimeout(() => bar.remove(), 250) }, 400)
+    refreshing = false
+  }
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); manualRefresh() }
+    if (e.key === 'F5') { e.preventDefault(); manualRefresh() }
+  })
+  // Coming back to the app: badges (newly verified people) refresh quietly.
+  window.addEventListener('focus', () => { if (window.MeshronMod && window.MeshronMod.refreshBadges) window.MeshronMod.refreshBadges() })
 
   /** Create: a video, a moment, a chat or a group (the round + button). */
   function showCreate(e) {
@@ -541,6 +566,7 @@
   function tickIcon(status, size = 16) {
     if (status === PENDING) return h('span', { class: 'tick', title: 'Waiting' }, icon('clock', size - 2))
     if (status === SENT) return h('span', { class: 'tick', title: 'Sent' }, icon('check', size))
+    if (status === READ) return h('span', { class: 'tick seen', title: 'Seen' }, icon('checks', size))
     return h('span', { class: 'tick done', title: 'Delivered' }, icon('checks', size))
   }
 
@@ -641,7 +667,15 @@
     if (q && !rows.length && !st.hits.length) {
       kids.push(h('div', { class: 'empty' }, h('div', { class: 'orb' }, icon('search', 34)), h('div', { class: 't-h2' }, 'No match'), h('p', {}, `Nothing found for “${st.query.trim()}”.`)))
     }
-    body.replaceChildren(...kids.flat(Infinity).filter(Boolean))
+    patchKids(body, kids.flat(Infinity).filter(Boolean))
+  }
+
+  /** Updates a list in place: unchanged rows stay exactly as they are (no flicker on refresh). */
+  function patchKids(parent, kids) {
+    kids = kids.map((k) => (k && k.nodeType ? k : document.createTextNode(String(k))))
+    const old = [...parent.childNodes]
+    kids.forEach((n, i) => { const o = old[i]; if (o && o.isEqualNode(n)) return; if (o) parent.replaceChild(n, o); else parent.appendChild(n) })
+    for (let i = kids.length; i < old.length; i++) old[i].remove()
   }
 
   // ---- Contacts ------------------------------------------------------------------
@@ -705,10 +739,10 @@
       const box = h('div', {})
       kids.push(box)
       st.hiddenActive = st.hiddenActive || new Set()
-      M.call('reels.active', { limit: 40 }).then((users) => {
+      const paintActive = (users) => {
         const known = new Set(st.contacts.map((c) => c.keyHex))
         const people = (users || []).filter((u) => /^[0-9a-f]{64}$/.test(u.id || '') && !known.has(u.id) && !st.hiddenActive.has(u.id)).slice(0, 20)
-        if (!people.length || !box.isConnected) return
+        if (!people.length) return
         box.replaceChildren(h('div', { class: 'section big' }, 'Active on Meshron'), ...people.map((u) => {
           const name = u.name || (u.handle ? '@' + u.handle : 'Someone')
           return h('div', { class: 'row', onClick: () => window.MeshronReels && window.MeshronReels.openProfile(u.ch) },
@@ -718,7 +752,17 @@
             h('button', { class: 'btn light small', onClick: async (e) => { e.stopPropagation(); await M.call('contacts.add', { key: u.id, name }).catch(oops); st.hiddenActive.add(u.id); toast('Added ' + name) } }, 'Add'),
             h('button', { class: 'btn dark small', onClick: (e) => { e.stopPropagation(); st.hiddenActive.add(u.id); e.currentTarget.closest('.row').remove() } }, 'Remove'))
         }))
-      }).catch(() => {})
+      }
+      // Draw what we had (same as last time, so nothing jumps), then refresh quietly now and then.
+      if (st.activeCache) paintActive(st.activeCache)
+      if (!st.activeAt || Date.now() - st.activeAt > 60000) {
+        st.activeAt = Date.now()
+        M.call('reels.active', { limit: 40 }).then((users) => {
+          const changed = JSON.stringify(users) !== JSON.stringify(st.activeCache)
+          st.activeCache = users
+          if (changed) renderSide()
+        }).catch(() => {})
+      }
     }
     if (requests.length && show('requests')) {
       kids.push(h('div', { class: 'section big' }, 'Chat requests'))
@@ -762,7 +806,7 @@
           h('button', { class: 'btn ghost small', onClick: () => M.call('contacts.unblock', { key: c.keyHex }) }, 'Unblock')))
       }
     }
-    body.replaceChildren(...kids)
+    patchKids(body, kids.flat(Infinity).filter(Boolean))
   }
 
   // ---- Add contact, new chat, new group ------------------------------------------------
@@ -903,7 +947,7 @@
     st.meTab = st.meTab || 'user'
     const grid = h('div', { class: 'me-grid' })
     const tabs = h('div', { class: 'me-tabs' }, ...kinds.map(([id, ic, label]) => h('button', { class: st.meTab === id ? 'on' : '', title: label, onClick: () => { st.meTab = id; renderSide() } }, icon(ic, 24))))
-    body.replaceChildren(window.MeshronProfile.head(), kinds.length ? tabs : null, grid)
+    patchKids(body, [window.MeshronProfile.head(), kinds.length ? tabs : null, grid].filter(Boolean))
     if (!kinds.length) return
     st.meCache = st.meCache || {}
     const tile = (it) => h('div', { class: 'tile-v', onClick: () => { setTab('reels'); setTimeout(() => window.MeshronReels.openReel(it.ch, it.id), 60) } },
@@ -983,7 +1027,13 @@
       h('p', { class: 'footnote' }, 'Messages are end-to-end encrypted on every route. Phones nearby can also connect over Wi-Fi or Bluetooth in the Android app.'),
       h('div', { class: 'section' }, 'Notifications'),
       h('div', { class: 'group' },
-        setRow('bell', '#C94F72', 'Message alerts', { sub: isIos ? 'While Meshron is open' : 'When Meshron is in the background', checked: !!s.notifications, onClick: toggle('notifications') }),
+        setRow('bell', '#C94F72', 'Message alerts', { sub: isIos ? 'While Meshron is open' : 'While Meshron is open or minimised', checked: !!s.notifications, onClick: toggle('notifications') }),
+        // Messages travel device to device, so alerts after closing need Meshron to stay connected.
+        // Off by default (closing quits, no battery used); the person allows it here.
+        isIos ? null : setRow('bellOff', '#3D7BE0', 'Alerts when Meshron is closed', { sub: s.background ? 'On: Meshron stays in the tray and starts with Windows' : 'Off: closing Meshron quits it completely', checked: !!s.background, onClick: async () => {
+          if (!s.background && !(await confirmBox('Allow alerts when Meshron is closed?', 'Meshron sends messages straight between devices, so to tell you about new messages it keeps a small connection running in the tray and starts with Windows. This uses a little battery. You can turn it off here any time.', 'Allow'))) return
+          toggle('background')()
+        } }),
         setRow('volume', '#7A5CC2', 'Sounds', { checked: !!s.sounds, onClick: toggle('sounds') }),
         isIos ? null : setRow('enter', '#239C8E', 'Enter sends', { sub: 'Shift+Enter makes a new line', checked: s.enterSends !== false, onClick: toggle('enterSends') })),
       h('div', { class: 'section' }, 'Legal'),
@@ -1402,7 +1452,8 @@
   function buildChat() {
     const conv = st.open
     const av = h('div', {})
-    const who = h('div', { class: 'who', onClick: () => (isGroup(conv) ? showGroupInfo(conv) : showPerson(conv)) })
+    // Windows has the details panel on the right, so the header opens that (no pop-up card).
+    const who = h('div', { class: 'who', onClick: () => (window.innerWidth > 820 ? (!$('#details') && toggleDetails()) : isGroup(conv) ? showGroupInfo(conv) : showPerson(conv)) })
     const msgs = h('div', { class: 'msgs', id: 'msgs' })
     const toBottom = h('button', { class: 'to-bottom hide', onClick: () => scrollBottom(true) }, icon('down', 22))
     const input = h('textarea', { rows: 1, placeholder: 'Message', maxlength: st.limits.MAX_BODY })
@@ -2001,6 +2052,8 @@
       }
     }
     kids.push(h('div', { class: 'meta' }, row.edited && row.kind === 'text' ? h('span', { class: 'edited' }, 'edited ·') : null, clock(row.sentAt), row.outgoing && row.kind !== 'deleted' ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
+    // 'Seen' under my last message they've read (like Instagram / WhatsApp).
+    if (row.outgoing && row.status === READ && !groupChat) { const lastMine = [...(st.rows || [])].reverse().find((x) => x.outgoing && x.kind !== 'deleted'); if (lastMine && lastMine.id === row.id) kids.push(h('div', { class: 'seen-note' }, 'Seen')) }
     const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos-msg' : '') }, kids)
     onContext(b, (x, y) => messageMenu(row, x, y))
     if (row.kind === 'deleted') return b
@@ -2052,6 +2105,8 @@
       const last = !newer || !sameGroup(m, newer) || startOfDay(newer.localTime) !== startOfDay(m.localTime)
       const isNew = !st.seen.has(m.id)
       st.seen.add(m.id)
+      // Calls: a small centred note, like WhatsApp.
+      if (m.kind === 'call') { kids.push(h('div', { class: 'day call-note' + (/Missed/.test(m.body) ? ' missed' : '') }, icon(/Video/.test(m.body) ? 'video' : 'phone', 14), ' ', m.body, ' · ', clock(m.localTime))); return }
       const el = h('div', { class: 'msg' + (m.outgoing ? ' mine' : '') + (first ? ' first' : '') + (last ? ' last' : '') + (isNew ? ' new' : '') + (st.flash === m.id ? ' flash' : '') + (m.reactions && Object.keys(m.reactions).length && m.kind !== 'deleted' ? ' has-reacts' : '') },
         m.kind === 'deleted' ? null : h('div', { class: 'swipe-hint' }, icon('reply', 16)),
         h('div', { class: 'msg-body' }, bubbleFor(m, first)))
@@ -3111,22 +3166,33 @@
   async function goLive() {
     if (hostLive) return
     if (!videoSupported() || typeof AudioEncoder === 'undefined') { toast("Going live isn't supported on this device yet"); return }
-    const preview = h('video', { class: 'lv-canvas', muted: true, playsinline: true, autoplay: true })
+    const preview = h('video', { class: 'st-video', muted: true, playsinline: true, autoplay: true })
     preview.muted = true
-    const title = h('input', { class: 'lv-input', placeholder: 'Add a title…', maxlength: 100 })
+    const title = h('input', { class: 'st-input', placeholder: 'What is your live about?', maxlength: 100 })
     const chat = h('div', { class: 'lv-chat' })
     const count = h('span', { class: 'lv-count' }, icon('play', 12), '0')
-    const status = h('span', { class: 'lv-badge', style: { background: 'var(--s3)' } }, 'NOT LIVE')
+    const status = h('span', { class: 'lv-badge', hidden: true }, 'LIVE')
+    const clockEl = h('span', { class: 'lv-timer', hidden: true }, '0:00')
     let source = 'camera'
-    const pickSrc = h('div', { class: 'chips', style: { padding: '0 0 10px', justifyContent: 'center' } })
-    const startBtn = h('button', { class: 'btn primary wide' }, 'Go live')
-    const setup = h('div', { class: 'lv-setup' }, pickSrc, title, h('div', { style: { height: '10px' } }), startBtn)
-    const el = h('div', { class: 'live-view' }, preview,
+    const pickSrc = h('div', { class: 'st-seg' })
+    const startBtn = h('button', { class: 'st-go' }, h('span', { class: 'st-dot' }), 'Go live')
+    const noPreview = h('div', { class: 'st-empty' }, h('div', { class: 'spinner' }))
+    // Before going live: a calm studio. A framed preview, a title, camera or screen, one button.
+    const setup = h('div', { class: 'studio' },
+      h('div', { class: 'st-stage' }, preview, noPreview),
+      h('div', { class: 'st-panel' },
+        h('div', { class: 'st-h' }, 'Go live'),
+        h('div', { class: 'st-sub' }, 'Your followers and friends get a LIVE ring on your profile while you stream.'),
+        h('label', { class: 'st-label' }, 'Title'), title,
+        h('label', { class: 'st-label' }, 'Show'), pickSrc,
+        startBtn))
+    const endBtn = h('button', { class: 'lv-end', onClick: () => endLive() }, 'End')
+    const el = h('div', { class: 'live-view studio-mode' }, setup,
       h('div', { class: 'lv-head' }, avatar(st.me.username, st.me.publicKey, 40), h('div', { style: { minWidth: 0 } }, h('div', { class: 'lv-name' }, st.me.handle ? '@' + st.me.handle : st.me.username), h('div', { class: 'lv-sub' }, 'Your live')),
-        status, count, h('span', { style: { flex: 1 } }), h('button', { class: 'icon-btn', style: { color: '#fff' }, title: 'End', onClick: () => endLive() }, icon('x', 24))),
-      chat, setup)
+        status, clockEl, count, h('span', { style: { flex: 1 } }), endBtn, h('button', { class: 'icon-btn st-close', style: { color: '#fff' }, title: 'Close', onClick: () => endLive() }, icon('x', 24))),
+      chat)
     document.body.appendChild(el)
-    hostLive = { el, chat, count, status, preview, setup, viewers: 0 }
+    hostLive = { el, chat, count, status, clockEl, preview, setup, viewers: 0 }
     const openSource = async () => {
       if (hostLive.cam) hostLive.cam.getTracks().forEach((t) => t.stop())
       try {
@@ -3135,10 +3201,11 @@
           : await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } })
         preview.srcObject = hostLive.cam
         await preview.play().catch(() => {})
+        noPreview.hidden = true
       } catch { toast(source === 'screen' ? "Couldn't share the screen" : "Couldn't open the camera") }
     }
-    const drawSrc = () => pickSrc.replaceChildren(...[['camera', 'Camera'], ...(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia ? [['screen', 'Screen']] : [])].map(([id, label]) =>
-      h('button', { class: 'chip' + (source === id ? ' on' : ''), onClick: () => { source = id; drawSrc(); openSource() } }, label)))
+    const drawSrc = () => pickSrc.replaceChildren(...[['camera', 'Camera', 'video'], ...(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia ? [['screen', 'Screen', 'expand']] : [])].map(([id, label, ic]) =>
+      h('button', { class: source === id ? 'on' : '', onClick: () => { if (source === id) return; source = id; drawSrc(); noPreview.hidden = false; openSource() } }, icon(ic, 18), label)))
     drawSrc()
     await openSource()
     startBtn.onclick = async () => {
@@ -3154,8 +3221,13 @@
     const id = Math.random().toString(36).slice(2, 12)
     await M.call('live.start', { id, title })
     L.id = id // only once the live really started (ending asks first only then)
+    L.preview.className = 'lv-canvas'
+    L.el.insertBefore(L.preview, L.el.firstChild)
     L.setup.remove()
-    L.status.textContent = 'LIVE'; L.status.style.background = ''
+    L.el.classList.remove('studio-mode')
+    L.status.hidden = false; L.clockEl.hidden = false
+    const began = Date.now()
+    L.clock = setInterval(() => { const t = Math.floor((Date.now() - began) / 1000); L.clockEl.textContent = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') }, 1000)
     // Video: H.264, the same frames as calls (Android viewers decode them the same way).
     const vid = L.preview
     const canvas = document.createElement('canvas')
@@ -3233,7 +3305,7 @@
     if (!L) return
     if (L.id && !(await confirmBox('End your live?', 'Everyone watching will see that it ended.', 'End live', true))) return
     hostLive = null
-    clearInterval(L.timer)
+    clearInterval(L.timer); clearInterval(L.clock)
     if (L.id) M.call('live.stop', { id: L.id }).catch(() => {})
     try { L.venc && L.venc.close() } catch {}
     try { L.aenc && L.aenc.close() } catch {}
@@ -3311,6 +3383,15 @@
     if (c.mic) for (const t of c.mic.getTracks()) t.stop()
     for (const k of ['enc', 'dec', 'vdec']) if (c[k]) try { c[k].close() } catch {}
     if (c.ctx) try { c.ctx.close() } catch {}
+    // A note in the chat, like WhatsApp: the call, missed or declined, and how long it lasted.
+    const kind = (c.videoCall || c.video) ? 'Video call' : 'Voice call'
+    const out = c.phase !== 'incoming' && c.incoming !== true
+    let note
+    if (c.startedAt) note = (out ? '↗ ' : '↙ ') + kind + ' · ' + durationText(Date.now() - c.startedAt)
+    else if (message === 'Missed call') note = '✕ Missed ' + kind.toLowerCase()
+    else if (message === 'Declined') note = out ? '↗ ' + kind + ' · Declined' : '↙ ' + kind + ' · You declined'
+    else note = (out ? '↗ ' : '↙ ') + kind + ' · No answer'
+    M.call('chat.note', { conv: c.peer, text: note, outgoing: out }).catch(() => {})
     const root = $('#call')
     if (root) {
       root.querySelector('.call-status').textContent = message
@@ -3606,7 +3687,7 @@
   }
 
   // Shared with reels.js.
-  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, closeChat }
+  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, closeChat, manualRefresh }
 
   async function start() {
     try {

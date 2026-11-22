@@ -72,7 +72,12 @@ fun AppRoot(app: MeshronApp) {
             is RootState.Ready -> {
                 // Birthday: asked once, after the account is made.
                 var hasBirthday by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.xalvxnlab.meshron.settings.Age.known || com.xalvxnlab.meshron.identity.Mode.anon) }
-                if (!hasBirthday) { com.xalvxnlab.meshron.ui.legal.BirthdayGate(onDone = { hasBirthday = true }); return@Surface }
+                val bscope = androidx.compose.runtime.rememberCoroutineScope()
+                if (!hasBirthday) { com.xalvxnlab.meshron.ui.legal.BirthdayGate(onDone = {
+                    hasBirthday = true
+                    // Kept with the account, so logging in elsewhere doesn't ask again.
+                    com.xalvxnlab.meshron.settings.Age.birthday?.let { b -> bscope.launch { app.accounts.saveBirthday(b) } }
+                }); return@Surface }
                 // App lock (a PIN set in Me): nothing shows until it's entered.
                 val pin by app.settings.pinHash.collectAsState(initial = null)
                 val isLocked by app.locked.collectAsState()

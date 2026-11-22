@@ -131,6 +131,7 @@ class CallManager(
         }
         val id = newId()
         val withVideo = video && hasCameraPermission()
+        incomingCall = false
         _state.value = CallState(CallState.Phase.OUTGOING, peer, name, id, videoCall = withVideo, video = withVideo)
         network.callSend(peer, "offer", id, extra = mapOf("video" to withVideo))
         startRingback()
@@ -233,6 +234,7 @@ class CallManager(
                 if (contact?.status != Contact.Status.ADDED) return
                 val name = nameOf(key)
                 val videoCall = msg.optBoolean("video", false)
+                incomingCall = true
                 _state.value = CallState(CallState.Phase.INCOMING, key, name, id, videoCall = videoCall, remoteVideo = videoCall)
                 startRinging()
                 if (!inForeground()) notifier.incomingCall(name, videoCall)
@@ -312,6 +314,9 @@ class CallManager(
         scope.launch { delay(ENDED_MS); if (_state.value.phase == CallState.Phase.ENDED) _state.value = CallState() }
     }
 
+    /** Who started the current call (for the note in the chat). */
+    @Volatile private var incomingCall = false
+
     private fun finish(message: String) {
         timeout?.cancel()
         watchdog?.cancel()
@@ -327,6 +332,18 @@ class CallManager(
         runCatching { CallService.stop(context) }
         val s = _state.value
         if (message == "Missed call" && !inForeground()) notifier.missedCall(s.name)
+        // A note in the chat, like WhatsApp: the call, missed or declined, and how long it lasted.
+        if (s.peer.length == 64) {
+            val kind = if (s.videoCall) "Video call" else "Voice call"
+            val out = !incomingCall
+            val note = when {
+                s.startedAt > 0 -> (if (out) "↗ " else "↙ ") + kind + " · " + ((System.currentTimeMillis() - s.startedAt) / 1000).let { "%d:%02d".format(it / 60, it % 60) }
+                message == "Missed call" -> "✕ Missed " + kind.lowercase()
+                message == "Declined" -> if (out) "↗ " + kind + " · Declined" else "↙ " + kind + " · You declined"
+                else -> (if (out) "↗ " else "↙ ") + kind + " · No answer"
+            }
+            scope.launch { runCatching { (context.applicationContext as com.xalvxnlab.meshron.MeshronApp).messagingService.callNote(s.peer, note, out) } }
+        }
         Log.i(TAG, "Call with ${s.peer.take(8)}… ended: $message")
         end(s.peer, s.name, message)
     }

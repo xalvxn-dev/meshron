@@ -187,11 +187,17 @@ class ModerationService(private val context: Context, private val accounts: Acco
     private val badgeAt = ConcurrentHashMap<String, Long>()
     private val badgeLock = Mutex()
 
-    /** Makes sure badges for [ids] are known (looked up at most every 30 minutes). */
+    /** Asks again for everyone's badges (when the app comes back to the screen). */
+    suspend fun refreshBadges() {
+        badgeAt.clear()
+        want(_badges.value.keys)
+    }
+
+    /** Makes sure badges for [ids] are known (looked up at most every 5 minutes). */
     suspend fun want(ids: Collection<String>) {
         if (Mode.anon) return
         val now = System.currentTimeMillis()
-        val need = ids.filter { it.length == 64 && it != com.xalvxnlab.meshron.account.MeshronAi.ID && (badgeAt[it] ?: 0) < now - 30 * 60_000 }.distinct()
+        val need = ids.filter { it.length == 64 && it != com.xalvxnlab.meshron.account.MeshronAi.ID && (badgeAt[it] ?: 0) < now - 5 * 60_000 }.distinct()
         if (need.isEmpty()) return
         need.forEach { badgeAt[it] = now }
         badgeLock.withLock {
