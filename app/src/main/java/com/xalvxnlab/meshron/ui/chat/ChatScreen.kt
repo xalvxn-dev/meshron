@@ -458,7 +458,7 @@ fun ChatScreen(
                         ) {
                             if (newDay) DaySeparator(dayLabel(m.localTime))
                             // Calls: a small centred note, like WhatsApp.
-                            if (m.kind == "call") { DaySeparator(m.body + " · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(m.localTime))); return@Column }
+                            if (m.kind == MessageEntity.KIND_CALL) { DaySeparator(MessageEntity.callText(m.body, m.outgoing) + " · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(m.localTime))); return@Column }
                             val quote = remember(m.body) { MessagingService.REPLY.find(m.body)?.groupValues?.get(1) }
                             // Who wrote the quoted message: the newest earlier message it matches.
                             val quoted = remember(quote, ordered.size) {
@@ -1319,6 +1319,7 @@ fun displayBody(m: MessageEntity): String = when (m.kind) {
         m.body.startsWith(com.xalvxnlab.meshron.account.MeshronAi.PREFIX) -> com.xalvxnlab.meshron.account.MeshronAi.parse(m.peerKey, m.body)?.let { "✨ Meshron AI: " + it.text } ?: "A message that couldn't be checked"
         else -> MessagingService.bodyText(m.body)
     }
+    MessageEntity.KIND_CALL -> MessageEntity.callText(m.body, m.outgoing)
     MessageEntity.KIND_FILE -> FileInfo.parse(m.body)?.let { if (it.mime.startsWith("audio/")) "🎤 Voice note" else (if (it.isImage) "Photo: " else "File: ") + it.name } ?: "File"
     MessageEntity.KIND_INVITE -> {
         val name = MessagingService.parseInvite(m.body)?.name ?: "a group"

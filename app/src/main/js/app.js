@@ -55,7 +55,7 @@ const MAX_BODY = 4000
 // edit {id, text} / unsend {id} change the author's own earlier message; react {id, e} sets
 // (or with e = '' clears) the sender's reaction to any message. Replies are plain text that
 // starts with '↩ <quote>' on its own line, so older versions still show them.
-const DM_KINDS = ['text', 'invite', 'file', 'story', 'seen', 'edit', 'unsend', 'react']
+const DM_KINDS = ['text', 'invite', 'file', 'story', 'seen', 'edit', 'unsend', 'react', 'call']
 const GROUP_KINDS = ['text', 'members', 'file', 'edit', 'unsend', 'react', 'gmeta']
 const MAX_FILE = 25 * 1024 * 1024
 const HEX64 = /^[0-9a-f]{64}$/

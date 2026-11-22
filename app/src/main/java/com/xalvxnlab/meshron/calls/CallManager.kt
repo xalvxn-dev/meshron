@@ -332,17 +332,16 @@ class CallManager(
         runCatching { CallService.stop(context) }
         val s = _state.value
         if (message == "Missed call" && !inForeground()) notifier.missedCall(s.name)
-        // A note in the chat, like WhatsApp: the call, missed or declined, and how long it lasted.
-        if (s.peer.length == 64) {
-            val kind = if (s.videoCall) "Video call" else "Voice call"
-            val out = !incomingCall
-            val note = when {
-                s.startedAt > 0 -> (if (out) "↗ " else "↙ ") + kind + " · " + ((System.currentTimeMillis() - s.startedAt) / 1000).let { "%d:%02d".format(it / 60, it % 60) }
-                message == "Missed call" -> "✕ Missed " + kind.lowercase()
-                message == "Declined" -> if (out) "↗ " + kind + " · Declined" else "↙ " + kind + " · You declined"
-                else -> (if (out) "↗ " else "↙ ") + kind + " · No answer"
+        // A note in the chat, like WhatsApp. The caller sends it as a message, so the other person
+        // sees it (as a missed call if they never picked up) even if they were offline.
+        if (s.peer.length == 64 && !incomingCall) {
+            val secs = if (s.startedAt > 0) (System.currentTimeMillis() - s.startedAt) / 1000 else 0L
+            val result = when {
+                s.startedAt > 0 -> "answered"
+                message == "Declined" -> "declined"
+                else -> "noanswer"
             }
-            scope.launch { runCatching { (context.applicationContext as com.xalvxnlab.meshron.MeshronApp).messagingService.callNote(s.peer, note, out) } }
+            scope.launch { runCatching { (context.applicationContext as com.xalvxnlab.meshron.MeshronApp).messagingService.callNote(s.peer, s.videoCall, result, secs) } }
         }
         Log.i(TAG, "Call with ${s.peer.take(8)}… ended: $message")
         end(s.peer, s.name, message)

@@ -1688,6 +1688,12 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
       return { data: b4a.toString(fs.readFileSync(row.localPath), 'base64') }
     },
     async 'chat.note'({ conv, text, outgoing }) { if (HEX64.test(conv)) noteRow(conv, text, outgoing) },
+    /** A call I made, sent as a message so the other person sees it (missed or not) when next online. */
+    async 'chat.call'({ conv, video, result, seconds }) {
+      if (!HEX64.test(conv)) return
+      const r = ['answered', 'declined', 'noanswer'].includes(result) ? result : 'noanswer'
+      sendRow(conv, JSON.stringify({ v: !!video, r, d: Math.max(0, Math.round(+seconds || 0)) }), 'call')
+    },
     async 'chat.markRead'({ conv }) {
       const c = chat(conv)
       const rows = c.rows.filter((r) => !r.outgoing && !r.read)

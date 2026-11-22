@@ -81,9 +81,31 @@ data class MessageEntity(
         const val KIND_DELETED = "deleted"
         /** Group settings and roles (body: {"op": …}); only the owner/admins' are applied. */
         const val KIND_GMETA = "gmeta"
+        /**
+         * A call record, sent by the caller after the call (body: {"v": video?, "r": "answered" |
+         * "declined" | "noanswer", "d": seconds}). It waits in the log like any message, so someone
+         * who was offline still learns they had a missed call.
+         */
+        const val KIND_CALL = "call"
         /** Log entries that aren't shown as chat bubbles. */
         val HIDDEN_KINDS = setOf(KIND_STORY, KIND_SEEN, KIND_EDIT, KIND_UNSEND, KIND_REACT, KIND_GMETA)
         const val GROUP_PREFIX = "g:"
+
+        /** The line a call record shows in the chat, from my side ([outgoing] = I called). */
+        fun callText(body: String, outgoing: Boolean): String {
+            val o = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return body // older local notes are plain text
+            val kind = if (o.optBoolean("v")) "Video call" else "Voice call"
+            val d = o.optLong("d")
+            return when (o.optString("r")) {
+                "answered" -> (if (outgoing) "↗ " else "↙ ") + kind + " · " + "%d:%02d".format(d / 60, d % 60)
+                "declined" -> if (outgoing) "↗ $kind · Declined" else "↙ $kind · You declined"
+                else -> if (outgoing) "↗ $kind · No answer" else "✕ Missed " + kind.lowercase()
+            }
+        }
+
+        /** True when an incoming call record is a call I missed. */
+        fun isMissedCall(m: MessageEntity): Boolean = m.kind == KIND_CALL && !m.outgoing &&
+            runCatching { org.json.JSONObject(m.body).optString("r") }.getOrNull().let { it != "answered" && it != "declined" }
 
         fun groupConversation(groupId: String) = GROUP_PREFIX + groupId
         fun groupRowId(senderKey: String, wireId: String) = senderKey.take(16) + ":" + wireId

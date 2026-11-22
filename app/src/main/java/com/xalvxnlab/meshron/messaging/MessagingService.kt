@@ -359,10 +359,13 @@ class MessagingService(
     }
 
     /** A note only this phone keeps (calls: missed, declined, how long). Never sent. */
-    suspend fun callNote(peer: String, text: String, outgoing: Boolean) {
-        val now = System.currentTimeMillis()
-        dao.insert(MessageEntity(peerKey = peer, id = "n" + newId(), outgoing = outgoing, body = text.take(200), sentAt = now, localTime = now,
-            status = MessageEntity.DELIVERED, signature = null, read = true, kind = "call"))
+    /**
+     * Records a call I made in the chat, as a real message: the other person gets it whenever
+     * they're next online (a missed call shows even if they were offline when I called).
+     */
+    suspend fun callNote(peer: String, video: Boolean, result: String, seconds: Long) {
+        val body = JSONObject().put("v", video).put("r", result).put("d", seconds).toString()
+        sendKind(peer, body, MessageEntity.KIND_CALL)
     }
 
     /** Deletes my own message for everyone: their copies lose the content too. */

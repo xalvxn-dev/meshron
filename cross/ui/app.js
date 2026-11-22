@@ -213,7 +213,18 @@
   }
   const QUICK = ['❤️', '😂', '😮', '😢', '🙏', '👍']
   const EDIT_WINDOW = 15 * 60 * 1000
+  /** The line a call record shows in a chat, from my side (older local notes are plain text). */
+  function callText(row) {
+    const o = parseJson(row.body)
+    if (!o || typeof o !== 'object') return row.body
+    const kind = o.v ? 'Video call' : 'Voice call'
+    const d = Math.max(0, +o.d || 0)
+    if (o.r === 'answered') return (row.outgoing ? '↗ ' : '↙ ') + kind + ' · ' + Math.floor(d / 60) + ':' + String(d % 60).padStart(2, '0')
+    if (o.r === 'declined') return row.outgoing ? '↗ ' + kind + ' · Declined' : '↙ ' + kind + ' · You declined'
+    return row.outgoing ? '↗ ' + kind + ' · No answer' : '✕ Missed ' + kind.toLowerCase()
+  }
   function displayBody(row) {
+    if (row.kind === 'call') return callText(row)
     if (row.kind === 'deleted') return row.outgoing ? 'You deleted this message' : 'This message was deleted'
     if (row.kind === 'text' && row.body.startsWith('meshron://ai/')) return '✦ Meshron AI answered'
     if (row.kind === 'text' && row.body.startsWith('meshron://reel/')) return '🎬 Reel'
@@ -2106,7 +2117,7 @@
       const isNew = !st.seen.has(m.id)
       st.seen.add(m.id)
       // Calls: a small centred note, like WhatsApp.
-      if (m.kind === 'call') { kids.push(h('div', { class: 'day call-note' + (/Missed/.test(m.body) ? ' missed' : '') }, icon(/Video/.test(m.body) ? 'video' : 'phone', 14), ' ', m.body, ' · ', clock(m.localTime))); return }
+      if (m.kind === 'call') { const t = callText(m); kids.push(h('div', { class: 'day call-note' + (/Missed/.test(t) ? ' missed' : '') }, icon(/Video/.test(t) ? 'video' : 'phone', 14), ' ', t, ' · ', clock(m.localTime))); return }
       const el = h('div', { class: 'msg' + (m.outgoing ? ' mine' : '') + (first ? ' first' : '') + (last ? ' last' : '') + (isNew ? ' new' : '') + (st.flash === m.id ? ' flash' : '') + (m.reactions && Object.keys(m.reactions).length && m.kind !== 'deleted' ? ' has-reacts' : '') },
         m.kind === 'deleted' ? null : h('div', { class: 'swipe-hint' }, icon('reply', 16)),
         h('div', { class: 'msg-body' }, bubbleFor(m, first)))
@@ -3383,15 +3394,13 @@
     if (c.mic) for (const t of c.mic.getTracks()) t.stop()
     for (const k of ['enc', 'dec', 'vdec']) if (c[k]) try { c[k].close() } catch {}
     if (c.ctx) try { c.ctx.close() } catch {}
-    // A note in the chat, like WhatsApp: the call, missed or declined, and how long it lasted.
-    const kind = (c.videoCall || c.video) ? 'Video call' : 'Voice call'
+    // A note in the chat, like WhatsApp. The caller sends it as a message, so the other person sees
+    // it (as a missed call if they never picked up) even if they were offline when called.
     const out = c.phase !== 'incoming' && c.incoming !== true
-    let note
-    if (c.startedAt) note = (out ? '↗ ' : '↙ ') + kind + ' · ' + durationText(Date.now() - c.startedAt)
-    else if (message === 'Missed call') note = '✕ Missed ' + kind.toLowerCase()
-    else if (message === 'Declined') note = out ? '↗ ' + kind + ' · Declined' : '↙ ' + kind + ' · You declined'
-    else note = (out ? '↗ ' : '↙ ') + kind + ' · No answer'
-    M.call('chat.note', { conv: c.peer, text: note, outgoing: out }).catch(() => {})
+    if (out) {
+      const result = c.startedAt ? 'answered' : message === 'Declined' ? 'declined' : 'noanswer'
+      M.call('chat.call', { conv: c.peer, video: !!(c.videoCall || c.video), result, seconds: c.startedAt ? (Date.now() - c.startedAt) / 1000 : 0 }).catch(() => {})
+    }
     const root = $('#call')
     if (root) {
       root.querySelector('.call-status').textContent = message

@@ -170,6 +170,7 @@ class MeshronApp : Application() {
         val text = when (m.kind) {
             MessageEntity.KIND_FILE -> FileInfo.parse(m.body)?.let { if (it.isImage) "Photo" else "File: ${it.name}" } ?: "File"
             MessageEntity.KIND_INVITE -> "Added you to a group"
+            MessageEntity.KIND_CALL -> if (MessageEntity.isMissedCall(m)) MessageEntity.callText(m.body, false).removePrefix("✕ ") else return
             MessageEntity.KIND_TEXT -> com.xalvxnlab.meshron.messaging.MessagingService.bodyText(m.body).take(200)
             else -> return // e.g. group member updates
         }

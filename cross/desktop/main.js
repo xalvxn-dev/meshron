@@ -90,6 +90,14 @@ function emit(ev, data) {
  * Message alerts come from here, not the page, so they show whenever the window is
  * minimised, hidden in the tray or in the background (Windows can pause a hidden page).
  */
+/** "Missed voice call" for a call record I missed; null for calls I answered or declined. */
+function missedCallText(body) {
+  try {
+    const o = JSON.parse(body)
+    return o.r === 'answered' || o.r === 'declined' ? null : 'Missed ' + (o.v ? 'video' : 'voice') + ' call'
+  } catch { return null }
+}
+
 function notifyMessage({ conv, row, title }) {
   if (settings.notifications === false || !row || !Notification.isSupported()) return
   const away = !win || win.isDestroyed() || !win.isVisible() || win.isMinimized() || !win.isFocused()
@@ -98,6 +106,7 @@ function notifyMessage({ conv, row, title }) {
   const body = row.kind === 'file' ? 'Sent a file'
     : row.kind === 'invite' ? 'Added you to a group'
     : row.kind === 'text' ? (reply ? reply[1] : row.body)
+    : row.kind === 'call' ? missedCallText(row.body)
     : null
   if (!body) return
   const n = new Notification({ title: String(title || 'Meshron'), body: String(body).slice(0, 200), icon: iconPath })

@@ -815,7 +815,7 @@ private fun Comments(reels: ReelsService, r: Reel, onClose: () -> Unit, onCount:
                                             modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = openPage))
                                         com.xalvxnlab.meshron.ui.components.Badges(c.by, 11.dp)
                                         if (c.by == r.author.id) Text(" Creator", color = Pink, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                                        Text(" · " + ago(c.ts) + (if (c.sent) "" else " · Sending..."), fontSize = 13.sp, color = MeshColors.TextTertiary)
+                                        Text(" · " + ago(c.ts), fontSize = 13.sp, color = MeshColors.TextTertiary)
                                     }
                                     // Comments in another language show in mine, with a note.
                                     val tr = com.xalvxnlab.meshron.ui.components.rememberAutoTranslation("c:" + r.key + ":" + c.cid, c.text,
