@@ -21,7 +21,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.ArrowDropUp
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -180,19 +186,82 @@ fun BirthdayGate(onDone: () -> Unit) {
     }
 }
 
-/** Day, month and year typed right on the page. */
+/**
+ * Month, day and year wheels. Starts at 13 years ago (the youngest allowed), so nobody is made
+ * an adult by default.
+ */
 @Composable
 fun BirthdayField(value: java.time.LocalDate?, onPick: (java.time.LocalDate?) -> Unit) {
-    var d by remember { mutableStateOf(value?.dayOfMonth?.toString().orEmpty()) }
-    var m by remember { mutableStateOf(value?.monthValue?.toString().orEmpty()) }
-    var y by remember { mutableStateOf(value?.year?.toString().orEmpty()) }
-    fun emit() { onPick(runCatching { java.time.LocalDate.of(y.toInt(), m.toInt(), d.toInt()) }.getOrNull()?.takeIf { y.length == 4 }) }
-    val colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(focusedBorderColor = MeshColors.Accent, unfocusedBorderColor = MeshColors.Surface3)
-    val numbers = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        androidx.compose.material3.OutlinedTextField(d, { if (it.length <= 2 && it.all(Char::isDigit)) { d = it; emit() } }, label = { Text("Day") }, singleLine = true, keyboardOptions = numbers, colors = colors, modifier = Modifier.weight(1f))
-        androidx.compose.material3.OutlinedTextField(m, { if (it.length <= 2 && it.all(Char::isDigit)) { m = it; emit() } }, label = { Text("Month") }, singleLine = true, keyboardOptions = numbers, colors = colors, modifier = Modifier.weight(1f))
-        androidx.compose.material3.OutlinedTextField(y, { if (it.length <= 4 && it.all(Char::isDigit)) { y = it; emit() } }, label = { Text("Year") }, singleLine = true, keyboardOptions = numbers, colors = colors, modifier = Modifier.weight(1.4f))
+    val thisYear = java.time.LocalDate.now().year
+    val first = thisYear - 110
+    var date by remember { mutableStateOf(value ?: java.time.LocalDate.of(thisYear - 13, 1, 1)) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (value == null) onPick(date) }
+    fun set(y: Int = date.year, m: Int = date.monthValue, d: Int = date.dayOfMonth) {
+        val days = java.time.YearMonth.of(y, m).lengthOfMonth()
+        date = java.time.LocalDate.of(y, m, d.coerceAtMost(days))
+        onPick(date)
+    }
+    val months = remember { java.text.DateFormatSymbols.getInstance().shortMonths.take(12) }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally)) {
+        Wheel(12, date.monthValue - 1, { months[it] }, Modifier.size(width = 92.dp, height = 236.dp)) { set(m = it + 1) }
+        Wheel(date.lengthOfMonth(), date.dayOfMonth - 1, { (it + 1).toString() }, Modifier.size(width = 72.dp, height = 236.dp)) { set(d = it + 1) }
+        Wheel(thisYear - first + 1, date.year - first, { (first + it).toString() }, Modifier.size(width = 96.dp, height = 236.dp)) { set(y = first + it) }
+    }
+}
+
+/**
+ * One rolling wheel: arrow up, the value before (faded), the value between two accent lines,
+ * the value after (faded), arrow down. Tap the arrows or the faded values, or drag up and down.
+ */
+@Composable
+private fun Wheel(count: Int, index: Int, label: (Int) -> String, modifier: Modifier, onChange: (Int) -> Unit) {
+    val stepPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+    var dragged by remember { mutableStateOf(0f) }
+    val latest = androidx.compose.runtime.rememberUpdatedState(index)
+    val latestCount = androidx.compose.runtime.rememberUpdatedState(count)
+    fun move(d: Int) {
+        val i = (latest.value + d).coerceIn(0, latestCount.value - 1)
+        if (i != latest.value) onChange(i)
+    }
+    val dim = MeshColors.TextTertiary.copy(alpha = 0.6f)
+    Column(
+        modifier.pointerInput(Unit) {
+            detectVerticalDragGestures(onDragEnd = { dragged = 0f }) { _, dy ->
+                dragged -= dy
+                val steps = (dragged / stepPx).toInt()
+                if (steps != 0) { move(steps); dragged -= steps * stepPx }
+            }
+        },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable { move(-1) }, contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.ArrowDropUp, "Previous", tint = MeshColors.TextTertiary, modifier = Modifier.size(44.dp))
+        }
+        Box(Modifier.fillMaxWidth().height(52.dp).clickable(enabled = index > 0) { move(-1) }, contentAlignment = Alignment.Center) {
+            if (index > 0) Text(label(index - 1), color = dim, fontSize = 20.sp)
+        }
+        Box(Modifier.fillMaxWidth().height(2.dp).background(MeshColors.Accent))
+        androidx.compose.animation.AnimatedContent(
+            targetState = index,
+            transitionSpec = {
+                val down = targetState > initialState
+                (androidx.compose.animation.slideInVertically { if (down) it / 3 else -it / 3 } + androidx.compose.animation.fadeIn()) togetherWith
+                    (androidx.compose.animation.slideOutVertically { if (down) -it / 3 else it / 3 } + androidx.compose.animation.fadeOut())
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            label = "wheel",
+        ) { i ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(label(i.coerceIn(0, count - 1)), color = MeshColors.TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(2.dp).background(MeshColors.Accent))
+        Box(Modifier.fillMaxWidth().height(52.dp).clickable(enabled = index < count - 1) { move(1) }, contentAlignment = Alignment.Center) {
+            if (index < count - 1) Text(label(index + 1), color = dim, fontSize = 20.sp)
+        }
+        Box(Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable { move(1) }, contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.ArrowDropDown, "Next", tint = MeshColors.TextTertiary, modifier = Modifier.size(44.dp))
+        }
     }
 }
 

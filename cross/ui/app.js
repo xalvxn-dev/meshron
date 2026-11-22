@@ -3854,27 +3854,89 @@
     })
   }
 
+  /**
+   * A rolling wheel: arrow up, the value before (faded), the value between two accent lines,
+   * the value after (faded), arrow down. Arrows, the mouse wheel, dragging, the arrow keys and
+   * tapping a faded value all move it.
+   */
+  function wheel ({ count, label, index, onChange, width }) {
+    const prev = h('div', { class: 'wh-item wh-dim' }); const cur = h('div', { class: 'wh-item wh-cur' }); const next = h('div', { class: 'wh-item wh-dim' })
+    const up = h('button', { class: 'wh-arrow', 'aria-label': 'Previous' }, h('span', { class: 'wh-tri up' }))
+    const down = h('button', { class: 'wh-arrow', 'aria-label': 'Next' }, h('span', { class: 'wh-tri down' }))
+    const win = h('div', { class: 'wh-win' }, prev, cur, next)
+    const el = h('div', { class: 'wh', tabindex: 0, role: 'spinbutton', style: { width } }, up, win, down)
+    const w = { el, index, count }
+    const paint = (dir) => {
+      const n = w.count()
+      w.index = Math.max(0, Math.min(n - 1, w.index))
+      prev.textContent = w.index > 0 ? label(w.index - 1) : ''
+      cur.textContent = label(w.index)
+      next.textContent = w.index < n - 1 ? label(w.index + 1) : ''
+      el.setAttribute('aria-valuetext', label(w.index))
+      if (dir) { win.classList.remove('roll-up', 'roll-down'); void win.offsetWidth; win.classList.add(dir > 0 ? 'roll-up' : 'roll-down') }
+    }
+    w.move = (d) => {
+      const i = Math.max(0, Math.min(w.count() - 1, w.index + d))
+      if (i === w.index) return
+      w.index = i; paint(d); onChange(i)
+    }
+    w.refresh = () => paint(0)
+    up.onclick = () => w.move(-1); down.onclick = () => w.move(1)
+    prev.onclick = () => w.move(-1); next.onclick = () => w.move(1)
+    el.addEventListener('wheel', (e) => { e.preventDefault(); w.move(e.deltaY > 0 ? 1 : -1) }, { passive: false })
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp') { e.preventDefault(); w.move(-1) } else if (e.key === 'ArrowDown') { e.preventDefault(); w.move(1) }
+      else if (e.key === 'PageUp') w.move(-10); else if (e.key === 'PageDown') w.move(10)
+    })
+    // Drag (mouse or finger): one step per 34 px.
+    let drag = null
+    win.addEventListener('pointerdown', (e) => { drag = { y: e.clientY }; win.setPointerCapture(e.pointerId) })
+    win.addEventListener('pointermove', (e) => {
+      if (!drag) return
+      const steps = Math.trunc((drag.y - e.clientY) / 34)
+      if (steps) { w.move(steps); drag.y -= steps * 34 }
+    })
+    win.addEventListener('pointerup', () => { drag = null })
+    win.addEventListener('pointercancel', () => { drag = null })
+    paint(0)
+    return w
+  }
+
+  /** Month, day and year wheels. Starts at 13 years ago (the youngest allowed), so nobody is made an adult by default. */
+  function birthdayWheels (onChange) {
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const thisYear = new Date().getFullYear()
+    const FIRST = thisYear - 110
+    const v = { m: 0, d: 1, y: thisYear - 13 }
+    const daysIn = () => new Date(v.y, v.m + 1, 0).getDate()
+    const emit = () => onChange(v.y + '-' + String(v.m + 1).padStart(2, '0') + '-' + String(v.d).padStart(2, '0'))
+    const fixDay = () => { if (v.d > daysIn()) v.d = daysIn(); dw.index = v.d - 1; dw.refresh() }
+    const mw = wheel({ count: () => 12, label: (i) => MONTHS[i], index: v.m, width: '96px', onChange: (i) => { v.m = i; fixDay(); emit() } })
+    const dw = wheel({ count: daysIn, label: (i) => String(i + 1), index: v.d - 1, width: '80px', onChange: (i) => { v.d = i + 1; emit() } })
+    const yw = wheel({ count: () => thisYear - FIRST + 1, label: (i) => String(FIRST + i), index: v.y - FIRST, width: '104px', onChange: (i) => { v.y = FIRST + i; fixDay(); emit() } })
+    emit()
+    return h('div', { class: 'wheels' }, mw.el, dw.el, yw.el)
+  }
+
   /** Asked once of people who started before birthdays were asked (18+ groups need it). */
   async function askBirthday() {
     const a = await M.call('age.get').catch(() => null)
     if (!a || a.birth || st.anon) return
-    const num = (ph, max) => h('input', { class: 'input', inputmode: 'numeric', placeholder: ph, maxlength: max, style: { flex: max === 4 ? 1.4 : 1, minWidth: 0, textAlign: 'center' } })
-    const d = num('Day', 2); const mo = num('Month', 2); const y = num('Year', 4)
-    const err = h('div', { class: 'hint bad' })
-    const go = h('button', { class: 'btn primary wide', disabled: true, style: { marginTop: '24px' } }, 'Continue')
-    const value = () => (y.value.length === 4 && mo.value && d.value) ? y.value + '-' + mo.value.padStart(2, '0') + '-' + d.value.padStart(2, '0') : ''
-    for (const x of [d, mo, y]) x.addEventListener('input', () => { x.value = x.value.replace(/\D/g, ''); err.textContent = ''; go.disabled = !value() })
+    let picked = ''
+    const err = h('div', { class: 'hint bad', style: { textAlign: 'center' } })
+    const go = h('button', { class: 'btn primary wide', style: { marginTop: '28px' } }, 'Continue')
     const page = h('div', { class: 'birthday-page', style: { position: 'fixed', inset: 0, zIndex: 400, background: 'var(--bg, #0b0d14)', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '24px' } },
       h('div', { style: { maxWidth: '420px', width: '100%', margin: '0 auto' } },
-        h('h1', { class: 't-h1' }, "When's your birthday?"),
-        h('div', { style: { display: 'flex', gap: '10px', marginTop: '24px' } }, d, mo, y), err, go))
+        h('h1', { class: 't-h1', style: { textAlign: 'center' } }, "When's your birthday?"),
+        h('div', { class: 'hint', style: { textAlign: 'center', marginTop: '6px' } }, 'Only you see it. It keeps 18+ groups for adults.'),
+        birthdayWheels((v) => { picked = v; err.textContent = '' }), err, go))
     go.onclick = async () => {
-      const v = value(); const dt = new Date(v)
-      if (!v || isNaN(dt) || dt.getUTCDate() !== Number(d.value)) { err.textContent = 'Check the date'; return }
-      try { await M.call('age.set', { birth: v }); page.remove() } catch (e) { err.textContent = e.message }
+      if (!picked) return
+      go.disabled = true
+      try { await M.call('age.set', { birth: picked }); page.remove() } catch (e) { go.disabled = false; err.textContent = e.message }
     }
     document.body.appendChild(page)
-    setTimeout(() => d.focus(), 50)
+    setTimeout(() => { const f = page.querySelector('.wh'); if (f) f.focus() }, 50)
   }
 
   function enterApp() {
@@ -3887,7 +3949,7 @@
   }
 
   // Shared with reels.js.
-  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, goLive, closeChat, manualRefresh }
+  window.MeshronUI = { h, $, icon, avatar, modal, toast, oops, confirmBox, toBase64, showAddContact, setTab, M, st, menu, pickProfilePhoto, watchLive, goLive, askBirthday, closeChat, manualRefresh }
 
   async function start() {
     try {

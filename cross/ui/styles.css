@@ -516,3 +516,22 @@ textarea.input { resize: none; }
 .sd-pane > .sd-select { flex: none; }
 .sd-refresh { border: 0; background: transparent; color: rgba(255,255,255,.6); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: .3px; text-transform: none; }
 .sd-refresh:hover { color: #fff; }
+
+/* Birthday wheels: arrow, the value before, the value between two accent lines, the value after, arrow. */
+.wheels { display: flex; justify-content: center; gap: 18px; margin-top: 28px; user-select: none; }
+.wh { display: flex; flex-direction: column; align-items: center; outline: none; border-radius: 14px; }
+.wh:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.wh-arrow { width: 100%; height: 34px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
+.wh-tri { width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; transition: border-color .15s; }
+.wh-tri.up { border-bottom: 9px solid var(--text3); }
+.wh-tri.down { border-top: 9px solid var(--text3); }
+.wh-arrow:hover .wh-tri.up { border-bottom-color: var(--text2); }
+.wh-arrow:hover .wh-tri.down { border-top-color: var(--text2); }
+.wh-win { width: 100%; display: flex; flex-direction: column; align-items: center; touch-action: none; cursor: ns-resize; }
+.wh-item { height: 52px; width: 100%; display: grid; place-items: center; font-size: 22px; font-variant-numeric: tabular-nums; }
+.wh-dim { color: var(--text3); opacity: .55; font-size: 20px; cursor: pointer; }
+.wh-cur { color: var(--text); font-weight: 600; border-top: 2px solid var(--accent); border-bottom: 2px solid var(--accent); }
+.wh-win.roll-up .wh-item { animation: whUp .18s var(--ease) both; }
+.wh-win.roll-down .wh-item { animation: whDown .18s var(--ease) both; }
+@keyframes whUp { from { transform: translateY(14px); opacity: .4; } }
+@keyframes whDown { from { transform: translateY(-14px); opacity: .4; } }
