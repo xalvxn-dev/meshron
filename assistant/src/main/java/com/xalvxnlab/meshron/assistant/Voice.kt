@@ -9,51 +9,114 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
 
-/** Speaking (text to speech), shared by the screen, reminders and Sentry mode. */
+/**
+ * Speaking. Uses Google's speech engine when it's there (its neural voices sound like a person),
+ * the voice the person picked, or else the most natural voice for their language.
+ */
 object Speaker {
     private var tts: TextToSpeech? = null
-    private var ready = false
-    private val queued = mutableListOf<String>()
-    var onSpeaking: ((Boolean) -> Unit)? = null
+    private var ready: CompletableDeferred<Boolean>? = null
+    private const val GOOGLE = "com.google.android.tts"
+    /** Everyone who wants to know when it starts or stops talking (the app screen, the floating orb). */
+    val listeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+    private fun tell(on: Boolean) = listeners.forEach { it(on) }
+    @Volatile var talking = false; private set
 
-    fun say(c: Context, text: String) {
-        val clean = text.replace(Regex("[*#_`]"), "").replace("•", ",").trim()
-        if (clean.isEmpty()) return
-        if (tts == null) {
-            tts = TextToSpeech(c.applicationContext) { status ->
-                ready = status == TextToSpeech.SUCCESS
-                tts?.setPitch(0.95f); tts?.setSpeechRate(1.05f)
+    private fun init(c: Context): CompletableDeferred<Boolean> {
+        ready?.let { return it }
+        val d = CompletableDeferred<Boolean>()
+        ready = d
+        val app = c.applicationContext
+        val hasGoogle = runCatching { app.packageManager.getPackageInfo(GOOGLE, 0); true }.getOrDefault(false)
+        val onInit = TextToSpeech.OnInitListener { status ->
+            val ok = status == TextToSpeech.SUCCESS
+            if (ok) {
+                tts?.setPitch(1.0f); tts?.setSpeechRate(1.0f)
+                pickVoice(app)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(id: String?) { onSpeaking?.invoke(true) }
-                    override fun onDone(id: String?) { onSpeaking?.invoke(false) }
-                    @Deprecated("old API") override fun onError(id: String?) { onSpeaking?.invoke(false) }
+                    override fun onStart(id: String?) { talking = true; tell(true) }
+                    override fun onDone(id: String?) { talking = false; tell(false) }
+                    @Deprecated("old API") override fun onError(id: String?) { talking = false; tell(false) }
+                    override fun onStop(id: String?, interrupted: Boolean) { talking = false; tell(false) }
                 })
-                synchronized(queued) { queued.forEach { speakNow(it) }; queued.clear() }
             }
+            d.complete(ok)
         }
-        if (ready) speakNow(clean) else synchronized(queued) { queued.add(clean) }
+        tts = if (hasGoogle) TextToSpeech(app, onInit, GOOGLE) else TextToSpeech(app, onInit)
+        return d
     }
 
+    /** The voices for the person's language, most natural first. */
+    suspend fun voices(c: Context): List<Voice> {
+        if (!init(c).await()) return emptyList()
+        val lang = Locale.getDefault()
+        return runCatching { tts!!.voices }.getOrNull().orEmpty()
+            .filter { it.locale.language == lang.language && !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
+            .sortedWith(compareByDescending<Voice> { it.locale.country == lang.country }.thenByDescending { it.quality }.thenBy { it.isNetworkConnectionRequired }.thenBy { it.name })
+    }
+
+    private fun pickVoice(c: Context) {
+        val t = tts ?: return
+        val saved = Memory.voice(c)
+        val lang = Locale.getDefault()
+        val all = runCatching { t.voices }.getOrNull().orEmpty().filter { !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
+        val v = all.firstOrNull { it.name == saved }
+            ?: all.filter { it.locale.language == lang.language }
+                .sortedWith(compareByDescending<Voice> { it.locale.country == lang.country }.thenByDescending { it.quality }.thenBy { it.isNetworkConnectionRequired })
+                .firstOrNull()
+        if (v != null) t.voice = v
+    }
+
+    suspend fun useVoice(c: Context, v: Voice) { if (init(c).await()) { Memory.setVoice(c, v.name); tts?.voice = v } }
+
+    /** "English (United States) · voice IOB · HD, online" */
+    fun label(v: Voice): String {
+        val code = Regex("-x-([a-z0-9]+)-").find(v.name)?.groupValues?.get(1)?.uppercase() ?: v.name.substringAfterLast('-').take(8)
+        val q = when { v.quality >= Voice.QUALITY_VERY_HIGH -> "HD"; v.quality >= Voice.QUALITY_HIGH -> "High"; else -> "Basic" }
+        return v.locale.displayCountry.ifBlank { v.locale.displayLanguage } + " · voice " + code + " · " + q + if (v.isNetworkConnectionRequired) ", online" else ", on device"
+    }
+
+    fun say(c: Context, text: String) {
+        val clean = text.replace(Regex("[*#_`]"), "").replace("•", ",").replace(Regex("\\s+"), " ").trim()
+        if (clean.isEmpty()) return
+        val d = init(c)
+        if (d.isCompleted) speakNow(clean) else scope.launch { if (d.await()) speakNow(clean) }
+    }
+
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private fun speakNow(t: String) { tts?.speak(t, TextToSpeech.QUEUE_ADD, null, "u" + System.nanoTime()) }
-    fun stop() { tts?.stop(); onSpeaking?.invoke(false) }
+    fun stop() { tts?.stop(); talking = false; tell(false) }
 }
 
 /**
  * Listening (speech to text) with the phone's own recogniser. Once Meshron Assistant is the default
  * assistant, Android points "the default recogniser" at Meshron Assistant itself, so Google's (or
- * the on-device one) is asked for by name.
+ * the on-device one) is asked for by name. [onDevice] prefers the on-device recogniser (quiet, no
+ * internet), used for always-listening.
  */
-class Listener(private val context: Context, private val onLevel: (Float) -> Unit, private val onPartial: (String) -> Unit, private val onDone: (String?, String?) -> Unit) {
+class Listener(
+    private val context: Context,
+    private val onLevel: (Float) -> Unit,
+    private val onPartial: (String) -> Unit,
+    private val onDone: (String?, String?) -> Unit,
+    private val onDevice: Boolean = false
+) {
     private var sr: SpeechRecognizer? = null
 
     private fun make(): SpeechRecognizer? {
         val google = ComponentName("com.google.android.googlequicksearchbox", "com.google.android.voicesearch.serviceapi.GoogleRecognitionService")
         val hasGoogle = runCatching { context.packageManager.getServiceInfo(google, 0); true }.getOrDefault(false)
+        val local = android.os.Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
         return when {
+            onDevice && local -> SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
             hasGoogle -> SpeechRecognizer.createSpeechRecognizer(context, google)
-            android.os.Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context) -> SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            local -> SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
             SpeechRecognizer.isRecognitionAvailable(context) -> SpeechRecognizer.createSpeechRecognizer(context)
             else -> null
         }
@@ -61,7 +124,7 @@ class Listener(private val context: Context, private val onLevel: (Float) -> Uni
 
     fun start() {
         stop()
-        val r = make() ?: return onDone(null, "Speech recognition isn't available on this phone. Type instead.")
+        val r = runCatching { make() }.getOrNull() ?: return onDone(null, "Speech recognition isn't available on this phone. Type instead.")
         sr = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -75,6 +138,7 @@ class Listener(private val context: Context, private val onLevel: (Float) -> Uni
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> null // heard nothing: just stop
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "I need the microphone permission to listen."
                     SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Listening needs the internet on this phone. Type instead."
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "busy"
                     else -> "I couldn't hear that. Try again."
                 })
             }

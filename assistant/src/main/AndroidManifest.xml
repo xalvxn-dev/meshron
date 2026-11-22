@@ -16,6 +16,9 @@
     <!-- Sentry mode: charger and battery announcements while the screen is off -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- The floating orb over other apps (only after the person allows it) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Opening apps by name, and the speech recogniser. -->
     <queries>
@@ -98,6 +101,14 @@
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Spoken alerts for charger and battery changes the person turned on" />
+        </service>
+
+        <!-- The floating orb (optional): over other apps; listens for "Hey Meshron" only if the person chose always listening. -->
+        <service
+            android:name=".FloatingService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="A floating assistant button over other apps that the person turned on" />
         </service>
 
         <receiver android:name=".ReminderReceiver" android:exported="false" />

@@ -98,3 +98,15 @@ class BootReceiver : BroadcastReceiver() {
 }
 
 class LockAdmin : android.app.admin.DeviceAdminReceiver()
+
+/** Settings for the floating orb, listening and the voice. */
+fun Memory.floating(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getBoolean("floating", false)
+fun Memory.setFloating(c: Context, on: Boolean) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("floating", on).apply()
+/** Always listening for "Hey Meshron" (true) or push to talk (false). */
+fun Memory.always(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getBoolean("always", false)
+fun Memory.setAlways(c: Context, on: Boolean) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("always", on).apply()
+fun Memory.voice(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("voice", "").orEmpty()
+fun Memory.setVoice(c: Context, name: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("voice", name).apply()
+/** Where the orb sits: which side, and how far down (0..1). */
+fun Memory.orbSpot(c: Context): Pair<Boolean, Float> = c.getSharedPreferences("memory", Context.MODE_PRIVATE).let { it.getBoolean("orbRight", true) to it.getFloat("orbY", 0.35f) }
+fun Memory.setOrbSpot(c: Context, right: Boolean, y: Float) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("orbRight", right).putFloat("orbY", y).apply()

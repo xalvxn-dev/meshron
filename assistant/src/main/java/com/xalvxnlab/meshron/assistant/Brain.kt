@@ -102,13 +102,13 @@ class Brain(private val api: Api, private val host: Host) {
     private fun context() = JSONObject()
         .put("now", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm, EEEE")))
         .put("timezone", ZoneId.systemDefault().id)
-        .put("battery", batteryPercent(host.activity))
+        .put("battery", batteryPercent(host.ctx))
         .put("name", api.username)
         .put("language", Locale.getDefault().displayLanguage)
         .put("screen", ScreenContext.fresh)
 
     private fun online(): Boolean {
-        val cm = host.activity.getSystemService(ConnectivityManager::class.java)
+        val cm = host.ctx.getSystemService(ConnectivityManager::class.java)
         return cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 
@@ -129,11 +129,11 @@ class Brain(private val api: Api, private val host: Host) {
 
     private suspend fun local(t: String): String? {
         val s = t.lowercase(Locale.ROOT).trim().trimEnd('.', '!', '?')
-        val phrase = Memory.lockPhrase(host.activity)
+        val phrase = Memory.lockPhrase(host.ctx)
         if (phrase.isNotEmpty() && s.contains(phrase)) return act("lock", device.lock())
         Regex("^(?:please )?(?:open|launch|start)(?: the)? (.+?)(?: app)?$").find(s)?.let { m ->
             val app = m.groupValues[1]
-            if (app == "camera") { host.activity.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return act("open · camera", Outcome("Camera open")) }
+            if (app == "camera") { host.ctx.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return act("open · camera", Outcome("Camera open")) }
             return act("open · $app", device.openApp(app))
         }
         if (Regex("\\b(flash ?light|torch)\\b").containsMatchIn(s)) {
@@ -154,7 +154,7 @@ class Brain(private val api: Api, private val host: Host) {
         }
         if (Regex("^(?:what'?s (?:my |the )?)?battery(?: level| status)?$|^how much battery").containsMatchIn(s)) return act("battery", device.battery())
         if (Regex("^(?:take a (?:photo|picture|selfie)|open (?:the )?camera)$").matches(s)) {
-            host.activity.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            host.ctx.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return act("open · camera", Outcome("Camera open"))
         }
         if (Regex("^(?:lock (?:the |my )?phone|lockdown)$").matches(s)) return act("lock", device.lock())

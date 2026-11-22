@@ -28,7 +28,7 @@ import java.time.format.DateTimeFormatter
 
 /** What the screen provides to the tools: approvals, permissions, the camera and the file picker. */
 interface Host {
-    val activity: ComponentActivity
+    val ctx: android.content.Context
     suspend fun approve(title: String, detail: String): Boolean
     suspend fun permission(name: String): Boolean
     suspend fun takePhoto(): Bitmap?
@@ -43,7 +43,7 @@ class Outcome(val text: String, val image: Bitmap? = null, val question: String?
 
 /** Runs the tools the model asks for. Anything that sends, calls or replies asks the person first. */
 class Device(private val host: Host) {
-    private val a get() = host.activity
+    private val a get() = host.ctx
     private val zone = ZoneId.systemDefault()
 
     suspend fun run(name: String, args: JSONObject): Outcome = runCatching { exec(name, args) }.getOrElse { Outcome("Failed: " + (it.message ?: it.javaClass.simpleName)) }

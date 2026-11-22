@@ -92,7 +92,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity(), Host {
-    override val activity: ComponentActivity get() = this
+    override val ctx: android.content.Context get() = this
     private lateinit var api: Api
     private lateinit var brain: Brain
 
@@ -116,6 +116,14 @@ class MainActivity : ComponentActivity(), Host {
         brain.onReply = { if (Memory.speak(this)) Speaker.say(this, it) }
         if (isAssist(intent)) wakeListening.value++
         setContent { App() }
+    }
+
+    // Coming back from "Display over other apps": turn the orb on if it was just allowed.
+    private val overlayAllowed = mutableStateOf(false)
+    override fun onResume() {
+        super.onResume()
+        overlayAllowed.value = Settings.canDrawOverlays(this)
+        if (Memory.floating(this) && overlayAllowed.value && api.signedIn && !FloatingService.running) FloatingService.start(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -219,7 +227,7 @@ class MainActivity : ComponentActivity(), Host {
         var speaking by remember { mutableStateOf(false) }
         val thinking by brain.thinking
         val listState = rememberLazyListState()
-        LaunchedEffect(Unit) { Speaker.onSpeaking = { speaking = it } }
+        androidx.compose.runtime.DisposableEffect(Unit) { val f: (Boolean) -> Unit = { speaking = it }; Speaker.listeners += f; onDispose { Speaker.listeners -= f } }
 
         fun send(text: String, photo: Bitmap? = null) { if (text.isBlank() && photo == null) return; Speaker.stop(); scope.launch { brain.ask(text, photo) } }
         val listener = remember {
@@ -343,6 +351,39 @@ class MainActivity : ComponentActivity(), Host {
             }
             Section("Signed in as @" + api.username)
             SetRow("Spoken replies", "Read answers and alerts out loud") { Switch(speak, { speak = it; Memory.setSpeak(this@MainActivity, it) }, colors = hudSwitch()) }
+            VoicePicker()
+            Section("Floating assistant")
+            var floating by remember { mutableStateOf(Memory.floating(this@MainActivity) && overlayAllowed.value) }
+            var always by remember { mutableStateOf(Memory.always(this@MainActivity)) }
+            SetRow("Floating orb", "A small orb over every app. Tap it to talk, drag it anywhere, long-press to open this app.") {
+                Switch(floating, { on ->
+                    Memory.setFloating(this@MainActivity, on)
+                    if (!on) { floating = false; FloatingService.stop(this@MainActivity) }
+                    else if (!Settings.canDrawOverlays(this@MainActivity)) {
+                        // Android asks for "Display over other apps" on its own screen; the orb starts on return.
+                        openSettings(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    } else { floating = true; scope.launch { permission(Manifest.permission.POST_NOTIFICATIONS); FloatingService.start(this@MainActivity) } }
+                }, colors = hudSwitch())
+            }
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Listening", color = Hud.text, fontSize = 16.sp)
+                Text(if (always) "Say \"Hey Meshron\" and your request, any time the orb is on. Uses more battery; a notification shows while it listens."
+                    else "Tap the orb (or the core in this app) to talk.", color = Hud.dim, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(bottom = 10.dp))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).border(1.dp, Hud.line, RoundedCornerShape(50)).padding(4.dp)) {
+                    for ((on, label) in listOf(false to "Push to talk", true to "Always listening")) {
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(50)).background(if (always == on) Hud.cyan else Color.Transparent)
+                            .clickable {
+                                if (always == on) return@clickable
+                                scope.launch {
+                                    if (on && !permission(Manifest.permission.RECORD_AUDIO)) return@launch
+                                    always = on; Memory.setAlways(this@MainActivity, on); FloatingService.restart(this@MainActivity)
+                                }
+                            }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                            Text(label, color = if (always == on) Color(0xFF02060C) else Hud.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
             SetRow("Make it the phone's assistant", "Long-press home or power opens Meshron Assistant, and it can see your screen. Pick it under Digital assistant app.") {
                 LinkText("Open") { openSettings(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS), Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS")) }
             }
@@ -380,6 +421,31 @@ class MainActivity : ComponentActivity(), Host {
             Spacer(Modifier.height(24.dp))
             Box(Modifier.padding(horizontal = 20.dp)) { HudButton("SIGN OUT", danger = true, onClick = onSignOut) }
             Spacer(Modifier.height(32.dp))
+        }
+    }
+
+    /** The voice: the most natural ones for your language first; tap one to hear it and use it. */
+    @Composable
+    private fun VoicePicker() {
+        var open by remember { mutableStateOf(false) }
+        var list by remember { mutableStateOf<List<android.speech.tts.Voice>>(emptyList()) }
+        var chosen by remember { mutableStateOf(Memory.voice(this)) }
+        val scope = rememberCoroutineScope()
+        LaunchedEffect(Unit) { list = Speaker.voices(this@MainActivity); if (chosen.isEmpty()) chosen = list.firstOrNull()?.name.orEmpty() }
+        SetRow("Voice", list.firstOrNull { it.name == chosen }?.let { Speaker.label(it) } ?: "The phone's default voice") {
+            LinkText(if (open) "Close" else "Change") { open = !open }
+        }
+        if (open) Column(Modifier.padding(horizontal = 12.dp)) {
+            if (list.isEmpty()) Text("No voices found. Install \"Speech Services by Google\" from Play for natural voices.", color = Hud.dim, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+            list.take(16).forEach { v ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                    chosen = v.name
+                    scope.launch { Speaker.useVoice(this@MainActivity, v); Speaker.stop(); Speaker.say(this@MainActivity, "Hello. This is how I'll sound from now on.") }
+                }.padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (v.name == chosen) Hud.cyan else Hud.line))
+                    Text(Speaker.label(v), color = if (v.name == chosen) Hud.text else Hud.dim, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
+                }
+            }
         }
     }
 
