@@ -348,12 +348,34 @@ function same (a, b) {
   return x === 0
 }
 
-/** Counts calls in a window; false once over [max]. */
+/**
+ * Counts calls in a window; false once over [max].
+ *
+ * KV allows only 1,000 writes a day on the free plan, so busy counters (every request per address,
+ * AI use, rule checks) are kept in memory per worker instance: enough to stop floods, and they
+ * never use up the KV quota. Rare, security-related ones (codes, wrong passwords, reports,
+ * appeals) stay in KV so they hold across instances. If KV is out of writes, the call still
+ * goes through instead of failing.
+ */
+const MEM_LIMITS = /^(ip|ai|ask|chk|chkwarn):/
+const memHits = new Map()
 async function limit (env, key, max, seconds) {
+  if (MEM_LIMITS.test(key)) {
+    const now = Date.now()
+    let e = memHits.get(key)
+    if (!e || e.until <= now) {
+      e = { n: 0, until: now + seconds * 1000 }
+      memHits.set(key, e)
+      if (memHits.size > 20000) for (const [k, v] of memHits) if (v.until <= now) memHits.delete(k)
+    }
+    if (e.n >= max) return false
+    e.n++
+    return true
+  }
   const k = 'rl:' + key
   const n = Number(await env.ACCOUNTS.get(k)) || 0
   if (n >= max) return false
-  await env.ACCOUNTS.put(k, String(n + 1), { expirationTtl: Math.max(60, seconds) })
+  try { await env.ACCOUNTS.put(k, String(n + 1), { expirationTtl: Math.max(60, seconds) }) } catch (e) { console.log('limit put failed', e.message) }
   return true
 }
 
