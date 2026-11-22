@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Meshron Assistant</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header id="titlebar">
+    <canvas id="mini"></canvas>
+    <span class="appname">Meshron Assistant</span>
+    <span class="grow"></span>
+    <button class="tb" id="newchat" title="New conversation"><i>&#xE72C;</i></button>
+    <button class="tb" id="gear" title="Settings"><i>&#xE713;</i></button>
+  </header>
+  <main id="app"></main>
+  <script src="vendor/argon2.umd.min.js"></script>
+  <script src="reactor.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

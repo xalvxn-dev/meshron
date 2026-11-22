@@ -125,6 +125,9 @@ export async function migrateStep (db, oldKv) {
       return 'done'
     }
     const page = await oldKv.list({ limit: 1000, cursor: cur && cur.v ? cur.v : undefined })
+    // An empty first page means KV didn't really answer (its daily list quota ran out): try later,
+    // never mark the move as done on it (that once left most accounts behind).
+    if (!(cur && cur.v) && !page.keys.length) return 'empty first page; will retry'
     const names = page.keys.map((k) => k.name).filter((n) => !n.startsWith('rl:') && !n.startsWith('cfg:mig'))
     await db.batch([
       db.prepare('INSERT OR IGNORE INTO mig (k) SELECT value FROM json_each(?)').bind(JSON.stringify(names)),

@@ -12,18 +12,9 @@
 
   /** The bio; for the CEOs a metallic card with their title on it. */
   function roleBio (id, bio) {
-    const box = h('div', { class: 'role-bio' }, bio ? h('div', { class: 'me-bio-text', style: { textAlign: 'center', padding: '6px 28px', whiteSpace: 'pre-wrap' } }, bio) : null)
-    const mod = window.MeshronMod
-    if (!mod || !mod.badgeOf) return box
-    mod.badgeOf(id).then((b) => {
-      if (!b || (b.title !== 'founder' && b.title !== 'cofounder')) return
-      const founder = b.title === 'founder'
-      // A small metallic chip above the bio (the full title shows on hover).
-      box.replaceChildren(h('div', { style: { textAlign: 'center', margin: '4px 24px 0' } },
-        h('span', { title: founder ? 'CEO & Founder of Meshron' : 'Co-CEO & Co-founder of Meshron', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 9px', borderRadius: '99px', background: founder ? GOLD : SILVER, color: founder ? '#3D2A00' : '#1F242C', fontWeight: 800, fontSize: '11px', letterSpacing: '.2px' } }, '★ ' + (founder ? 'Founder' : 'Co-founder')),
-        bio ? h('div', { class: 'me-bio-text', style: { marginTop: '6px', padding: '0 4px', whiteSpace: 'pre-wrap' } }, bio) : null))
-    })
-    return box
+    // Just the bio, for everyone (the founders' badge by their name says who they are).
+    void id
+    return h('div', { class: 'role-bio' }, bio ? h('div', { class: 'me-bio-text', style: { textAlign: 'center', padding: '6px 28px', whiteSpace: 'pre-wrap' } }, bio) : null)
   }
 
   function stat (value, label, onClick) {

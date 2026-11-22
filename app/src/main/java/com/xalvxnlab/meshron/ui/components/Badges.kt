@@ -178,31 +178,9 @@ fun CofounderMark(size: Dp) {
  */
 @Composable
 fun RoleBio(id: String, bio: String, modifier: Modifier = Modifier) {
-    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.xalvxnlab.meshron.MeshronApp
-    val badges by app.moderation.badges.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(id) { app.moderation.want(listOf(id)) }
-    val title = badges[id]?.title
-    val (fill, ink, label) = when (title) {
-        "founder" -> Triple(FounderFill, FounderInk, "CEO & Founder of Meshron")
-        "cofounder" -> Triple(CofounderFill, CofounderInk, "Co-CEO & Co-founder of Meshron")
-        else -> Triple(null, null, null)
-    }
-    if (fill == null || ink == null || label == null) {
-        if (bio.isNotBlank()) Text(bio, color = MeshColors.TextPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = modifier.padding(horizontal = 32.dp, vertical = 6.dp))
-        return
-    }
-    Column(
-        modifier.padding(horizontal = 24.dp, vertical = 8.dp).fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-            .border(1.5.dp, Brush.linearGradient(fill), androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-            .background(Brush.linearGradient(fill.map { it.copy(alpha = 0.10f) })).padding(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(50)).background(Brush.linearGradient(fill)).padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (title == "founder") FounderMark(14.dp) else CofounderMark(14.dp)
-            Text(" $label", color = ink, fontWeight = FontWeight.Black, fontSize = 12.sp)
-        }
-        if (bio.isNotBlank()) Text(bio, color = MeshColors.TextPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-    }
+    // Just the bio, for everyone (the founders' badge by their name says who they are).
+    @Suppress("UNUSED_VARIABLE") val unused = id
+    if (bio.isNotBlank()) Text(bio, color = MeshColors.TextPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = modifier.padding(horizontal = 32.dp, vertical = 6.dp))
 }
 
 /** Meshron AI's tag: a small gradient "AI" pill. */

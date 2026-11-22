@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' data: blob:">
+  <title>Meshron orb</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: none; }
+    #wrap { position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+    body.right #wrap { flex-direction: row-reverse; }
+    #orb { width: 64px; height: 64px; flex: none; border-radius: 50%; background: rgba(4, 6, 12, .92); box-shadow: 0 0 0 1px rgba(34, 211, 197, .25), 0 8px 24px rgba(0, 0, 0, .45); cursor: grab; }
+    #orb canvas { width: 64px; height: 64px; display: block; }
+    #strip { max-width: 270px; padding: 9px 14px; border-radius: 14px; background: rgba(12, 18, 30, .94); border: 1px solid rgba(34, 211, 197, .22); color: #E6F7FF;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .4); opacity: 0; transform: scale(.92); transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); pointer-events: none; }
+    body.right #strip { transform-origin: right center; } body:not(.right) #strip { transform-origin: left center; }
+    #strip.on { opacity: 1; transform: none; pointer-events: auto; }
+    #strip.ask { border-color: rgba(255, 176, 32, .6); }
+    #tag { font: 700 9px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: 2px; color: #22D3C5; margin-bottom: 4px; }
+    #strip.ask #tag { color: #FFB020; }
+    #text { font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+    #btns { display: none; gap: 6px; margin-top: 8px; }
+    #strip.ask #btns { display: flex; }
+    #btns button { border: 0; border-radius: 99px; padding: 5px 12px; font: 600 12px "Segoe UI Variable Text", "Segoe UI", sans-serif; cursor: pointer; }
+    #no { background: transparent; color: #E6F7FF; box-shadow: inset 0 0 0 1px rgba(34, 211, 197, .3); }
+    #yes { background: #FFB020; color: #1A1000; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="orb" title="Tap to talk · drag to move · right-click to open"><canvas id="c"></canvas></div>
+    <div id="strip"><div id="tag"></div><div id="text"></div><div id="btns"><button id="no">Cancel</button><button id="yes">Approve</button></div></div>
+  </div>
+  <script src="reactor.js"></script>
+  <script src="voice.js"></script>
+  <script src="orb.js"></script>
+</body>
+</html>

@@ -52,3 +52,5 @@ store/*.mp4
 cross/ios/out/
 cross/ios-mod/App/mod
 cross/ios-mod/*.xcodeproj
+
+/assistant/build
