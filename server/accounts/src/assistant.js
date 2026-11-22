@@ -111,7 +111,18 @@ const ELEVEN = {
   lily: 'pFZP5JQG7iQjIQuC4Bku', // British woman
   rachel: '21m00Tcm4TlvDq8ikWAM' // calm American woman
 }
-const ORPHEUS_TO_ELEVEN = { troy: 'george', daniel: 'daniel', austin: 'brian', autumn: 'sarah', diana: 'charlotte', hannah: 'lily' }
+// Microsoft's neural voices on Azure AI Speech (the same voices as Edge's Read Aloud).
+const MS_VOICES = {
+  'ms:ava': 'en-US-AvaMultilingualNeural',
+  'ms:andrew': 'en-US-AndrewMultilingualNeural',
+  'ms:emma': 'en-US-EmmaMultilingualNeural',
+  'ms:brian': 'en-US-BrianMultilingualNeural',
+  'ms:ryan': 'en-GB-RyanNeural',
+  'ms:sonia': 'en-GB-SoniaNeural',
+  'ms:jenny': 'en-US-JennyNeural',
+  'ms:guy': 'en-US-GuyNeural'
+}
+const ORPHEUS_TO_ELEVEN ={ troy: 'george', daniel: 'daniel', austin: 'brian', autumn: 'sarah', diana: 'charlotte', hannah: 'lily' }
 const ELEVEN_TO_ORPHEUS = { george: 'troy', daniel: 'daniel', brian: 'austin', adam: 'austin', sarah: 'autumn', charlotte: 'diana', lily: 'hannah', rachel: 'autumn' }
 
 const VISION_MODEL ='meta-llama/llama-4-scout-17b-16e-instruct'
@@ -225,9 +236,29 @@ export function assistant ({ fail, limit, authed, clip }) {
     async '/v1/tts' ({ username, authKey, text, voice }, env) {
       const { u } = await authed(env, username, authKey)
       if (!(await limit(env, 'ai:' + u, 300, 86400))) throw fail('You\'ve used today\'s AI limit. It resets tomorrow.', 429)
+      const clean = String(text || '').replace(/[*#_`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1200)
+      const b64 = async (r) => {
+        const b = new Uint8Array(await r.arrayBuffer())
+        let s = ''
+        for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000))
+        return btoa(s)
+      }
+      // Microsoft's neural voices (Azure AI Speech; secrets AZURE_SPEECH_KEY and AZURE_SPEECH_REGION):
+      // for "ms:" voices, or when ElevenLabs isn't set up.
+      const ms = MS_VOICES[voice] || (!env.ELEVENLABS_KEY ? MS_VOICES['ms:ava'] : null)
+      if (ms && env.AZURE_SPEECH_KEY && env.AZURE_SPEECH_REGION) {
+        const esc = clean.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+        const r = await fetch('https://' + String(env.AZURE_SPEECH_REGION).trim() + '.tts.speech.microsoft.com/cognitiveservices/v1', {
+          method: 'POST',
+          headers: { 'Ocp-Apim-Subscription-Key': env.AZURE_SPEECH_KEY, 'content-type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'audio-24khz-96kbitrate-mono-mp3', 'user-agent': 'meshron-assistant' },
+          body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${ms.split('-').slice(0, 2).join('-')}"><voice name="${ms}">${esc}</voice></speak>`
+        })
+        if (r.ok) return { mime: 'audio/mpeg', audio: [await b64(r)] }
+        console.log('azure tts failed', r.status, (await r.text()).slice(0, 300))
+      }
       // ElevenLabs when its key is set (secret ELEVENLABS_KEY): one natural clip, up to 1,200 characters.
       if (env.ELEVENLABS_KEY) {
-        const id = ELEVEN[voice] || ELEVEN[ORPHEUS_TO_ELEVEN[voice]] || ELEVEN.george
+        const id = ELEVEN[voice] || ELEVEN[ORPHEUS_TO_ELEVEN[voice]] || ELEVEN[MS_TO_ELEVEN[voice]] || ELEVEN.george
         const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + id + '?output_format=mp3_44100_128', {
           method: 'POST',
           headers: { 'xi-api-key': env.ELEVENLABS_KEY, 'content-type': 'application/json', accept: 'audio/mpeg' },

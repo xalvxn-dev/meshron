@@ -137,7 +137,7 @@
     setTimeout(fetchHeard, 0)
     settings = await A.settings()
     const voice = h('select', { onChange: async (e) => { settings = await A.setSettings({ studioVoice: e.target.value }) } },
-      [['george', 'George · warm, British'], ['daniel', 'Daniel · newsreader, British'], ['brian', 'Brian · deep, American'], ['adam', 'Adam · American'], ['sarah', 'Sarah · soft, American'], ['charlotte', 'Charlotte · Swedish-English'], ['lily', 'Lily · British'], ['rachel', 'Rachel · calm, American']]
+      [['george', 'George · warm, British'], ['daniel', 'Daniel · newsreader, British'], ['brian', 'Brian · deep, American'], ['adam', 'Adam · American'], ['sarah', 'Sarah · soft, American'], ['charlotte', 'Charlotte · Swedish-English'], ['lily', 'Lily · British'], ['rachel', 'Rachel · calm, American'], ['ms:ava', 'Ava · Microsoft, American'], ['ms:andrew', 'Andrew · Microsoft, American'], ['ms:emma', 'Emma · Microsoft, American'], ['ms:brian', 'Brian · Microsoft, American'], ['ms:ryan', 'Ryan · Microsoft, British'], ['ms:sonia', 'Sonia · Microsoft, British'], ['ms:jenny', 'Jenny · Microsoft, American'], ['ms:guy', 'Guy · Microsoft, American']]
         .map(([v, l]) => h('option', { value: v, selected: settings.studioVoice === v }, l)))
     const seg = h('div', { class: 'seg' }, [[false, 'Push to talk'], [true, 'Always listening']].map(([v, l]) =>
       h('button', { class: settings.always === v ? 'on' : '', onClick: async () => { settings = await A.setSettings({ always: v }); settingsPage() } }, l)))

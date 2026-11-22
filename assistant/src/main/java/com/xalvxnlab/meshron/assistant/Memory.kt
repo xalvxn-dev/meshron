@@ -122,7 +122,7 @@ fun Memory.setFolder(c: Context, uri: String) = c.getSharedPreferences("memory",
 /** The realistic studio voice (online, from the server) instead of the phone's voice. */
 fun Memory.studio(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getBoolean("studio", true)
 fun Memory.setStudio(c: Context, on: Boolean) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("studio", on).apply()
-/** Which studio voice (ElevenLabs): george, daniel, brian, adam (men); sarah, charlotte, lily, rachel (women). */
+/** Which studio voice: ElevenLabs (george, daniel, brian, adam, sarah, charlotte, lily, rachel) or Microsoft ("ms:ava", "ms:andrew", …). */
 fun Memory.studioVoice(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("studioVoice", "george").orEmpty()
 fun Memory.setStudioVoice(c: Context, v: String) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("studioVoice", v).apply()
 /** What the assistant is called (and the wake word): "Meshron" unless the person renamed it. */
