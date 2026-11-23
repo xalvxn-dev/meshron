@@ -107,7 +107,7 @@
     svg.setAttribute('height', size)
     if (name === 'logo') {
       // The Meshron "M": one stroke, blue -> teal -> lime (Brand.kt MeshronLogo).
-      const id = 'meshron-mark' // same every time, so redrawn logos are identical (no flicker)
+      const id = 'meshron-mark-' + size // stable per size (no flicker); one id per size so a hidden logo can't blank the others
       svg.setAttribute('viewBox', '0 0 100 100')
       svg.innerHTML = '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6E7BFF"/><stop offset=".5" stop-color="#22D3C5"/><stop offset="1" stop-color="#B6F36A"/></linearGradient></defs>' +
         '<path d="M8 86 L22 16 L50 62 L78 16 L92 86" fill="none" stroke="url(#' + id + ')" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>'
@@ -665,7 +665,7 @@
     const chips = !q ? h('div', { class: 'chips' }, ...[['all', 'All'], ['unread', 'Unread'], ['groups', 'Groups'], ['requests', 'Requests']].map(([id, label]) =>
       h('button', { class: 'chip' + (f === id ? ' on' : ''), onClick: () => { st.chatFilter = id; renderSide() } }, label))) : null
     if (!q && !st.anon) kids.push(h('button', { class: 'ai-entry', onClick: () => window.MeshronAI.openChat(), style: { display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 24px)', margin: '4px 12px 10px', padding: '12px 14px', borderRadius: '18px', border: 'none', background: 'rgba(110,130,255,0.14)', color: 'inherit', textAlign: 'left', cursor: 'pointer' } },
-      window.MeshronAI.aiAvatar(40), h('div', {}, h('div', { style: { fontWeight: 700 } }, 'Meshron AI'), h('div', { class: 'dim', style: { fontSize: '13px' } }, 'Ask anything, plan, write, translate'))))
+      window.MeshronAI.aiAvatar(40), h('div', {}, h('div', { style: { fontWeight: 700 } }, 'Meshron AI'), h('div', { class: 'dim', style: { fontSize: '13px' } }, 'Ask anything, plan, write, translate')), h('span', { class: 'dimmer', style: { marginLeft: 'auto' } }, icon('right', 20))))
     if (!q) kids.push(storiesStrip(added))
     if (chips) kids.push(chips)
     if (!rows.length && !q && f !== 'all') kids.push(h('p', { class: 'dim', style: { padding: '24px', textAlign: 'center' } }, f === 'unread' ? "You're all caught up." : f === 'groups' ? 'No groups yet. Tap + to make one.' : 'No chat requests.'))
@@ -1996,7 +1996,7 @@
     const kids = []
     let sos = false
     let media = false
-    if (groupChat && !row.outgoing && first && row.senderKey) {
+    if (groupChat && !row.outgoing && first && row.senderKey && !row.body.startsWith('meshron://ai/')) {
       const [a] = AVATARS[javaHash(row.senderKey) % AVATARS.length]
       kids.push(h('div', { class: 'sender', style: { color: a } }, nameOf(row.senderKey)))
     }
@@ -2078,7 +2078,9 @@
     kids.push(h('div', { class: 'meta' }, row.edited && row.kind === 'text' ? h('span', { class: 'edited' }, 'edited ·') : null, clock(row.sentAt), row.outgoing && row.kind !== 'deleted' ? tickIcon(groupChat && row.status === DELIVERED ? SENT : row.status, 15) : null))
     // 'Seen' under my last message they've read (like Instagram / WhatsApp).
     if (row.outgoing && row.status === READ && !groupChat) { const lastMine = [...(st.rows || [])].reverse().find((x) => x.outgoing && x.kind !== 'deleted'); if (lastMine && lastMine.id === row.id) kids.push(h('div', { class: 'seen-note' }, 'Seen')) }
-    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos-msg' : '') }, kids)
+    // Plain one-text bubbles keep the time on the text's last line when it fits.
+    const plain = !media && !sos && kids.filter(Boolean).every((k) => k.classList && ((k.classList.contains('text') && !k.classList.contains('big')) || k.classList.contains('meta') || k.classList.contains('seen-note')))
+    const b = h('div', { class: 'bubble' + (media ? ' media' : '') + (row.kind === 'deleted' ? ' gone' : '') + (sos ? ' sos-msg' : '') + (plain ? ' inline' : '') }, kids)
     onContext(b, (x, y) => messageMenu(row, x, y))
     if (row.kind === 'deleted') return b
     // Double-click / double-tap: quick heart.
