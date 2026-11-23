@@ -168,3 +168,11 @@ body::before { content: ""; position: fixed; inset: 0; pointer-events: none; bac
 .pic { align-self: flex-start; max-width: 86%; }
 .pic img { display: block; width: 100%; max-width: 340px; border-radius: 14px; cursor: zoom-in; border: 1px solid rgba(255,255,255,.08); }
 .pic .cap { font-size: 12px; opacity: .7; margin-top: 4px; }
+
+/* Help page: commands to click and try */
+.help .cmds { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
+.help .cmd { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 14px; background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--r); color: var(--text); font: inherit; cursor: pointer; }
+.help .cmd:hover { border-color: var(--accent, #22D3C5); }
+.help .cmd.still { cursor: default; }
+.help .cmd b { font-weight: 600; }
+.help .cmd span { color: var(--text2); font-size: 12px; }

@@ -153,6 +153,7 @@ function pickLoop () {
 function topBar (title) {
   hbutton('back', 20, 18, 130, 40, '< menu', () => go(null))
   text(title, W / 2, 46, { align: 'center', mono: true, size: 14, weight: 700, color: C.cyan, glow: C.cyan, raw: true })
+  if (scene && scene.controls) text(scene.controls + (scene.noBack ? '' : '   ·   hold a fist: menu'), W / 2, 70, { align: 'center', mono: true, size: 10, color: C.dim, raw: true, spacing: 1, max: W - 340 })
 }
 function chirp (f = 660, len = 0.08, vol = 0.06) {
   try {
@@ -182,17 +183,17 @@ const game = (o) => GAMES.push(o)
 const LESSONS = [
   { title: 'Point to move', hint: 'Hold up one finger and touch the 4 targets.', kind: 'targets', gesture: null },
   { title: 'Pinch to pick', hint: 'Touch thumb and index together on each target.', kind: 'targets', gesture: 'pinch' },
-  { title: 'Open palm', hint: 'Show your open hand and hold it for a second.', kind: 'hold', gesture: 'palm' },
-  { title: 'Make a fist', hint: 'Close your hand and hold it.', kind: 'hold', gesture: 'fist' },
-  { title: 'Two fingers', hint: 'Index and middle up, like a V. It turns blocks and types.', kind: 'hold', gesture: 'two' },
-  { title: 'Thumbs up', hint: 'Thumb up, other fingers closed.', kind: 'hold', gesture: 'thumbs' },
+  { title: 'Open palm', hint: 'Hold an open hand to pause (in Hand Control).', kind: 'hold', gesture: 'palm' },
+  { title: 'Fist', hint: 'Holding a fist for a second and a half takes you back to the menu. Here, just hold it.', kind: 'hold', gesture: 'fist' },
+  { title: 'Two fingers', hint: 'Index and middle up, like a V: it scrolls.', kind: 'hold', gesture: 'two' },
+  { title: 'Thumbs up', hint: 'Thumb up, other fingers closed (Game Pad: inventory).', kind: 'hold', gesture: 'thumbs' },
   { title: 'Swipe left', hint: 'Sweep your hand quickly to the left.', kind: 'swipe', gesture: 'left' },
   { title: 'Swipe right', hint: 'Now sweep it quickly to the right.', kind: 'swipe', gesture: 'right' },
   { title: 'Punch', hint: 'Make a fist and punch toward the camera, twice.', kind: 'punch', need: 2 },
   { title: 'Scroll', hint: 'Two fingers up: move them down slowly, then up.', kind: 'scroll' }
 ]
 game({
-  id: 'school', name: 'Hand School', blurb: 'Learn every move', face: false,
+  id: 'school', name: 'Hand School', blurb: 'Learn every move', face: false, noBack: true,
   enter () { this.i = 0; this.targets = null; this.count = 0; this.t0 = performance.now(); this.done = false; this.ok = 0; this.sMin = this.sMax = null },
   update () {
     if (this.done) return
@@ -252,7 +253,7 @@ const PIECES = [[[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]], [[1, 0
 const PCOL = [C.cyan, C.amber, C.pink, C.blue, '#FF8A3D', C.lime, C.red]
 const rot = (m) => m[0].map((_, i) => m.map((r) => r[i]).reverse())
 game({
-  id: 'drop', name: 'Block Drop', blurb: 'Point to move, two fingers to turn', face: false,
+  id: 'drop', name: 'Block Drop', blurb: 'Point to move, pinch to turn', face: false, controls: 'point: move   pinch: turn   punch: drop',
   enter () { this.cols = 10; this.rows = 20; this.grid = Array.from({ length: 20 }, () => Array(10).fill(-1)); this.score = 0; this.lines = 0; this.over = false; this.fall = 0; this.next = Math.floor(Math.random() * 7); this.spawn() },
   spawn () { const k = this.next; this.next = Math.floor(Math.random() * 7); this.p = { m: PIECES[k], k, x: 3, y: 0 }; if (this.hits(this.p.m, this.p.x, this.p.y)) { this.over = true; const b = store.get('dropBest', 0); if (this.score > b) store.set('dropBest', this.score); chirp(200, 0.4, 0.1) } },
   hits (m, x, y) { return m.some((r, j) => r.some((v, i) => v && (x + i < 0 || x + i >= this.cols || y + j >= this.rows || (y + j >= 0 && this.grid[y + j][x + i] >= 0)))) },
@@ -273,10 +274,10 @@ game({
       const step = Math.sign(want - this.p.x)
       if (step && !this.hits(this.p.m, this.p.x + step, this.p.y)) this.p.x += step
     }
-    if (became(h, 'two') || became(h, 'L') || (usingPointer && pointerClick)) this.turn()
+    if ((h && pinchEdge) || (usingPointer && pointerClick)) this.turn()
     if (R && R.hands.some((x) => x.punch)) { this.drop(); return }
     const level = Math.floor(this.lines / 8)
-    const speed = (h && h.gesture === 'fist') ? 0.04 : Math.max(0.12, 0.7 - level * 0.06)
+    const speed = Math.max(0.12, 0.7 - level * 0.06)
     this.fall += dt
     if (this.fall > speed) { this.fall = 0; if (this.hits(this.p.m, this.p.x, this.p.y + 1)) this.lock(); else this.p.y++ }
   },
@@ -311,7 +312,7 @@ game({
 const BCOL = [C.cyan, C.lime, C.amber, C.pink, C.blue, '#FFFFFF']
 const emptyBuild = () => Array.from({ length: 10 }, () => Array.from({ length: 10 }, () => []))
 game({
-  id: 'build', name: 'Block Builder', blurb: 'Pinch to place, two fingers to remove', face: false,
+  id: 'build', name: 'Block Builder', blurb: 'Pinch to place, two fingers to remove', face: false, controls: 'point: aim   pinch: place   two fingers: remove   swipe: colour',
   enter () { this.n = 10; this.h = store.get('build', null) || emptyBuild(); this.col = 0; this.sel = null },
   geo () { const t = Math.min(W / 26, H / 17); return { t, ox: W / 2, oy: H * 0.34 } },
   iso (i, j, k) { const { t, ox, oy } = this.geo(); return { x: ox + (i - j) * t, y: oy + (i + j) * t * 0.5 - k * t * 0.9 } },
@@ -362,7 +363,7 @@ game({
 })
 
 game({
-  id: 'pop', name: 'Orb Pop', blurb: 'Pop orbs with your fingertips', face: false,
+  id: 'pop', name: 'Orb Pop', blurb: 'Pop orbs with your fingertips', face: false, controls: 'touch the orbs with your fingertip',
   enter () { this.orbs = []; this.score = 0; this.combo = 0; this.end = performance.now() + 45000; this.next = 0; this.bursts = []; this.over = false },
   update (dt) {
     const now = performance.now()
@@ -404,7 +405,7 @@ game({
 })
 
 game({
-  id: 'dash', name: 'Face Dash', blurb: 'Steer with your head', face: true,
+  id: 'dash', name: 'Face Dash', blurb: 'Steer with your head', face: true, controls: 'turn your head to steer',
   enter () { if (tracker) tracker.recenter(); this.x = 0.5; this.rocks = []; this.stars = []; this.score = 0; this.lives = 3; this.next = 0; this.speed = 260; this.over = false; this.shield = 0; this.hurt = 0 },
   update (dt) {
     if (this.over) return
@@ -438,7 +439,7 @@ game({
 
 const ROWS = ['QWERTYUIOP', 'ASDFGHJKL\'', 'ZXCVBNM,.?']
 game({
-  id: 'keys', name: 'Air Keys', blurb: 'One finger moves, two type', face: false,
+  id: 'keys', name: 'Air Keys', blurb: 'Point at a key, pinch to type', face: false, controls: 'point: choose a key   pinch: type it',
   enter () { this.text = ''; this.flash = null },
   keyRects () {
     const kw = Math.min(86, (W - 80) / 10.6); const kh = kw * 0.9; const x0 = (W - kw * 10.5) / 2; const y0 = H * 0.42
@@ -455,7 +456,7 @@ game({
   },
   update () {
     const h = primary(); if (!cursor) return
-    if (became(h, 'two') || pinchEdge) { const k = this.keyRects().find((k) => cursor.x >= k.x && cursor.x <= k.x + k.w && cursor.y >= k.y && cursor.y <= k.y + k.h); if (k) this.press(k) }
+    if (pinchEdge) { const k = this.keyRects().find((k) => cursor.x >= k.x && cursor.x <= k.x + k.w && cursor.y >= k.y && cursor.y <= k.y + k.h); if (k) this.press(k) }
   },
   draw () {
     topBar('air keys')
@@ -498,7 +499,7 @@ const AIRTYPE = {
   },
   update () {
     const h = primary(); if (!cursor) return
-    if (became(h, 'two') || pinchEdge) { const k = this.keyRects().find((k) => cursor.x >= k.x && cursor.x <= k.x + k.w && cursor.y >= k.y && cursor.y <= k.y + k.h); if (k) this.press(k) }
+    if (pinchEdge) { const k = this.keyRects().find((k) => cursor.x >= k.x && cursor.x <= k.x + k.w && cursor.y >= k.y && cursor.y <= k.y + k.h); if (k) this.press(k) }
   },
   draw () {
     text('air keys: typing into the app in front', 16, 24, { mono: true, size: 11, color: C.lime, raw: true, spacing: 2 })
@@ -518,7 +519,7 @@ moodOrb.style.cssText = 'position:absolute;width:300px;height:300px;left:50%;top
 document.body.appendChild(moodOrb)
 const moodR = window.Reactor(moodOrb)
 game({
-  id: 'mood', name: 'Mood Mirror', blurb: 'A face that copies yours', face: true,
+  id: 'mood', name: 'Mood Mirror', blurb: 'A face that copies yours', face: true, controls: 'smile, frown, open your mouth, turn your head',
   enter () { moodOrb.style.display = 'block'; this.share = store.get('moodShare', false); this.last = null; this.since = 0; moodR.skin = 'buddy'; A.settings().then((s) => { const face = window.Reactor.SKINS.find((k) => k.id === s.skin && k.face); moodR.skin = face ? face.id : 'buddy' }) },
   exit () { moodOrb.style.display = 'none' },
   update () {
@@ -571,7 +572,7 @@ function spell (h) {
 }
 const ORDER = Object.keys(SIGNS)
 game({
-  id: 'spell', name: 'Fingerspell', blurb: 'Sign language letters', face: false,
+  id: 'spell', name: 'Fingerspell', blurb: 'Sign language letters', face: false, noBack: true, controls: 'hold a letter shape   swipe left: delete',
   enter () { this.mode = 'learn'; this.i = 0; this.word = ''; this.got = 0; this.cur = null; this.since = 0; this.used = false },
   update () {
     const h = primary(); const L = spell(h); const now = performance.now()
@@ -614,7 +615,7 @@ if (!ANDROID) {
     update () {
       const h = primary()
       if (!h) { if (this.down) { this.down = false; A.gameInput({ type: 'button', b: 'l', down: false }) } return }
-      if (holdFor('pausefist', h.gesture === 'fist') > 0.9) { delete held.pausefist; this.paused = !this.paused; chirp(this.paused ? 440 : 880) }
+      if (holdFor('pausepalm', h.gesture === 'palm') > 1) { delete held.pausepalm; this.paused = !this.paused; chirp(this.paused ? 440 : 880) }
       if (this.paused || !inputSize) return
       const nx = Math.max(0, Math.min(1, (h.P[8].x / W - 0.2) / 0.6)); const ny = Math.max(0, Math.min(1, (h.P[8].y / H - 0.15) / 0.6))
       const x = Math.round(nx * inputSize.w); const y = Math.round(ny * inputSize.h)
@@ -625,7 +626,7 @@ if (!ANDROID) {
       if (h.pinch && !this.down) { this.down = true; A.gameInput({ type: 'button', b: 'l', down: true }) } else if (!h.pinch && this.down) { this.down = false; A.gameInput({ type: 'button', b: 'l', down: false }) }
       if (h.swipe === 'left' || h.swipe === 'right') { A.gameInput({ type: 'key', vk: VK.ALT, down: true }); tap(h.swipe === 'left' ? VK.LEFT : VK.RIGHT); setTimeout(() => A.gameInput({ type: 'key', vk: VK.ALT, down: false }), 120) }
     },
-    legend: () => ['point: move', 'pinch: click / drag', 'two: scroll', 'swipe: back / fwd', 'hold fist: pause'],
+    legend: () => ['point: move', 'pinch: click', 'pinch + hold: drag', 'two fingers: scroll', 'swipe: back / fwd', 'hold palm: pause', 'hold fist: stop'],
     status () { return this.paused ? 'paused' : 'active' }
   })
   game({
@@ -651,7 +652,7 @@ if (!ANDROID) {
       if (became(h, 'thumbs')) tap(VK.E)
       if (h.swipe) A.gameInput({ type: 'wheel', delta: h.swipe === 'left' ? 120 : -120 })
     },
-    legend: () => ['head: look', 'punch: hit', 'palm: walk', 'two: jump', 'pinch: use', 'thumbs: inventory', 'swipe: hotbar', 'both palms: pause'],
+    legend: () => ['head: look', 'punch: hit', 'palm: walk', 'two fingers: jump', 'pinch: use', 'thumbs up: inventory', 'swipe: hotbar', 'both palms: pause', 'both fists: stop'],
     status () { return this.paused ? 'paused' : this.walk ? 'walking' : 'ready' }
   })
 }
@@ -721,12 +722,26 @@ function loop (now) {
   if (intro) introCard()
   else if (small) compactCard()
   else if (scene) { scene.update(dt); scene.draw() } else menu()
+  backGesture(h)
   drawHands()
   if (!small) { pickLoop(); drawCursor() }
   overlay(t)
   pointerClick = false
   lastGesture.p = h ? h.gesture : null
   requestAnimationFrame(loop)
+}
+/** Hold a fist (Game Pad: both fists) for 1.5 s to go back to the menu; a ring fills to show it. */
+function backGesture (h) {
+  if (!scene || intro || scene.noBack) { delete held.back; return }
+  const fists = scene.id === 'pad' ? !!(R && R.hands.length === 2 && R.hands.every((x) => x.gesture === 'fist')) : !!(h && h.gesture === 'fist' && !h.punch)
+  const sec = holdFor('back', fists)
+  if (sec < 0.35 || !h) return
+  const k = Math.min(1, (sec - 0.35) / 1.15)
+  const x = h.P[9].x; const y = h.P[9].y
+  g.save(); g.lineWidth = 4; g.strokeStyle = 'rgba(255,255,255,.15)'; g.beginPath(); g.arc(x, y, 38, 0, Math.PI * 2); g.stroke()
+  g.strokeStyle = C.amber; g.beginPath(); g.arc(x, y, 38, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.stroke(); g.restore()
+  text('menu', x, y + 56, { align: 'center', mono: true, size: 10, color: C.amber, raw: true, spacing: 2 })
+  if (k >= 1) { delete held.back; chirp(520, 0.12); go(null) }
 }
 function introCard () {
   const left = Math.max(0, Math.ceil((intro.until - performance.now()) / 1000))

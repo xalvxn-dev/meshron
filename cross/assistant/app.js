@@ -198,6 +198,25 @@
     return f
   }
   async function fetchHeard () { const t = await A.lastHeard(); const el = document.getElementById('heard'); if (el && t) el.textContent = t }
+  // ---- Help: how to start, every command (click one to try it) and the hand gestures ----
+  function helpPage () {
+    const H = window.MeshronHelp
+    const name = settings.name || 'Meshron'
+    const fix = (t) => t.replace(/Hey Meshron/g, 'Hey ' + name).replace(/Ctrl\+Alt\+Space/g, settings.hotkey || 'Ctrl+Alt+Space')
+    const tryIt = (t) => { page = 'home'; draw(); A.ask(t) }
+    root.replaceChildren(h('div', { class: 'page help' },
+      h('div', { class: 'pagehead' }, h('button', { class: 'back', title: 'Back', onClick: () => { page = 'settings'; draw() } }, icon(0xE72B)), h('h1', {}, 'Help and commands')),
+      h('div', { class: 'group' }, 'Getting started'),
+      ...H.start.map(([t, d]) => h('div', { class: 'card' }, h('div', { class: 't' }, h('div', {}, t), h('div', {}, fix(d))))),
+      h('div', { class: 'sub', style: 'margin:14px 2px 0' }, 'Say these, or type them. Click one to try it now. You don\'t need the exact words: say it your own way.'),
+      ...H.sections.flatMap((sec) => [
+        h('div', { class: 'group' }, sec.title),
+        h('div', { class: 'cmds' }, sec.items.map(([say, what]) => h('button', { class: 'cmd', title: 'Try it', onClick: () => tryIt(say) }, h('b', {}, '"' + say + '"'), h('span', {}, what))))
+      ]),
+      h('div', { class: 'group' }, 'Hand gestures (game mode)'),
+      h('div', { class: 'cmds' }, H.gestures.map(([g, what]) => h('div', { class: 'cmd still' }, h('b', {}, g), h('span', {}, what)))),
+      h('div', { class: 'sub', style: 'margin:10px 2px 24px' }, 'Every game shows its own moves under its title. Hand School (in game mode) teaches each one.')))
+  }
   async function settingsPage () {
     setTimeout(fetchHeard, 0)
     settings = await A.settings()
@@ -208,6 +227,7 @@
       h('button', { class: settings.always === v ? 'on' : '', onClick: async () => { settings = await A.setSettings({ always: v }); settingsPage() } }, l)))
     root.replaceChildren(h('div', { class: 'page' },
       h('div', { class: 'pagehead' }, h('button', { class: 'back', title: 'Back to chat', onClick: () => { page = 'home'; draw() } }, icon(0xE72B)), h('h1', {}, 'Settings')),
+      card(0xE897, 'Help and commands', 'How to use it, every command (click one to try it) and the hand gestures.', h('button', { class: 'btn accent', onClick: () => { page = 'help'; draw() } }, 'Open')),
       h('div', { class: 'group' }, 'Name'),
       card(0xE8D4, 'What it\'s called', 'Also the wake word ("Hey ' + (settings.name || 'Meshron') + '"). Short, clear names like Nova, Jarvis or Atlas are heard best.', nameField()),
       h('div', { class: 'group' }, 'Talking'),
@@ -260,6 +280,7 @@
     hero = null
     if (!st.signedIn) return signIn()
     if (page === 'settings') return settingsPage()
+    if (page === 'help') return helpPage()
     home()
   }
 

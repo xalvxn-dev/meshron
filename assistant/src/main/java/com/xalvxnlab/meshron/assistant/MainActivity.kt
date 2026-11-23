@@ -188,11 +188,14 @@ class MainActivity : ComponentActivity(), Host {
     private fun App() {
         var signedIn by remember { mutableStateOf(api.signedIn) }
         var settings by remember { mutableStateOf(false) }
+        var help by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
         Box(Modifier.fillMaxSize().background(Hud.bg)) {
             HudGrid()
             when {
                 !signedIn -> SignIn { signedIn = true }
-                settings -> SettingsScreen(onBack = { settings = false }, onSignOut = { api.signOut(); brain.reset(); signedIn = false; settings = false })
+                help -> HelpScreen(Memory.name(this@MainActivity), onBack = { help = false }, onTry = { t -> help = false; settings = false; scope.launch { brain.ask(t) } })
+                settings -> SettingsScreen(onBack = { settings = false }, onSignOut = { api.signOut(); brain.reset(); signedIn = false; settings = false }, onHelp = { help = true })
                 else -> Home(onSettings = { settings = true })
             }
         }
@@ -378,7 +381,7 @@ class MainActivity : ComponentActivity(), Host {
     }
 
     @Composable
-    private fun SettingsScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
+    private fun SettingsScreen(onBack: () -> Unit, onSignOut: () -> Unit, onHelp: () -> Unit) {
         BackHandler(onBack = onBack)
         var speak by remember { mutableStateOf(Memory.speak(this)) }
         var sentry by remember { mutableStateOf(Memory.sentry(this)) }
@@ -390,6 +393,8 @@ class MainActivity : ComponentActivity(), Host {
                 IconTap(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
                 Text("SYSTEMS", color = Hud.cyan, fontFamily = FontFamily.Monospace, letterSpacing = 4.sp, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
+            Section("Help")
+            SetRow("Help and commands", "How to use it, every command (tap one to try it) and the hand gestures.") { LinkText("Open", onHelp) }
             Section("Signed in as @" + api.username)
             var name by remember { mutableStateOf(Memory.name(this@MainActivity)) }
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
