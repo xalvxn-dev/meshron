@@ -79,3 +79,10 @@
 .feed-text { font-size: 14px; line-height: 19px; color: var(--text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .feed-text b { color: var(--text); font-weight: 600; }
 .feed-thumb { width: 42px; height: 56px; object-fit: cover; border-radius: 8px; flex: none; }
+
+/* ---- Windows: one logo. The chat list header already shows "M Meshron", so the rail
+   drops its own M and the tabs start level with the header. ---- */
+@media (min-width: 821px) {
+  #rail .logo { display: none; }
+  #rail { padding-top: 14px; }
+}
