@@ -31,7 +31,11 @@ import kotlin.random.Random
  * and Gold, and faces (Buddy, Cosmo, Pixel, Kitty) that blink, look around, talk and show feelings.
  * Face skins sit at the top of the screen like an island instead of on a side.
  */
-data class Skin(val id: String, val name: String, val face: Boolean, val c1: Int, val c2: Int, val c3: Int)
+/** pal: a companion that lives on the screen ("walk", "fly", "float" or "jet"); head: its face. */
+data class Skin(val id: String, val name: String, val face: Boolean, val c1: Int, val c2: Int, val c3: Int, val pal: String? = null, val head: String = "buddy", val island: Boolean = false)
+
+/** How a companion is moving right now (for drawing its legs, wings or jet). */
+data class PalPose(val walking: Boolean = false, val phase: Float = 0f, val air: Boolean = false, val perch: Boolean = false, val facing: Int = 1, val sleep: Boolean = false)
 
 object Look {
     val SKINS = listOf(
@@ -44,7 +48,15 @@ object Look {
         Skin("buddy", "Buddy", true, 0xFF22D3C5.toInt(), 0xFF6E7BFF.toInt(), 0xFFB6F36A.toInt()),
         Skin("cosmo", "Cosmo", true, 0xFF8E7BFF.toInt(), 0xFF22D3C5.toInt(), 0xFFFF6BD6.toInt()),
         Skin("pixel", "Pixel", true, 0xFF3DFF8A.toInt(), 0xFF22D3C5.toInt(), 0xFFB6F36A.toInt()),
-        Skin("kitty", "Kitty", true, 0xFFFF9BD2.toInt(), 0xFFB57BFF.toInt(), 0xFFFFD1E8.toInt())
+        Skin("kitty", "Kitty", true, 0xFFFF9BD2.toInt(), 0xFFB57BFF.toInt(), 0xFFFFD1E8.toInt()),
+        // Island orbs: a black capsule at the top centre, like a phone's Dynamic Island.
+        Skin("island", "Island", false, 0xFF22D3C5.toInt(), 0xFF6E7BFF.toInt(), 0xFFB6F36A.toInt(), island = true),
+        Skin("pulse", "Pulse", false, 0xFFFF6BD6.toInt(), 0xFFB57BFF.toInt(), 0xFF22D3C5.toInt(), island = true),
+        // Companions: they live on the screen (walk, fly, float) instead of sitting in a corner.
+        Skin("strider", "Strider", false, 0xFF22D3C5.toInt(), 0xFF6E7BFF.toInt(), 0xFFB6F36A.toInt(), pal = "walk", head = "buddy"),
+        Skin("wisp", "Wisp", false, 0xFFB57BFF.toInt(), 0xFF22D3C5.toInt(), 0xFFFF6BD6.toInt(), pal = "fly", head = "cosmo"),
+        Skin("drift", "Drift", false, 0xFFFF6BD6.toInt(), 0xFFB57BFF.toInt(), 0xFFFFD1E8.toInt(), pal = "float", head = "buddy"),
+        Skin("bolt", "Bolt", false, 0xFF3DFF8A.toInt(), 0xFFFFB020.toInt(), 0xFFB6F36A.toInt(), pal = "jet", head = "pixel")
     )
     fun of(id: String) = SKINS.firstOrNull { it.id == id } ?: SKINS[0]
 
@@ -56,7 +68,7 @@ object Look {
     fun feel(m: String, ms: Long = 2200) { mood = m; moodUntil = System.currentTimeMillis() + ms }
     fun load(c: Context) { skin = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("skin", "reactor").orEmpty().ifBlank { "reactor" } }
     fun save(c: Context, id: String) { skin = id; c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putString("skin", id).apply() }
-    fun isFace(c: Context) = of(c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("skin", "reactor").orEmpty()).face
+    fun isFace(c: Context) = of(c.getSharedPreferences("memory", Context.MODE_PRIVATE).getString("skin", "reactor").orEmpty()).let { it.face || it.island }
 }
 
 /** Per-orb animation memory (eyes, blinks, stars, sparks). */
@@ -68,7 +80,7 @@ private class FaceState {
 
 /** The orb in a skin. [skinId] null: the chosen skin. */
 @Composable
-fun SkinOrb(mode: Mode, level: Float, modifier: Modifier = Modifier, skinId: String? = null, mood: String? = null) {
+fun SkinOrb(mode: Mode, level: Float, modifier: Modifier = Modifier, skinId: String? = null, mood: String? = null, pose: PalPose? = null) {
     val st = remember { FaceState() }
     var t by remember { mutableStateOf(0f) }
     LaunchedEffect(Unit) { val start = withFrameNanos { it }; while (true) withFrameNanos { t = (it - start) / 1e9f } }
@@ -84,6 +96,17 @@ fun SkinOrb(mode: Mode, level: Float, modifier: Modifier = Modifier, skinId: Str
                 "nebula" -> d.nebula(); "ember" -> d.ember(); "aurora" -> d.aurora()
                 "mono" -> d.rings(ticks = true, coils = false, thin = true); "gold" -> { d.rings(ticks = true, coils = true, thin = false); d.hexagon() }
                 "buddy", "cosmo", "pixel", "kitty" -> d.face(skin.id)
+                "island" -> d.islandBars()
+                "pulse" -> d.pulse()
+                "strider", "wisp", "drift", "bolt" -> {
+                    // The body, then the face as its head.
+                    val hr = min(size.width, size.height) / 2 * 0.5f
+                    val p = pose ?: PalPose(walking = skin.pal == "walk", phase = time * 6, air = skin.pal != "walk")
+                    val hy = size.height / 2 - hr * 0.45f + (if (p.air) sin(time * 2.2f) * hr * 0.1f else 0f)
+                    palBody(c, skin, size.width / 2, hy, hr, time, p)
+                    val m2 = if (p.sleep) "sleep" else m
+                    Draw(c, size.width / 2, hy, hr / 0.8f, time, mode, st, skin, m2).face(skin.head)
+                }
                 else -> d.rings(ticks = true, coils = true, thin = false)
             }
         }
@@ -92,6 +115,53 @@ fun SkinOrb(mode: Mode, level: Float, modifier: Modifier = Modifier, skinId: Str
 
 private fun a(color: Int, alpha: Float): Int = (color and 0xFFFFFF) or ((alpha.coerceIn(0f, 1f) * 255).roundToInt() shl 24)
 private const val TAU = (PI * 2).toFloat()
+
+/** A companion's body around its head (centre x, y; head radius r): legs, wings, tentacles, a jet. */
+fun palBody(c: android.graphics.Canvas, skin: Skin, x: Float, y: Float, r: Float, t: Float, st: PalPose) {
+    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    fun stroke(w: Float, col: Int) { p.style = Paint.Style.STROKE; p.strokeWidth = w; p.color = col; p.shader = null }
+    p.setShadowLayer(r * 0.3f, 0f, 0f, skin.c1)
+    if (skin.pal == "walk" || skin.pal == "jet") {
+        for (i in 0..1) {
+            val side = if (i == 1) 1f else -1f
+            val hx = x + side * r * 0.36f; val hy = y + r * 0.72f
+            var fx = hx; var fy = hy + r * 0.95f
+            when {
+                st.perch -> { fx = hx + sin(t * 2.4f + i * 1.3f) * r * 0.22f; fy = hy + r * 0.9f }
+                st.air -> { fx = hx + side * r * 0.1f; fy = hy + r * 0.55f }
+                st.walking -> { val ph = st.phase + i * PI.toFloat(); fx = hx + sin(ph) * r * 0.45f * st.facing; fy = hy + r * 0.95f - max(0f, cos(ph)) * r * 0.28f }
+            }
+            val kx = (hx + fx) / 2 + r * 0.16f * st.facing; val ky = (hy + fy) / 2
+            val leg = android.graphics.Path().apply { moveTo(hx, hy); lineTo(kx, ky); lineTo(fx, fy) }
+            stroke(r * 0.2f, 0xF2060C14.toInt()); c.drawPath(leg, p)
+            stroke(r * 0.08f, skin.c1); c.drawPath(leg, p)
+            p.style = Paint.Style.FILL; c.drawOval(RectF(fx + r * 0.08f * st.facing - r * 0.16f, fy - r * 0.07f, fx + r * 0.08f * st.facing + r * 0.16f, fy + r * 0.07f), p)
+        }
+        if (skin.pal == "jet" && st.air) {
+            val fl = r * (0.5f + Random.nextFloat() * 0.35f)
+            p.style = Paint.Style.FILL; p.shader = android.graphics.LinearGradient(x, y + r * 0.8f, x, y + r * 0.8f + fl, skin.c2, 0x00FFB020, Shader.TileMode.CLAMP)
+            c.drawPath(android.graphics.Path().apply { moveTo(x - r * 0.18f, y + r * 0.8f); quadTo(x, y + r * 0.8f + fl * 1.4f, x + r * 0.18f, y + r * 0.8f) }, p); p.shader = null
+        }
+    }
+    if (skin.pal == "fly") {
+        val a = sin(t * (if (st.air) 16f else 3f)) * (if (st.air) 0.75f else 0.25f)
+        for (side in listOf(-1f, 1f)) {
+            c.save(); c.translate(x + side * r * 0.7f, y - r * 0.05f); c.rotate(Math.toDegrees((side * (-0.35f + a)).toDouble()).toFloat()); c.scale(side, 1f)
+            val wing = android.graphics.Path().apply { moveTo(0f, 0f); cubicTo(r * 0.5f, -r, r * 1.25f, -r * 0.6f, r * 1.05f, r * 0.05f); cubicTo(r * 0.8f, r * 0.3f, r * 0.35f, r * 0.25f, 0f, 0f) }
+            p.style = Paint.Style.FILL; p.color = 0x38B57BFF; c.drawPath(wing, p)
+            stroke(r * 0.05f, skin.c1); c.drawPath(wing, p)
+            c.restore()
+        }
+    }
+    if (skin.pal == "float") {
+        for (i in 0 until 5) {
+            val bx = x + (i - 2) * r * 0.3f
+            val path = android.graphics.Path().apply { moveTo(bx, y + r * 0.62f); for (k in 1..8) lineTo(bx + sin(t * 3 + i + k * 0.7f) * r * 0.12f * (k / 4f), y + r * 0.62f + k * r * 0.17f) }
+            stroke(r * 0.07f, if (i % 2 == 1) skin.c2 else skin.c1); c.drawPath(path, p)
+        }
+        p.clearShadowLayer(); p.style = Paint.Style.FILL; p.color = 0x1FFF6BD6; c.drawArc(RectF(x - r * 1.15f, y + r * 0.1f - r * 0.95f, x + r * 1.15f, y + r * 0.1f + r * 0.95f), 180f, 180f, true, p)
+    }
+}
 
 private class Draw(val c: android.graphics.Canvas, val cx: Float, val cy: Float, val R: Float, val t: Float, val mode: Mode, val st: FaceState, val skin: Skin, val mood: String?) {
     val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -137,6 +207,34 @@ private class Draw(val c: android.graphics.Canvas, val cx: Float, val cy: Float,
         val coreR = R * (0.26f + breathe * 0.02f + shown * 0.1f)
         glow(cx, cy, coreR * 1.6f, 0f to 0xFFFFFFFF.toInt(), 0.45f to a(accent, 0.95f), 1f to a(accent, 0f))
         fill(0xFFFFFFFF.toInt()); c.drawCircle(cx, cy, coreR * 0.55f, p)
+    }
+
+    /** Island: audio bars that breathe, follow your voice and dance while it speaks. */
+    fun islandBars() {
+        fill(0xFF000000.toInt()); c.drawCircle(cx, cy, R * 0.98f, p)
+        val col = when (mode) { Mode.Thinking -> skin.c2; Mode.Speaking -> skin.c3; else -> skin.c1 }
+        val n = 5; val bw = R * 0.13f; val gap = R * 0.09f
+        p.setShadowLayer(R * 0.3f, 0f, 0f, col)
+        for (i in 0 until n) {
+            val k = when (mode) {
+                Mode.Speaking -> 0.35f + 0.65f * abs(sin(t * 9 + i * 1.3f) * sin(t * 4.1f + i))
+                Mode.Listening -> 0.2f + shown * (0.5f + 0.5f * sin(t * 12 + i))
+                Mode.Thinking -> 0.25f + 0.6f * max(0f, sin(t * 7 - i * 0.8f))
+                else -> 0.18f + 0.08f * sin(t * 2 + i)
+            }
+            val h = R * 1.1f * min(1f, k); val x = cx + (i - (n - 1) / 2f) * (bw + gap)
+            fill(col); c.drawRoundRect(RectF(x - bw / 2, cy - h / 2, x + bw / 2, cy + h / 2), bw / 2, bw / 2, p)
+        }
+        p.clearShadowLayer()
+    }
+    /** Pulse: rings rippling out of a bright dot. */
+    fun pulse() {
+        fill(0xFF000000.toInt()); c.drawCircle(cx, cy, R * 0.98f, p)
+        val col = when (mode) { Mode.Thinking -> skin.c2; Mode.Speaking -> skin.c3; else -> skin.c1 }
+        val speed = if (mode == Mode.Idle) 0.5f else 1.6f
+        for (k in 0 until 3) { val q = (t * speed + k / 3f) % 1f; stroke(a(col, (1 - q) * 0.9f), R * 0.08f); c.drawCircle(cx, cy, R * (0.22f + q * 0.68f), p) }
+        val core = R * (0.2f + shown * 0.15f + if (mode == Mode.Speaking) abs(sin(t * 10)) * 0.08f else 0f)
+        p.setShadowLayer(R * 0.5f, 0f, 0f, col); fill(0xFFFFFFFF.toInt()); c.drawCircle(cx, cy, core, p); p.clearShadowLayer()
     }
 
     fun hexagon() {
@@ -216,7 +314,7 @@ private class Draw(val c: android.graphics.Canvas, val cx: Float, val cy: Float,
         f.lx += (tx - f.lx) * 0.12f; f.ly += (ty - f.ly) * 0.12f
         if (t > f.nextBlink) { f.blink = 1f; f.nextBlink = t + 2 + Random.nextFloat() * 3.5f }
         f.blink = max(0f, f.blink - 0.16f)
-        val lid = if (ex == "surprised") 0f else if (f.blink > 0) sin(f.blink * PI.toFloat()) else 0f
+        val lid = if (ex == "surprised") 0f else if (ex == "sleep") 1f else if (f.blink > 0) sin(f.blink * PI.toFloat()) else 0f
         if (ex == "talking") { f.talk += 0.35f + Random.nextFloat() * 0.25f; f.mouth = 0.25f + 0.75f * abs(sin(f.talk) * sin(f.talk * 0.37f + 1)) } else f.mouth += ((if (ex == "listening") shown * 0.6f else 0f) - f.mouth) * 0.3f
 
         c.save(); c.translate(cx, cy + bob)

@@ -468,7 +468,7 @@ class MainActivity : ComponentActivity(), Host {
                     ) {
                         SkinOrb(if (on) Mode.Speaking else Mode.Idle, 0f, Modifier.size(58.dp), skinId = k.id)
                         Text(k.name, color = Hud.text, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                        if (k.face) Text("FACE", color = Hud.dim, fontSize = 9.sp, letterSpacing = 1.sp)
+                        if (k.pal != null) Text("COMPANION", color = Hud.lime, fontSize = 9.sp, letterSpacing = 1.sp) else if (k.island) Text("ISLAND", color = Hud.cyan, fontSize = 9.sp, letterSpacing = 1.sp) else if (k.face) Text("FACE", color = Hud.dim, fontSize = 9.sp, letterSpacing = 1.sp)
                     }
                 }
             }

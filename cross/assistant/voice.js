@@ -62,19 +62,41 @@
       speechSynthesis.speak(u)
     })
   }
-  async function studio (text) {
-    const r = await A.tts(text).catch(() => null)
-    if (!r || !r.audio || !r.audio.length) return false
-    for (const clip of r.audio) {
-      await new Promise((resolve) => {
-        const a = new Audio('data:' + (r.mime || 'audio/wav') + ';base64,' + clip)
-        current = a
-        a.onended = a.onerror = () => resolve()
-        a.play().catch(() => resolve())
-      })
-      if (current === null) break // stopped
+  /** Reply text in speakable pieces: the first one short (so speech starts fast), then sentences. */
+  function pieces (text) {
+    const sentences = String(text).replace(/\s+/g, ' ').trim().split(/(?<=[.!?…])\s+(?=[A-Z0-9"'(])/)
+    const out = []
+    for (const s of sentences) {
+      const last = out[out.length - 1]
+      if (last && out.length > 1 && (last + ' ' + s).length < 220) out[out.length - 1] = last + ' ' + s
+      else out.push(s)
     }
-    return true
+    return out.filter(Boolean)
+  }
+  async function studio (text) {
+    // Each piece's audio is fetched while the one before it plays, so speech starts after the first
+    // sentence is ready instead of after the whole reply.
+    const parts = pieces(text)
+    if (!parts.length) return false
+    const fetchPart = (p) => A.tts(p).catch(() => null)
+    let next = fetchPart(parts[0])
+    let spoke = false
+    for (let i = 0; i < parts.length; i++) {
+      const r = await next
+      next = i + 1 < parts.length ? fetchPart(parts[i + 1]) : null
+      if (!r || !r.audio || !r.audio.length) { if (!spoke) return false; continue }
+      spoke = true
+      for (const clip of r.audio) {
+        await new Promise((resolve) => {
+          const a = new Audio('data:' + (r.mime || 'audio/wav') + ';base64,' + clip)
+          current = a
+          a.onended = a.onerror = () => resolve()
+          a.play().catch(() => resolve())
+        })
+        if (current === null) return true // stopped
+      }
+    }
+    return spoke
   }
   /** Says it (queued after anything still being said); onState(true/false) as it starts and ends. */
   function say (text, onState) {

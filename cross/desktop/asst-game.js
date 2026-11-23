@@ -144,8 +144,10 @@ function compact (on) {
     win.setAlwaysOnTop(true, 'screen-saver'); win.setFocusable(false)
     win.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + wa.height - h - 10, width: w, height: h })
   } else if (on) {
+    // The display the window is on; the card goes fully inside its work area, bottom-right.
+    const wa2 = screen.getDisplayMatching(win.getBounds()).workArea
     win.setAlwaysOnTop(true, 'screen-saver'); win.setFocusable(false)
-    win.setBounds({ x: wa.x + wa.width - 340, y: wa.y + wa.height - 290, width: 320, height: 270 })
+    win.setBounds({ x: wa2.x + wa2.width - 400, y: wa2.y + wa2.height - 330, width: 380, height: 310 })
   } else {
     win.setAlwaysOnTop(false); win.setFocusable(true)
     win.setBounds({ x: wa.x + Math.round((wa.width - 1280) / 2), y: wa.y + Math.round((wa.height - 800) / 2), width: Math.min(1280, wa.width - 80), height: Math.min(800, wa.height - 60) })
@@ -170,4 +172,4 @@ async function handle (what, arg, send) {
   return undefined
 }
 
-module.exports = { open, handle, releaseAll, isOpen: () => !!(win && !win.isDestroyed()), window: () => win }
+module.exports = { input, open, handle, releaseAll, isOpen: () => !!(win && !win.isDestroyed()), window: () => win }

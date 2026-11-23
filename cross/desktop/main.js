@@ -21,6 +21,13 @@ if (process.defaultApp) app.setAsDefaultProtocolClient('meshron', process.execPa
 else app.setAsDefaultProtocolClient('meshron')
 
 const bundle = path.join(__dirname, 'bundle')
+// If the graphics process kept crashing last time (a blank window), draw in software instead.
+const gpuFlag = path.join(app.getPath('userData'), 'gpu-crashed')
+if (fs.existsSync(gpuFlag)) app.disableHardwareAcceleration()
+let gpuCrashes = 0
+app.on('child-process-gone', (_e, d) => {
+  if (d.type === 'GPU' && d.reason !== 'clean-exit' && ++gpuCrashes >= 2) { try { fs.writeFileSync(gpuFlag, String(Date.now())) } catch {} app.relaunch(); app.exit(0) }
+})
 const dataDir = path.join(app.getPath('userData'), 'data')
 fs.mkdirSync(dataDir, { recursive: true })
 const iconPath = path.join(bundle, 'icon.png')
@@ -213,6 +220,10 @@ function createWindow() {
   win.removeMenu()
   if (anonMode) win.setContentProtection(true)
   win.loadFile(path.join(bundle, 'ui', 'index.html'))
+  // Never stay blank: if the page's process dies or hangs, load it again.
+  win.webContents.on('render-process-gone', (_e, d) => { if (d.reason !== 'clean-exit') setTimeout(() => { if (win && !win.isDestroyed()) win.loadFile(path.join(bundle, 'ui', 'index.html')) }, 500) })
+  win.on('unresponsive', () => { setTimeout(() => { if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.reload() }, 8000) })
+  win.webContents.on('did-fail-load', (_e, code) => { if (code !== -3) setTimeout(() => { if (win && !win.isDestroyed()) win.loadFile(path.join(bundle, 'ui', 'index.html')) }, 1000) })
   // Started with Windows: stay in the tray (still online, still notifying).
   if (!startHidden) win.once('ready-to-show', () => win.show())
   if (process.env.MESHRON_SNAPSHOT) {

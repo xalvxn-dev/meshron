@@ -137,6 +137,23 @@ class Brain(private val api: Api, private val host: Host) {
         val s = t.lowercase(Locale.ROOT).trim().trimEnd('.', '!', '?')
         val phrase = Memory.lockPhrase(host.ctx)
         if (phrase.isNotEmpty() && s.contains(phrase)) return act("lock", device.lock())
+        if (Look.of(Look.skin).pal != null) {
+            val act = when {
+                Regex("\\b(come here|come to me|come over)\\b").containsMatchIn(s) -> "come"
+                Regex("\\b(sit (down|on)|perch|get on top)\\b").containsMatchIn(s) -> "sit"
+                Regex("\\b(go to sleep|take a nap|nap time)\\b").containsMatchIn(s) -> "sleep"
+                Regex("\\bwake up\\b").containsMatchIn(s) -> "wake"
+                Regex("\\bdance\\b").containsMatchIn(s) -> "dance"
+                Regex("^(fly|fly around|take off)$").matches(s) -> "fly"
+                Regex("\\b(walk|go|move) left\\b").containsMatchIn(s) -> "left"
+                Regex("\\b(walk|go|move) right\\b").containsMatchIn(s) -> "right"
+                Regex("\\bhide yourself\\b|^hide$").containsMatchIn(s) -> "hide"
+                Regex("\\bshow yourself\\b|come back").containsMatchIn(s) -> "show"
+                Regex("^jump$").matches(s) -> "jump"
+                else -> null
+            }
+            if (act != null) return act("companion · $act", Outcome(FloatingService.instance?.palCommand(act) ?: "Turn on the floating assistant to see your companion."))
+        }
         if (Regex("\\b(game ?mode|play a game|open (the )?games?|hand tracking|face tracking|let'?s play)\\b").containsMatchIn(s)) {
             host.ctx.startActivity(Intent(host.ctx, GameActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return act("game mode", Outcome("Game mode is open"))

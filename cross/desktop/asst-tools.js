@@ -167,10 +167,12 @@ async function run (name, x, ctx) {
     }
     case 'type_text': {
       // Through the clipboard (handles every language and emoji), then put the clipboard back.
-      const old = clipboard.readText()
-      clipboard.writeText(String(x.text || ''))
+      // (Never let restoring the clipboard crash the app: it may have held a picture, not text.)
+      let old = ''
+      try { old = String(clipboard.readText() || '') } catch {}
+      clipboard.writeText(String(x.text == null ? '' : x.text))
       await keys('ctrl+v')
-      setTimeout(() => clipboard.writeText(old), 600)
+      setTimeout(() => { try { clipboard.writeText(old) } catch {} }, 600)
       return ok('Typed it')
     }
     case 'press_keys': await keys(String(x.keys || '')); return ok('Pressed ' + x.keys)
@@ -292,6 +294,11 @@ $r = $hit.Current.BoundingRectangle
     }
     case 'showcase': return ok(await ctx.showcase(String(x.kind || '')))
     case 'game_mode': return ok(ctx.game())
+    case 'create_shortcut': return ok(await P(ctx).createShortcut(x))
+    case 'memory_usage': return ok(await ctx.showcase('memory'))
+    case 'draw_in_paint': return ok(await P(ctx).drawInPaint(x))
+    case 'show_how': return ok(await P(ctx).showHow(x))
+    case 'companion': return ok(ctx.companion(String(x.action || '')))
     case 'point_at': {
       // Teaching: circle a control by its name (UI Automation, window in front first), or a spot
       // given as fractions of the screen (from what read_screen showed).
@@ -328,4 +335,11 @@ foreach ($root in $roots) {
   }
 }
 
-module.exports = { run, keys, apps, ps }
+// The bigger powers (asst-power.js), made once.
+let powerOf = null
+function P (ctx) {
+  if (!powerOf) powerOf = require('./asst-power')({ ps, q, apps, best, input: require('./asst-game').input, show: require('./asst-show'), hidden: () => !!(ctx.hidden && ctx.hidden()) })
+  return powerOf
+}
+
+module.exports = { run, keys, apps, ps, P }

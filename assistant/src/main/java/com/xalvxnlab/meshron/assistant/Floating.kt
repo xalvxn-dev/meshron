@@ -68,6 +68,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.min
+import kotlin.math.max
+import kotlin.math.hypot
+import kotlin.random.Random
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.ui.layout.onSizeChanged
 
 /**
  * The floating assistant: a small reactor orb over every app. Tap it to talk (or, with "Always
@@ -142,6 +150,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         wm = getSystemService(WindowManager::class.java)
         Look.load(this)
         island = Look.isFace(this)
+        palSkin = Look.of(Look.skin).takeIf { it.pal != null }
         val (right, y) = Memory.orbSpot(this)
         onRight = right
         params = WindowManager.LayoutParams(
@@ -150,9 +159,15 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or if (island) Gravity.CENTER_HORIZONTAL else if (right) Gravity.END else Gravity.START
+            gravity = Gravity.TOP or if (palSkin != null) Gravity.START else if (island) Gravity.CENTER_HORIZONTAL else if (right) Gravity.END else Gravity.START
             x = 0
             this.y = if (island) (statusBar() * 0.15f).roundToInt() else (resources.displayMetrics.heightPixels * y).roundToInt().coerceIn(maxTop(), maxBottom())
+            // Left on the top or bottom edge last time: put it back where it was along that edge.
+            val prefs = getSharedPreferences("memory", MODE_PRIVATE)
+            if (!island && palSkin == null && prefs.getString("orbEdge", "") in setOf("top", "bottom")) {
+                val w = resources.displayMetrics.widthPixels; val cx = (prefs.getFloat("orbX", 0.5f) * w).roundToInt(); val orbPx = (60 * resources.displayMetrics.density).roundToInt()
+                x = if (right) (w - cx - orbPx / 2).coerceAtLeast(0) else (cx - orbPx / 2).coerceAtLeast(0)
+            }
         }
         val compose = ComposeView(this).apply { setContent { Bubble() } }
         view = DragFrame(this, compose).apply {
@@ -163,6 +178,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         if (Memory.floating(this) && Settings.canDrawOverlays(this)) wm.addView(view, params) else view = null
         life.currentState = Lifecycle.State.RESUMED
         if (always) main.postDelayed({ listen(wake = true) }, 800)
+        if (palSkin != null && view != null) startPal()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -178,6 +194,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         runCatching { view?.let { wm.removeView(it) } }
         view = null
         life.currentState = Lifecycle.State.DESTROYED
+        palJob?.cancel()
         scope.cancel()
         super.onDestroy()
     }
@@ -322,8 +339,138 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     override suspend fun pickDocument(): Picked? = (system(ProxyActivity.Req.Doc) as? android.net.Uri)?.let { readDocument(this, it) }
 
     // ---- The orb and its strip ----
+    // ---- Companions (Strider walks, Wisp flies, Drift floats, Bolt walks and jet-flies) ----
+    // It lives on the screen: walks along the bottom, flies up and sits on the top edge over your
+    // apps, naps when left alone, stops to listen and talk. Tap: talk. Drag: carry or throw it.
+    var palSkin: Skin? = null
+    private var palPose by mutableStateOf(PalPose())
+    private var px = 0f; private var py = 0f; private var vx = 0f; private var vy = 0f
+    private var palMode = "fall"; private var palTarget: Pair<Float, Float>? = null
+    private var palIdle = 0f; private var palPhase = 0f; private var palFacing = 1; private var palSleep = false; private var palDance = 0f; private var palHidden = false; private var palPerch = false
+    private var palWinW = 0; private var palWinH = 0
+    private var palJob: Job? = null
+    private val dpx get() = resources.displayMetrics.density
+    private fun floorY() = resources.displayMetrics.heightPixels - 6 * dpx
+    private fun topY() = statusBar() + 4 * dpx
+
+    private fun startPal() {
+        val w = resources.displayMetrics.widthPixels.toFloat()
+        px = w * (0.3f + Random.nextFloat() * 0.4f); py = topY() + 80 * dpx; palMode = if (palSkin?.pal == "fly") "fly" else "fall"
+        palJob = scope.launch {
+            var last = System.nanoTime()
+            while (true) {
+                delay(16)
+                val now = System.nanoTime(); val dt = min(0.05f, (now - last) / 1e9f); last = now
+                palStep(dt)
+                placePal()
+            }
+        }
+    }
+    private fun placePal() {
+        val v = view ?: return
+        if (palWinW == 0) return
+        params.x = (px - palWinW / 2f).roundToInt().coerceIn(0, max(0, resources.displayMetrics.widthPixels - palWinW))
+        params.y = (py - palWinH).roundToInt().coerceAtLeast(0)
+        runCatching { wm.updateViewLayout(v, params) }
+    }
+    private fun palTargetNew() {
+        val w = resources.displayMetrics.widthPixels.toFloat(); val k = palSkin?.pal
+        val top = (k == "fly" || k == "jet") && Random.nextFloat() < 0.4f
+        palTarget = (w * (0.1f + Random.nextFloat() * 0.8f)) to (if (top) topY() else floorY())
+    }
+    private fun palStep(dt: Float) {
+        val k = palSkin?.pal ?: return
+        if (palMode == "held" || palHidden) return
+        val talking = mode != Mode.Idle || asking != null
+        if (talking) { palSleep = false; palIdle = 0f }
+        if (palDance > 0) palDance -= dt
+        val w = resources.displayMetrics.widthPixels.toFloat()
+        val air: Boolean
+        when {
+            k == "float" -> {
+                // Drift: floats and bobs, wandering slowly through the middle of the screen.
+                val tg = palTarget
+                if (tg == null || hypot(tg.first - px, tg.second - py) < 30 * dpx || Random.nextFloat() < 0.002f) palTarget = (w * (0.15f + Random.nextFloat() * 0.7f)) to (topY() + 160 * dpx + Random.nextFloat() * (floorY() - topY() - 320 * dpx))
+                palTarget?.let { (tx, ty) -> if (!talking) { vx += (tx - px) * 0.6f * dt; vy += (ty - py) * 0.6f * dt } }
+                vx *= 0.97f; vy *= 0.97f; px += vx * dt; py += vy * dt + sin(System.nanoTime() / 6e8f) * 0.4f
+                py = py.coerceIn(topY() + 130 * dpx, floorY() - 20 * dpx); palFacing = if (vx >= 0) 1 else -1; air = true
+            }
+            palMode == "fly" -> {
+                val tg = palTarget ?: run { palTargetNew(); palTarget!! }
+                val dx = tg.first - px; val dy = tg.second - py; val dist = hypot(dx, dy)
+                val sp = 300 * dpx
+                vx += ((dx / max(1f, dist)) * sp - vx) * min(1f, dt * 2.5f); vy += ((dy / max(1f, dist)) * sp - vy) * min(1f, dt * 2.5f)
+                if (talking) { vx *= 0.9f; vy *= 0.9f }
+                px += vx * dt; py += vy * dt
+                if (kotlin.math.abs(dx) > 2) palFacing = if (dx > 0) 1 else -1
+                if (dist < 12 * dpx) { py = tg.second; palMode = "stand"; palPerch = tg.second < floorY() - 10; palTarget = null; vx = 0f; vy = 0f; palIdle = 0f }
+                air = true
+            }
+            palMode == "fall" -> {
+                vy += 2400 * dt; px += vx * dt; py += vy * dt
+                if (py >= floorY()) { py = floorY(); vx = 0f; vy = 0f; palMode = "stand"; palPerch = false }
+                air = true
+            }
+            else -> {
+                air = false
+                palPhase += if (palPose.walking) dt * 9 else 0f
+                if (talking || palDance > 0) { palPose = palPose.copy(walking = false); placeDone(); return }
+                palIdle += dt
+                if (palSleep) { if (palIdle > 40) { palSleep = false; palIdle = 0f } } else if (palIdle > 28 && Random.nextFloat() < 0.01f) palSleep = true
+                else {
+                    if (palTarget == null && palIdle > 2.5f + Random.nextFloat() * 4) { palTargetNew(); palIdle = 0f }
+                    palTarget?.let { (tx, ty) ->
+                        if (kotlin.math.abs(ty - py) > 8) {
+                            // Another level: fly (Wisp, Bolt) or fall off the top edge (a walker on top).
+                            if (k == "fly" || k == "jet") { palMode = "fly"; return } else if (ty > py) { palMode = "fall"; return } else palTarget = tx to py
+                        }
+                        val dx = tx - px
+                        if (kotlin.math.abs(dx) < 4) { palTarget = null; palIdle = 0f } else { palFacing = if (dx > 0) 1 else -1; px += palFacing * min(kotlin.math.abs(dx), 90 * dpx * dt) }
+                    }
+                }
+            }
+        }
+        px = px.coerceIn(30 * dpx, w - 30 * dpx)
+        palPose = PalPose(walking = palMode == "stand" && palTarget != null && !palSleep, phase = palPhase, air = air && !(k == "fly" && palMode == "stand"), perch = palPerch && palMode == "stand", facing = palFacing, sleep = palSleep)
+    }
+    private fun placeDone() {}
+
+    /** Companion commands: come, sit, sleep, wake, dance, fly, left, right, jump, hide, show. */
+    fun palCommand(action: String): String {
+        if (palSkin == null) return "Pick a companion first (Look: Strider, Wisp, Drift or Bolt)."
+        main.post {
+            palSleep = false; palIdle = 0f
+            val w = resources.displayMetrics.widthPixels.toFloat(); val k = palSkin?.pal
+            when (action) {
+                "come" -> { palTarget = (w / 2) to floorY(); if (k == "fly" || k == "jet") palMode = "fly" }
+                "sit" -> { palTarget = (w / 2) to topY(); if (k == "fly" || k == "jet") palMode = "fly" else { palMode = "fall"; vy = -2200f } }
+                "sleep" -> { palSleep = true; palTarget = null }
+                "dance" -> { palDance = 4f; Look.feel("happy", 4000) }
+                "fly" -> if (k == "fly" || k == "jet") { palMode = "fly"; palTarget = (w * Random.nextFloat()) to (topY() + 200 * dpx) } else { palMode = "fall"; vy = -1600f }
+                "left" -> palTarget = 40 * dpx to py
+                "right" -> palTarget = (w - 40 * dpx) to py
+                "jump" -> { palMode = "fall"; vy = -1500f; vx = palFacing * 300f }
+                "hide" -> { palHidden = true; view?.visibility = android.view.View.INVISIBLE }
+                "show" -> { palHidden = false; view?.visibility = android.view.View.VISIBLE }
+            }
+        }
+        return mapOf("come" to "Coming!", "sit" to "Sitting on top of your apps.", "sleep" to "Taking a nap.", "wake" to "I'm awake!", "dance" to "Dancing!", "fly" to "Up we go!", "left" to "Heading left.", "right" to "Heading right.", "jump" to "Jump!", "hide" to "Hiding. Say \"show yourself\" to bring me back.", "show" to "Here I am!")[action] ?: "Okay."
+    }
+
+    @Composable
+    private fun PalView() {
+        val skin = palSkin ?: return
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.onSizeChanged { palWinW = it.width; palWinH = it.height }) {
+            AnimatedVisibility(strip != null || asking != null, enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom), exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)) { Strip() }
+            Box(Modifier.size(112.dp, 124.dp).pointerInput(Unit) { detectTapGestures(onTap = { tap() }, onLongPress = { openApp() }) }) {
+                SkinOrb(mode, level, Modifier.size(112.dp, 124.dp), skinId = skin.id, pose = palPose)
+            }
+        }
+    }
+
     @Composable
     private fun Bubble() {
+        if (palSkin != null) { PalView(); return }
         if (island) {
             // Like an island in the status bar: a black pill with the face, growing sideways with the text.
             Row(
@@ -363,6 +510,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
 
     /** Follows the finger: [dx]/[dy] is how far it travelled on screen since the drag began. */
     fun moveTo(startX: Int, startY: Int, dx: Float, dy: Float) {
+        if (palSkin != null) { palMode = "held"; px = startX + palWinW / 2f + dx; py = startY + palWinH + dy; placePal(); return }
         if (island) return
         params.x = (startX + (if (onRight) -dx else dx)).roundToInt().coerceAtLeast(0)
         params.y = (startY + dy).roundToInt().coerceIn(maxTop(), maxBottom())
@@ -370,6 +518,27 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     }
 
     fun settle() {
+        if (palSkin == null && !island) {
+            // Nearest edge: left, right, top or bottom (top and bottom keep where along it you left it).
+            val w = resources.displayMetrics.widthPixels; val h = resources.displayMetrics.heightPixels
+            val orbPx = (60 * resources.displayMetrics.density).roundToInt()
+            val left = if (onRight) w - params.x - orbPx else params.x
+            val cx = left + orbPx / 2; val cy = params.y + orbPx / 2
+            val d = mapOf("left" to cx, "right" to w - cx, "top" to cy - maxTop(), "bottom" to maxBottom() + orbPx - cy)
+            val edge = d.minByOrNull { it.value }!!.key
+            if (edge == "top" || edge == "bottom") {
+                onRight = cx > w / 2
+                params.gravity = Gravity.TOP or if (onRight) Gravity.END else Gravity.START
+                params.x = if (onRight) (w - cx - orbPx / 2).coerceAtLeast(0) else (cx - orbPx / 2).coerceAtLeast(0)
+                params.y = if (edge == "top") maxTop() else maxBottom()
+                runCatching { wm.updateViewLayout(view, params) }
+                getSharedPreferences("memory", MODE_PRIVATE).edit().putString("orbEdge", edge).putFloat("orbX", cx / w.toFloat()).apply()
+                Memory.setOrbSpot(this, onRight, params.y / h.toFloat())
+                return
+            }
+            getSharedPreferences("memory", MODE_PRIVATE).edit().putString("orbEdge", edge).apply()
+        }
+        if (palSkin != null) { palMode = if (palSkin?.pal == "fly") "fly" else if (palSkin?.pal == "float") "stand" else "fall"; vy = 0f; vx = 0f; palTarget = null; Look.feel("surprised", 900); return }
         if (island) return
         val w = resources.displayMetrics.widthPixels
         val orbPx = (60 * resources.displayMetrics.density).roundToInt()

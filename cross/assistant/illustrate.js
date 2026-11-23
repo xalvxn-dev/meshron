@@ -75,6 +75,57 @@
         g.globalAlpha = 1 - p * 0.8; g.fillStyle = C.text; rr(g, x - 9, y - 12, 18, 24, 3); g.fill(); g.globalAlpha = 1
       }
       label(g, d.text || '', cx, cy + s * 0.48, 14)
+    },
+    game (g, cx, cy, s, t) {
+      // A hand as a hologram wireframe, pinching a block.
+      const P = [[0, 0.5], [-0.25, 0.35], [-0.4, 0.15], [-0.5, -0.05], [-0.55, -0.22], [-0.15, -0.05], [-0.15, -0.35], [-0.16, -0.52], [-0.17, -0.66], [0, -0.07], [0.02, -0.4], [0.03, -0.6], [0.04, -0.75], [0.15, -0.05], [0.18, -0.35], [0.2, -0.52], [0.21, -0.64], [0.28, 0.02], [0.33, -0.22], [0.36, -0.36], [0.38, -0.47]]
+      const pinch = (Math.sin(t * 3) + 1) / 2
+      const pts = P.map(([x, y], i) => [cx + x * s * 0.9 - s * 0.25, cy + y * s * 0.9 + (i === 4 || i === 8 ? pinch * (i === 4 ? -s * 0.15 : s * 0.12) : 0) + (i === 3 ? -pinch * s * 0.08 : 0)])
+      const B = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]]
+      g.strokeStyle = C.cyan; g.shadowColor = C.cyan; g.shadowBlur = 10; g.lineWidth = 2
+      for (const [a, b] of B) { g.beginPath(); g.moveTo(pts[a][0], pts[a][1]); g.lineTo(pts[b][0], pts[b][1]); g.stroke() }
+      g.fillStyle = '#fff'; for (const p of pts) { g.beginPath(); g.arc(p[0], p[1], 2.5, 0, 7); g.fill() }
+      // Falling blocks beside it.
+      const cols = [C.cyan, C.amber, C.lime]
+      for (let k = 0; k < 4; k++) { const y = cy - s * 0.5 + ((t * 0.6 + k * 0.25) % 1) * s; g.strokeStyle = cols[k % 3]; g.shadowColor = cols[k % 3]; g.strokeRect(cx + s * 0.45 + (k % 2) * 20, y, 18, 18) }
+      g.shadowBlur = 0
+    },
+    skins (g, cx, cy, s, t) {
+      // Three skins side by side: rings, a face, a nebula swirl.
+      const r = s * 0.24
+      g.strokeStyle = C.cyan; g.lineWidth = 3; g.shadowColor = C.cyan; g.shadowBlur = 12
+      g.beginPath(); g.arc(cx - s * 0.62, cy, r, t, t + 4.5); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(cx - s * 0.62, cy, r * 0.3, 0, 7); g.fill()
+      g.fillStyle = '#0B1A2A'; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill(); g.stroke()
+      const blink = (t % 3) < 0.12
+      g.fillStyle = '#F4FBFF'; g.fillRect(cx - r * 0.42, cy - r * 0.25, r * 0.2, blink ? 2 : r * 0.36); g.fillRect(cx + r * 0.22, cy - r * 0.25, r * 0.2, blink ? 2 : r * 0.36)
+      g.beginPath(); g.arc(cx, cy + r * 0.12, r * 0.35, 0.3, Math.PI - 0.3); g.stroke()
+      for (let k = 0; k < 18; k++) { const a = t * 1.5 + k * 0.6; const d = r * (0.2 + (k % 6) * 0.14); g.fillStyle = k % 2 ? '#FF6BD6' : '#B57BFF'; g.beginPath(); g.arc(cx + s * 0.62 + Math.cos(a) * d, cy + Math.sin(a) * d * 0.8, 2.2, 0, 7); g.fill() }
+      g.shadowBlur = 0
+    },
+    pal (g, cx, cy, s, t) {
+      // A companion walking along the top of a window.
+      g.strokeStyle = 'rgba(34,211,197,.6)'; g.lineWidth = 1.5; rr(g, cx - s * 0.9, cy + s * 0.18, s * 1.8, s * 0.5, 6); g.stroke()
+      g.fillStyle = 'rgba(34,211,197,.12)'; g.fillRect(cx - s * 0.9, cy + s * 0.18, s * 1.8, 10)
+      const x = cx + Math.sin(t * 0.7) * s * 0.6; const r = s * 0.16; const y = cy + s * 0.18 - r * 1.67
+      const skin = { pal: 'walk', colors: [C.cyan, C.blue, C.lime] }
+      if (window.PalBody) window.PalBody(g, skin, x, y, r, t, { walking: true, phase: t * 9, facing: Math.cos(t * 0.7) >= 0 ? 1 : -1 })
+      g.fillStyle = '#0B1A2A'; g.strokeStyle = C.cyan; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke()
+      g.fillStyle = '#F4FBFF'; g.fillRect(x - r * 0.4, y - r * 0.2, r * 0.18, r * 0.34); g.fillRect(x + r * 0.22, y - r * 0.2, r * 0.18, r * 0.34)
+    },
+    point (g, cx, cy, s, t) {
+      // Teaching: a button circled with an arrow curving in.
+      g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 1.5; rr(g, cx - s * 0.9, cy - s * 0.4, s * 1.8, s * 0.8, 8); g.stroke()
+      g.fillStyle = 'rgba(255,255,255,.12)'; rr(g, cx - s * 0.2, cy - s * 0.08, s * 0.5, s * 0.22, 5); g.fill()
+      const k = ease((t % 2.5) / 0.9)
+      g.strokeStyle = C.cyan; g.shadowColor = C.cyan; g.shadowBlur = 12; g.lineWidth = 3
+      g.beginPath(); g.ellipse(cx + s * 0.05, cy + s * 0.03, s * 0.36, s * 0.2, 0, -1.6, -1.6 + k * 6.6); g.stroke()
+      g.strokeStyle = C.lime; g.shadowColor = C.lime; g.beginPath(); g.moveTo(cx - s * 0.75, cy - s * 0.32); g.quadraticCurveTo(cx - s * 0.6, cy, cx - s * 0.35, cy + s * 0.02); g.stroke()
+      g.shadowBlur = 0
+    },
+    shows (g, cx, cy, s, t) {
+      // The visual showcases: gauges sweeping round.
+      const arc = (x, r, v, col) => { g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 8; g.beginPath(); g.arc(x, cy, r, 0, 7); g.stroke(); g.strokeStyle = col; g.shadowColor = col; g.shadowBlur = 10; g.beginPath(); g.arc(x, cy, r, -Math.PI / 2, -Math.PI / 2 + v * Math.PI * 2); g.stroke(); g.shadowBlur = 0 }
+      arc(cx - s * 0.6, s * 0.22, 0.35 + 0.25 * Math.sin(t * 1.3), C.cyan); arc(cx, s * 0.26, 0.6 + 0.2 * Math.sin(t), C.lime); arc(cx + s * 0.6, s * 0.22, 0.75, C.amber)
     }
   }
 
@@ -93,7 +144,7 @@
     // The search box above, filling in.
     g.fillStyle = 'rgba(255,255,255,.06)'; g.strokeStyle = 'rgba(34,211,197,.5)'; g.lineWidth = 1.5; rr(g, cx - w / 2, top - key * 1.9, w, key * 1.1, 10); g.fill(); g.stroke()
     g.fillStyle = C.text; g.font = '15px "Segoe UI"'; g.textAlign = 'left'
-    g.fillText('🔍  ' + q.slice(0, typed) + ((Math.floor(t * 2) % 2) ? '|' : ''), cx - w / 2 + 14, top - key * 1.22)
+    g.fillText('SEARCH  ' + q.slice(0, typed) + ((Math.floor(t * 2) % 2) ? '|' : ''), cx - w / 2 + 14, top - key * 1.22)
     const cur = q[typed - 1]
     ROWS.forEach((row, ri) => {
       const rowW = row.length * key; const x0 = cx - rowW / 2
@@ -111,16 +162,20 @@
 
   // ---- The feature tour ("what can you do") ----
   const FEATURES = [
-    { icon: '🎙', title: 'Talk or type', say: '"Hey <name>" · or the shortcut', pic: 'media' },
-    { icon: '🪟', title: 'Open, switch and close apps', say: '"Open Spotify" · "Close Notepad"', pic: 'app' },
-    { icon: '📁', title: 'Tidy your files', say: '"Sort my Downloads by type"', pic: 'files' },
-    { icon: '⏰', title: 'Timers, alarms, reminders', say: '"Remind me at 6 to call mum"', pic: 'alarm' },
-    { icon: '🔊', title: 'Volume and music', say: '"Volume 40" · "Next song"', pic: 'volume' },
-    { icon: '🖥', title: 'See your screen', say: '"What\'s on my screen?"', pic: 'app' },
-    { icon: '🔎', title: 'Live web lookups', say: '"Latest news" · "Weather tomorrow"', pic: 'search' },
-    { icon: '🔒', title: 'Lock the PC', say: '"Lock my PC"', pic: 'lock' }
+    { tag: 'TALK', title: 'Talk or type', say: '"Hey <name>" · or the shortcut', pic: 'media' },
+    { tag: 'APPS', title: 'Open, switch and close apps', say: '"Open Spotify" · "Close Notepad"', pic: 'app' },
+    { tag: 'FILES', title: 'Tidy your files', say: '"Sort my Downloads by type"', pic: 'files' },
+    { tag: 'TIME', title: 'Timers, alarms, reminders', say: '"Remind me at 6 to call mum"', pic: 'alarm' },
+    { tag: 'SOUND', title: 'Volume and music', say: '"Volume 40" · "Next song"', pic: 'volume' },
+    { tag: 'WEB', title: 'Live web lookups', say: '"Latest news" · "Weather tomorrow"', pic: 'search' },
+    { tag: 'TEACH', title: 'Shows you where to click', say: '"How do I change my wallpaper?"', pic: 'point' },
+    { tag: 'SHOW', title: 'Visual showcases', say: '"Show my storage" · "How\'s my PC doing"', pic: 'shows' },
+    { tag: 'GAME', title: 'Game mode: hand and face tracking', say: '"Game mode" · Block Drop, Air Keys, Hand Control', pic: 'game' },
+    { tag: 'SKIN', title: 'Skins and faces', say: 'Settings > Look · faces with feelings', pic: 'skins' },
+    { tag: 'PALS', title: 'Companions on your screen', say: '"Come here" · "Sit" · "Dance" · "Take a nap"', pic: 'pal' },
+    { tag: 'LOCK', title: 'Lock the PC', say: '"Lock my PC"', pic: 'lock' }
   ]
-  const SHOWS = ['"Recommend voices"', '"Show my storage"', '"How\'s my PC doing"', '"Battery"', '"What can you do"']
+  const SHOWS = ['"Recommend voices"', '"Show my storage"', '"How\'s my PC doing"', '"Battery"', '"Show me all your features"']
 
   function tour (g, cx, cy, R, t, name) {
     const per = 3.2
@@ -133,7 +188,8 @@
       const x = cx + Math.cos(a) * r; const y = cy + Math.sin(a) * r
       g.globalAlpha = k === i ? 1 : 0.45
       g.fillStyle = k === i ? 'rgba(34,211,197,.25)' : 'rgba(255,255,255,.05)'; g.beginPath(); g.arc(x, y, k === i ? 34 : 26, 0, Math.PI * 2); g.fill()
-      g.font = (k === i ? 26 : 20) + 'px "Segoe UI Emoji"'; g.textAlign = 'center'; g.fillText(ft.icon, x, y + (k === i ? 9 : 7))
+      g.font = '700 ' + (k === i ? 11 : 9) + 'px "Cascadia Mono", Consolas, monospace'; g.textAlign = 'center'; g.fillStyle = k === i ? C.cyan : C.dim; g.fillText(ft.tag, x, y + 4)
+      g.strokeStyle = k === i ? C.cyan : 'rgba(34,211,197,.25)'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, k === i ? 34 : 26, 0, Math.PI * 2); g.stroke()
       g.globalAlpha = 1
     })
     g.globalAlpha = fade
@@ -141,7 +197,7 @@
     const py = cy + R * 0.47
     const s = R * 0.3
     if (f.pic === 'search') keyboard(g, cx, py + s * 0.1, R * 0.8, lt, 'weather tomorrow')
-    else PICS[f.pic](g, cx, py, s, lt, { level: 70, text: '', name: 'Spotify', action: 'play', when: '6:00 PM' })
+    else if (PICS[f.pic]) PICS[f.pic](g, cx, py, s, lt, { level: 70, text: '', name: 'Spotify', action: 'play', when: '6:00 PM' })
     label(g, f.title, cx, cy - R * 0.5, 20, C.text, 700)
     label(g, 'Try: ' + f.say.replace('<name>', name || 'Meshron'), cx, cy - R * 0.5 + 24, 14, C.cyan, 400)
     g.globalAlpha = 1

@@ -42,16 +42,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    // Kokoro runs on the phone (sherpa-onnx): one APK per phone type, each with only its own engine.
+    // One APK fits every phone while there is no native code (Kokoro paused). Turn this back on with Kokoro.
     splits {
         abi {
             // Only for APKs: an app bundle already splits per phone type on the Play Store.
-            isEnable = gradle.startParameter.taskNames.none { it.contains("bundle", ignoreCase = true) }
+            isEnable = false
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = false
         }
     }
+    // English screens only: other languages' leftovers from libraries are left out.
+    androidResources { localeFilters += listOf("en") }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -80,7 +82,5 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.bouncycastle.bcprov)
     implementation(libs.kotlinx.coroutines.android)
-    // Kokoro voices on the phone: sherpa-onnx (Apache-2.0, k2-fsa) and unpacking its model download.
-    implementation(files("libs/sherpa-onnx-static-link-onnxruntime-2.0.1.aar"))
-    implementation("org.apache.commons:commons-compress:1.27.1")
+    // Kokoro voices on the phone are paused: sherpa-onnx (~24 MB per phone type) is left out until they return (see Kokoro.kt).
 }

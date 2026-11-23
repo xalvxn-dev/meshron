@@ -85,6 +85,21 @@
         gauge(cx, cy, r, g1, g2, gpu / 100, heat(gpu), 14, 'GPU ' + Math.round(gpu) + '%', short(data.gpu.name) + (data.gpu.temp ? ' · ' + data.gpu.temp + '°C' : ''), grow)
         gauge(cx, cy, r, m1, m2, ram / 100, heat(ram), 14, 'RAM ' + Math.round(ram) + '%', gb(data.ramUsed) + ' of ' + gb(data.ramTotal), grow)
         if (data.gpu.memTotal) gauge(cx, cy, r - 24, g1, g2, data.gpu.memUsed / data.gpu.memTotal, 'rgba(110,123,255,.85)', 5, null, null, grow)
+      } else if (kind === 'memory') {
+        // Memory: a ring for how full it is, and a bar per app taking the most.
+        const used = data.used / data.total
+        const ry = cy - R * 0.32
+        gauge(cx, ry, R * 0.2, -Math.PI / 2, Math.PI * 1.5, used, heat(used * 100), 10, null, null, grow)
+        g.textAlign = 'center'; g.fillStyle = '#E6F7FF'; g.font = '700 26px "Segoe UI Variable Display", "Segoe UI"'; g.fillText(Math.round(used * 100 * grow) + '%', cx, ry + 9)
+        const procs = (data.procs || []).slice(0, 7); const max = procs.length ? procs[0].bytes : 1
+        procs.forEach((p, i) => {
+          const y = cy + R * 0.02 + i * 26; const x0 = cx - R * 0.6; const bw = R * 1.2
+          const k = Math.min(1, Math.max(0, (grow * 1.4 - i * 0.08))) * p.bytes / max
+          g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(x0, y - 9, bw, 14)
+          g.fillStyle = i === 0 ? C.amber : C.cyan; g.fillRect(x0, y - 9, bw * k * 0.62, 14)
+          g.textAlign = 'left'; g.fillStyle = '#E6F7FF'; g.font = '600 12px "Segoe UI Variable Text", "Segoe UI"'; g.fillText(String(p.name).slice(0, 26) + (p.count > 1 ? ' ×' + p.count : ''), x0 + 6, y + 2)
+          g.textAlign = 'right'; g.fillStyle = '#8FA6BC'; g.fillText(p.bytes >= 1073741824 ? (p.bytes / 1073741824).toFixed(1) + ' GB' : Math.round(p.bytes / 1048576) + ' MB', x0 + bw - 4, y + 2)
+        })
       } else if (kind === 'battery') {
         if (data.none) { g.textAlign = 'center'; g.fillStyle = '#A9C3D6'; g.font = '15px "Segoe UI"'; g.fillText('This PC runs on mains power', cx, cy + R * 0.42) } else {
           const p = data.pct / 100
@@ -139,7 +154,7 @@
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') leave() })
   document.addEventListener('click', () => { if (show && show.kind === 'tour') leave() })
 
-  const TITLES = { voices: 'RECOMMENDED VOICES', storage: 'STORAGE', system: 'SYSTEM', battery: 'BATTERY', tour: 'WHAT I CAN DO' }
+  const TITLES = { voices: 'RECOMMENDED VOICES', storage: 'STORAGE', system: 'SYSTEM', battery: 'BATTERY', tour: 'WHAT I CAN DO', memory: 'MEMORY' }
   if (A.settings) A.settings().then((s) => { window.ReactorSkin = s.skin || 'reactor' })
   A.on((ev, d) => {
     if (ev === 'show') {
@@ -148,11 +163,13 @@
       $('title').textContent = TITLES[d.kind] || ''
       document.body.classList.toggle('compact', d.kind === 'toast')
       document.body.classList.toggle('tour', d.kind === 'tour')
+      document.body.classList.toggle('nocore', d.kind === 'memory')
       if (d.kind === 'tour') $('caption').textContent = 'Tap anywhere or press Esc to close'
       reactor.mode = d.kind === 'system' ? 'thinking' : 'idle'
       if (d.kind === 'voices') { makeBubbles(d.data.voices, d.data.current); $('caption').textContent = 'Tap a voice to hear it. It becomes my voice.' }
       if (d.kind === 'storage') $('caption').textContent = d.data.length ? '' : 'No drives found'
       if (d.kind === 'system') $('caption').textContent = 'Live · updates every second'
+      if (d.kind === 'memory') $('caption').textContent = (d.data.used / 1073741824).toFixed(1) + ' of ' + (d.data.total / 1073741824).toFixed(1) + ' GB in use'
       t0 = performance.now()
       requestAnimationFrame(() => world.classList.add('in'))
       // A search card stays until the query is typed (plus a moment); the tour runs through every feature once.

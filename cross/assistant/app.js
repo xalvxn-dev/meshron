@@ -205,14 +205,14 @@
       card(0xE77B, 'Studio voice', 'Who speaks.', voice),
       h('div', { class: 'group' }, 'Look'),
       h('div', { class: 'look' },
-        h('div', { class: 'looktitle' }, 'Orb skin', h('span', {}, 'Skins with a face show feelings and sit at the top of the screen, like an island.')),
+        h('div', { class: 'looktitle' }, 'Orb skin', h('span', {}, 'Faces show feelings and sit at the top of the screen like an island. Companions live on your screen and sit on top of your apps: Strider walks, Wisp flies, Drift floats, Bolt jet-flies. Talk to them as usual, or say "come here", "sit", "dance" or "take a nap".')),
         h('div', { class: 'skins' }, window.Reactor.SKINS.map((k) => {
           const c = h('canvas')
           const r = window.Reactor(c); r.skin = k.id; r.mode = 'idle'
           const b = h('button', { class: 'skin' + ((settings.skin || 'reactor') === k.id ? ' on' : ''), title: k.name,
             onMouseenter: () => { r.mode = 'speaking'; if (k.face) r.feel('happy', 1600) }, onMouseleave: () => { r.mode = 'idle' },
             onClick: async () => { settings = await A.setSettings({ skin: k.id }); applyLook(settings); for (const x of document.querySelectorAll('.skin')) x.classList.toggle('on', x === b) } },
-          c, h('span', {}, k.name), k.face ? h('em', {}, 'Face') : null)
+          c, h('span', {}, k.name), k.pal ? h('em', {}, 'Companion') : k.island ? h('em', {}, 'Island') : k.face ? h('em', {}, 'Face') : null)
           return b
         })),
         h('div', { class: 'looktitle' }, 'Theme', h('span', {}, 'The colours of this window.')),

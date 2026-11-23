@@ -14,7 +14,7 @@
   const look = (s) => {
     window.ReactorSkin = s.skin || 'reactor'
     const sk = window.Reactor.SKINS.find((k) => k.id === window.ReactorSkin)
-    document.body.classList.toggle('island', !!(sk && sk.face))
+    document.body.classList.toggle('island', !!(sk && (sk.face || sk.island)))
     // The strip's colours follow the chosen theme (and the skin's own colour when the theme is the default).
     const acc = s.theme && s.theme !== 'midnight' ? THEME[s.theme] : sk ? sk.colors[0] : THEME.midnight
     const n = parseInt(acc.slice(1), 16)

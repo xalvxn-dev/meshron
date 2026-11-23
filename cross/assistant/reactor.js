@@ -23,7 +23,15 @@
     { id: 'buddy', name: 'Buddy', face: true, colors: [C.cyan, C.blue, C.lime] },
     { id: 'cosmo', name: 'Cosmo', face: true, colors: ['#8E7BFF', '#22D3C5', '#FF6BD6'] },
     { id: 'pixel', name: 'Pixel', face: true, colors: ['#3DFF8A', '#22D3C5', '#B6F36A'] },
-    { id: 'kitty', name: 'Kitty', face: true, colors: ['#FF9BD2', '#B57BFF', '#FFD1E8'] }
+    { id: 'kitty', name: 'Kitty', face: true, colors: ['#FF9BD2', '#B57BFF', '#FFD1E8'] },
+    // Island orbs: a black capsule at the top centre, like a phone's Dynamic Island.
+    { id: 'island', name: 'Island', island: true, colors: ['#22D3C5', '#6E7BFF', '#B6F36A'] },
+    { id: 'pulse', name: 'Pulse', island: true, colors: ['#FF6BD6', '#B57BFF', '#22D3C5'] },
+    // Companions: they live on the screen (walk on legs, fly, float) and sit on top of your apps.
+    { id: 'strider', name: 'Strider', pal: 'walk', head: 'buddy', colors: ['#22D3C5', '#6E7BFF', '#B6F36A'] },
+    { id: 'wisp', name: 'Wisp', pal: 'fly', head: 'cosmo', colors: ['#B57BFF', '#22D3C5', '#FF6BD6'] },
+    { id: 'drift', name: 'Drift', pal: 'float', head: 'buddy', colors: ['#FF6BD6', '#B57BFF', '#FFD1E8'] },
+    { id: 'bolt', name: 'Bolt', pal: 'jet', head: 'pixel', colors: ['#3DFF8A', '#FFB020', '#B6F36A'] }
   ]
   const byId = (id) => SKINS.find((s) => s.id === id) || SKINS[0]
 
@@ -50,7 +58,9 @@
       r.shown += ((r.mode === 'listening' ? r.level : 0) - r.shown) * 0.25
       const S = { g, t, w, h, cx: w / 2, cy: h / 2, R: Math.min(w, h) / 2, mode: r.mode, shown: r.shown, mood: r.mood, skin, face, stars, sparks, dt: 1 / 60 }
       S.breathe = (Math.sin(t * (r.mode === 'speaking' ? 14 : 2.4)) + 1) / 2
-      ;(DRAW[skin.id] || DRAW.reactor)(S)
+      // A companion's head alone (its body is drawn by the companion layer).
+      if (r.faceOnly && skin.pal) faceSkin(S, skin.head)
+      else (DRAW[skin.id] || DRAW.reactor)(S)
       requestAnimationFrame(frame)
     }
     requestAnimationFrame(frame)
@@ -193,7 +203,39 @@
     buddy: (S) => faceSkin(S, 'buddy'),
     cosmo: (S) => faceSkin(S, 'cosmo'),
     pixel: (S) => faceSkin(S, 'pixel'),
-    kitty: (S) => faceSkin(S, 'kitty')
+    kitty: (S) => faceSkin(S, 'kitty'),
+    island (S) {
+      // Audio bars that breathe when idle, follow your voice when listening, dance when it speaks.
+      const { g, t, cx, cy, R, mode, shown, skin } = S
+      const [c1, c2, c3] = skin.colors
+      const col = mode === 'thinking' ? c2 : mode === 'speaking' ? c3 : c1
+      g.fillStyle = '#000'; g.beginPath(); g.arc(cx, cy, R * 0.98, 0, Math.PI * 2); g.fill()
+      const n = 5; const bw = R * 0.13; const gap = R * 0.09
+      for (let i = 0; i < n; i++) {
+        const k = mode === 'speaking' ? 0.35 + 0.65 * Math.abs(Math.sin(t * 9 + i * 1.3) * Math.sin(t * 4.1 + i)) : mode === 'listening' ? 0.2 + shown * (0.5 + 0.5 * Math.sin(t * 12 + i)) : mode === 'thinking' ? 0.25 + 0.6 * Math.max(0, Math.sin(t * 7 - i * 0.8)) : 0.18 + 0.08 * Math.sin(t * 2 + i)
+        const h = R * 1.1 * Math.min(1, k)
+        const x = cx + (i - (n - 1) / 2) * (bw + gap)
+        g.fillStyle = col; g.shadowColor = col; g.shadowBlur = R * 0.3
+        g.beginPath(); g.roundRect(x - bw / 2, cy - h / 2, bw, h, bw / 2); g.fill()
+      }
+      g.shadowBlur = 0
+    },
+    pulse (S) {
+      // Rings rippling out of a bright dot: slow when idle, quick when talking.
+      const { g, t, cx, cy, R, mode, shown, skin } = S
+      const [c1, c2, c3] = skin.colors
+      const col = mode === 'thinking' ? c2 : mode === 'speaking' ? c3 : c1
+      g.fillStyle = '#000'; g.beginPath(); g.arc(cx, cy, R * 0.98, 0, Math.PI * 2); g.fill()
+      const speed = mode === 'idle' ? 0.5 : 1.6
+      for (let k = 0; k < 3; k++) {
+        const p = (t * speed + k / 3) % 1
+        g.strokeStyle = rgba(col, (1 - p) * 0.9); g.lineWidth = R * 0.08
+        g.beginPath(); g.arc(cx, cy, R * (0.22 + p * 0.68), 0, Math.PI * 2); g.stroke()
+      }
+      const core = R * (0.2 + shown * 0.15 + (mode === 'speaking' ? Math.abs(Math.sin(t * 10)) * 0.08 : 0))
+      g.fillStyle = '#fff'; g.shadowColor = col; g.shadowBlur = R * 0.5; g.beginPath(); g.arc(cx, cy, core, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0
+    },
+    strider: palPreview, wisp: palPreview, drift: palPreview, bolt: palPreview
   }
 
   // ---- Faces ----
@@ -202,6 +244,71 @@
     if (S.mood) return S.mood
     return { listening: 'listening', thinking: 'thinking', speaking: 'talking' }[S.mode] || 'calm'
   }
+
+  /** A companion in a small preview (settings, panel): its body, then its face as the head. */
+  function palPreview (S) {
+    const { g, cx, cy, R, t, mode, skin } = S
+    const hr = R * 0.5
+    const hy = cy - R * 0.2 + (skin.pal === 'walk' ? 0 : Math.sin(t * 2.2) * R * 0.06)
+    PalBody(g, skin, cx, hy, hr, t, { walking: mode === 'speaking' || skin.pal === 'walk', phase: t * 6, air: skin.pal !== 'walk', facing: 1 })
+    faceSkin(Object.assign({}, S, { cy: hy, R: hr / 0.8 }), skin.head)
+  }
+
+  /**
+   * A companion's body around its head (head centre x, y; head radius r). st: walking, phase (the
+   * stride), air (off the ground), perch (sitting on an edge), facing (1 right, -1 left), flap.
+   */
+  function PalBody (g, skin, x, y, r, t, st = {}) {
+    const [c1, c2, c3] = skin.colors
+    const line = (w, col) => { g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = w; g.strokeStyle = col }
+    g.save(); g.shadowColor = c1; g.shadowBlur = r * 0.35
+    if (skin.pal === 'walk' || skin.pal === 'jet') {
+      for (const i of [0, 1]) {
+        const side = i ? 1 : -1
+        const hx = x + side * r * 0.36; const hy = y + r * 0.72
+        let fx = hx; let fy = hy + r * 0.95
+        if (st.perch) { fx = hx + Math.sin(t * 2.4 + i * 1.3) * r * 0.22; fy = hy + r * 0.9 }
+        else if (st.air) { fx = hx + side * r * 0.1; fy = hy + r * 0.55 }
+        else if (st.walking) { const p = (st.phase || 0) + i * Math.PI; fx = hx + Math.sin(p) * r * 0.45 * (st.facing || 1); fy = hy + r * 0.95 - Math.max(0, Math.cos(p)) * r * 0.28 }
+        // Knee bends forward, the way it faces.
+        const kx = (hx + fx) / 2 + r * 0.16 * (st.facing || 1); const ky = (hy + fy) / 2
+        line(r * 0.2, 'rgba(6,12,20,.95)'); g.beginPath(); g.moveTo(hx, hy); g.lineTo(kx, ky); g.lineTo(fx, fy); g.stroke()
+        line(r * 0.08, c1); g.beginPath(); g.moveTo(hx, hy); g.lineTo(kx, ky); g.lineTo(fx, fy); g.stroke()
+        g.fillStyle = c1; g.beginPath(); g.ellipse(fx + r * 0.08 * (st.facing || 1), fy, r * 0.16, r * 0.07, 0, 0, Math.PI * 2); g.fill()
+      }
+      if (skin.pal === 'jet' && st.air) {
+        // A jet flame under it while it flies.
+        const fl = r * (0.5 + Math.random() * 0.35)
+        const gr = g.createLinearGradient(x, y + r * 0.8, x, y + r * 0.8 + fl); gr.addColorStop(0, c2); gr.addColorStop(1, 'rgba(255,176,32,0)')
+        g.fillStyle = gr; g.beginPath(); g.moveTo(x - r * 0.18, y + r * 0.8); g.quadraticCurveTo(x, y + r * 0.8 + fl * 1.4, x + r * 0.18, y + r * 0.8); g.fill()
+      }
+    }
+    if (skin.pal === 'fly') {
+      const a = Math.sin(t * (st.air ? 16 : 3)) * (st.air ? 0.75 : 0.25)
+      for (const side of [-1, 1]) {
+        g.save(); g.translate(x + side * r * 0.7, y - r * 0.05); g.rotate(side * (-0.35 + a)); g.scale(side, 1)
+        g.fillStyle = 'rgba(181,123,255,.22)'; line(r * 0.05, c1)
+        g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(r * 0.5, -r * 1.0, r * 1.25, -r * 0.6, r * 1.05, r * 0.05); g.bezierCurveTo(r * 0.8, r * 0.3, r * 0.35, r * 0.25, 0, 0); g.fill(); g.stroke()
+        g.beginPath(); g.moveTo(0, r * 0.1); g.bezierCurveTo(r * 0.4, r * 0.5, r * 0.85, r * 0.55, r * 0.75, r * 0.25); g.stroke()
+        g.restore()
+      }
+      // A sparkle trail.
+      for (let k = 1; k <= 3; k++) { g.fillStyle = 'rgba(255,107,214,' + (0.5 - k * 0.12) + ')'; g.beginPath(); g.arc(x - (st.facing || 1) * r * (0.6 + k * 0.45), y + r * 0.3 + Math.sin(t * 6 + k) * r * 0.15, r * 0.07, 0, Math.PI * 2); g.fill() }
+    }
+    if (skin.pal === 'float') {
+      // Jellyfish tentacles, waving.
+      for (let i = 0; i < 5; i++) {
+        const bx = x + (i - 2) * r * 0.3
+        line(r * 0.07, i % 2 ? c2 : c1); g.globalAlpha = 0.85
+        g.beginPath(); g.moveTo(bx, y + r * 0.62)
+        for (let k = 1; k <= 8; k++) { const yy = y + r * 0.62 + k * r * 0.17; g.lineTo(bx + Math.sin(t * 3 + i + k * 0.7) * r * 0.12 * (k / 4), yy) }
+        g.stroke(); g.globalAlpha = 1
+      }
+      g.fillStyle = 'rgba(255,107,214,.12)'; g.beginPath(); g.ellipse(x, y + r * 0.1, r * 1.15, r * 0.95, 0, Math.PI, 0); g.fill()
+    }
+    g.restore()
+  }
+  window.PalBody = PalBody
 
   function faceSkin (S, kind) {
     const { g, t, cx, cy, R, mode, shown, breathe, skin, face, stars } = S
@@ -220,7 +327,7 @@
     // Blinks (none while surprised).
     if (t > face.nextBlink) { face.blink = 1; face.nextBlink = t + 2 + Math.random() * 3.5 }
     face.blink = Math.max(0, face.blink - 0.16)
-    const lid = ex === 'surprised' ? 0 : face.blink > 0 ? Math.sin(face.blink * Math.PI) : 0
+    const lid = ex === 'surprised' ? 0 : ex === 'sleep' ? 1 : face.blink > 0 ? Math.sin(face.blink * Math.PI) : 0
     // The mouth moves with speech (syllable-like), and with your voice while listening.
     if (ex === 'talking') { face.talk += 0.35 + Math.random() * 0.25; face.mouth = 0.25 + 0.75 * Math.abs(Math.sin(face.talk) * Math.sin(face.talk * 0.37 + 1)) } else face.mouth += ((ex === 'listening' ? shown * 0.6 : 0) - face.mouth) * 0.3
 

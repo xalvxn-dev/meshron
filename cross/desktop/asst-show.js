@@ -74,7 +74,7 @@ const VOICES = [
 
 let stage = null
 let ticker = null
-const KINDS = ['voices', 'storage', 'system', 'battery', 'tour']
+const KINDS = ['voices', 'storage', 'system', 'battery', 'tour', 'memory']
 
 /**
  * Shows one kind. from: the orb's centre on screen (it flies in from there). hooks: { hideOrb,
@@ -87,7 +87,7 @@ async function show (kind, from, hooks) {
   const wa = d.workArea
   const size = Math.min(760, wa.width - 40, wa.height - 40)
   const x = Math.round(wa.x + (wa.width - size) / 2); const y = Math.round(wa.y + (wa.height - size) / 2)
-  const data = kind === 'storage' ? await storage() : kind === 'system' ? await system() : kind === 'battery' ? await battery() : kind === 'tour' ? { name: hooks.name ? hooks.name() : 'Meshron' } : { voices: VOICES, current: hooks.current() }
+  const data = kind === 'storage' ? await storage() : kind === 'system' ? await system() : kind === 'battery' ? await battery() : kind === 'tour' ? { name: hooks.name ? hooks.name() : 'Meshron' } : kind === 'memory' ? await hooks.memory() : { voices: VOICES, current: hooks.current() }
   stage = new BrowserWindow({
     x, y, width: size, height: size, frame: false, transparent: true, resizable: false, movable: false,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
@@ -125,6 +125,7 @@ function describe (kind, data) {
   if (kind === 'storage') return data.length ? data.map((d) => d.id + ' has ' + gb(d.free) + ' GB free of ' + gb(d.size) + ' GB').join('. ') + '.' : 'I couldn\'t read your drives.'
   if (kind === 'system') return 'Processor at ' + data.cpu + '%, graphics at ' + data.gpu.load + '%, and ' + Math.round(100 * data.ramUsed / data.ramTotal) + '% of memory in use.'
   if (kind === 'battery') return data.none ? 'This PC runs on mains power, no battery.' : 'Battery at ' + data.pct + '%, ' + (data.charging ? 'charging.' : 'on battery.')
+  if (kind === 'memory') { const top = (data.procs || []).slice(0, 3).map((p) => p.name + ' ' + Math.round(p.bytes / 1048576) + ' MB').join(', '); return 'Memory: ' + (data.used / 1073741824).toFixed(1) + ' of ' + (data.total / 1073741824).toFixed(1) + ' GB in use. The biggest: ' + top + '.' }
   if (kind === 'tour') return 'Here is what I can do. Watch the tour, or just ask me.'
   return 'Here are the voices I\'d recommend. Tap one to hear it.'
 }
@@ -180,5 +181,25 @@ function point (rect, note, hidden) {
   setTimeout(() => { if (!w.isDestroyed()) w.destroy() }, 8000)
 }
 
-module.exports = { show, close, describe, toast, point, storage, system, battery, KINDS }
+// ---- Teaching: a hologram mouse pointer plays the steps over the whole screen ----
+const LEN = { point: 1700, circle: 1800, highlight: 1800, click: 1900, drag: 2700, type: 2000, say: 2200 }
+/** plan: [{ action, rect, to, note, text }] with rects in physical pixels. Returns each step's timing. */
+function demo (plan, hidden) {
+  if (pointer && !pointer.isDestroyed()) pointer.destroy()
+  const d = screen.getPrimaryDisplay(); const b = d.bounds; const k = d.scaleFactor || 1
+  const dip = (r) => (r ? { x: r.x / k - b.x, y: r.y / k - b.y, width: r.width / k, height: r.height / k } : null)
+  let at = 400
+  const steps = plan.map((p) => { const len = (LEN[p.action] || 1800) + 700; const s = { action: p.action, rect: dip(p.rect), to: dip(p.to), note: p.note, text: p.text, perform: p.perform, at, len }; at += len; return s })
+  const w = pointer = new BrowserWindow({ x: b.x, y: b.y, width: b.width, height: b.height, frame: false, transparent: true, resizable: false, movable: false, focusable: false,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
+  w.setAlwaysOnTop(true, 'screen-saver'); w.setIgnoreMouseEvents(true); w.setContentProtection(!!hidden)
+  w.loadFile(path.join(__dirname, 'asst-bundle', 'pointer.html'))
+  w.webContents.once('did-finish-load', () => { if (!w.isDestroyed()) { w.webContents.send('a-event', 'demo', steps); w.showInactive() } })
+  w.on('closed', () => { if (pointer === w) pointer = null })
+  setTimeout(() => { if (!w.isDestroyed()) w.destroy() }, at + 1500)
+  return steps.map((s) => ({ at: s.at, len: s.len }))
+}
+
+module.exports = { show, close, describe, toast, point, demo, storage, system, battery, KINDS }
 

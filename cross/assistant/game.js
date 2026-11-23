@@ -688,12 +688,22 @@ async function go (gm) {
   scene = gm
   for (const k of Object.keys(held)) delete held[k]
   if (tracker) tracker.useFace(!gm || !!gm.face)
-  if (gm) { if (gm.compact) { document.body.classList.add('small'); await A.gameCompact(true) } else if (gm.dock) await A.gameCompact(gm.dock); await gm.enter() }
+  if (gm) {
+    if (gm.compact) {
+      // Explain first: this mode works over your other apps, so the window becomes a small card in the corner.
+      intro = { name: gm.name, until: performance.now() + 3200 }
+      await new Promise((r) => setTimeout(r, 3200)); intro = null
+      if (scene !== gm) return
+      document.body.classList.add('small'); await A.gameCompact(true)
+    } else if (gm.dock) await A.gameCompact(gm.dock)
+    await gm.enter()
+  }
 }
 
 // ---- The loop ----
 let lastT = performance.now()
 let pointer = null; let pointerClick = false; let usingPointer = false
+let intro = null
 function loop (now) {
   const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now
   const t = now / 1000
@@ -708,7 +718,8 @@ function loop (now) {
   } else if (pointer) { cursor = { x: pointer.x, y: pointer.y }; pinchEdge = pointerClick; pinching = false; usingPointer = true } else { cursor = null; pinchEdge = false; pinching = false }
   ui = []
   const small = scene && scene.compact
-  if (small) compactCard()
+  if (intro) introCard()
+  else if (small) compactCard()
   else if (scene) { scene.update(dt); scene.draw() } else menu()
   drawHands()
   if (!small) { pickLoop(); drawCursor() }
@@ -716,6 +727,15 @@ function loop (now) {
   pointerClick = false
   lastGesture.p = h ? h.gesture : null
   requestAnimationFrame(loop)
+}
+function introCard () {
+  const left = Math.max(0, Math.ceil((intro.until - performance.now()) / 1000))
+  panel(W / 2 - 330, H / 2 - 120, 660, 240, true)
+  text(intro.name, W / 2, H / 2 - 60, { align: 'center', mono: true, size: 18, weight: 700, color: C.cyan, glow: C.cyan, raw: true })
+  text('This works over your other apps, so this window becomes', W / 2, H / 2 - 16, { align: 'center', size: 18, raw: true })
+  text('a small card in the bottom-right corner, staying on top.', W / 2, H / 2 + 12, { align: 'center', size: 18, raw: true })
+  text('Ctrl+Alt+G or a click on the card brings you back here.', W / 2, H / 2 + 50, { align: 'center', mono: true, size: 12, color: C.dim, raw: true, spacing: 1 })
+  text('starting in ' + left, W / 2, H / 2 + 92, { align: 'center', mono: true, size: 13, color: C.lime, raw: true })
 }
 function compactCard () {
   scene.update(1 / 60)

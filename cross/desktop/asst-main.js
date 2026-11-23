@@ -10,6 +10,7 @@ const { spawn } = require('child_process')
 const tools = require('./asst-tools')
 const showcase = require('./asst-show')
 const game = require('./asst-game')
+const pal = require('./asst-pal')
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0) }
 app.setAppUserModelId('com.xalvxnlab.meshron.assistant.desktop')
@@ -24,7 +25,15 @@ const dataFile = () => path.join(app.getPath('userData'), 'assistant.json')
 let data = { settings: {}, tasks: [], reminders: [], orb: null }
 function load () { try { data = Object.assign(data, JSON.parse(fs.readFileSync(dataFile(), 'utf8'))) } catch {} }
 function save () { fs.mkdirSync(path.dirname(dataFile()), { recursive: true }); fs.writeFileSync(dataFile(), JSON.stringify(data)) }
-const FACES = ['buddy', 'cosmo', 'pixel', 'kitty'] // skins with a face sit at the top centre (island)
+const FACES = ['buddy', 'cosmo', 'pixel', 'kitty', 'island', 'pulse'] // faces and island orbs sit at the top centre (island)
+const PALS = ['strider', 'wisp', 'drift', 'bolt'] // companions: they live on the screen instead of the orb
+const isPal = () => PALS.includes(settings().skin)
+/** The orb shows unless it's turned off or a companion has taken its place (the orb window still owns the mic and speaker). */
+const orbShown = () => settings().orb && !isPal()
+/** Companion on or off, with the orb hidden while it's on. */
+function applyCompanion () {
+  if (isPal() && settings().orb) { pal.open(!!settings().hidden); if (orb && !orb.isDestroyed()) orb.hide() } else { pal.close(); if (orb && !orb.isDestroyed() && settings().orb) orb.showInactive() }
+}
 const DEFAULTS = { skin: 'reactor', theme: 'midnight', hidden: false, name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
 const settings = () => Object.assign({}, DEFAULTS, data.settings)
 function account () {
@@ -71,6 +80,13 @@ function orbBounds () {
   const d = s ? screen.getDisplayNearestPoint({ x: s.x, y: s.y }) : screen.getPrimaryDisplay()
   const wa = d.workArea
   const right = s ? s.right : true
+  // Top or bottom edge: anywhere along it (the strip opens toward the middle of the screen).
+  if (s && (s.edge === 'top' || s.edge === 'bottom')) {
+    const cx = Math.max(wa.x + 44, Math.min(wa.x + wa.width - 44, s.x))
+    const x = Math.round(right ? cx - (ORB_W - 12 - ORB_SIZE / 2) : cx - (12 + ORB_SIZE / 2))
+    const cy = s.edge === 'top' ? wa.y + 6 + ORB_SIZE / 2 : wa.y + wa.height - 6 - ORB_SIZE / 2
+    return { x: Math.max(wa.x - (right ? 0 : 0), Math.min(wa.x + wa.width - ORB_W, x)), y: Math.round(cy - ORB_H / 2), width: ORB_W, height: ORB_H, right, edge: s.edge }
+  }
   const y = Math.max(wa.y + 12, Math.min(wa.y + wa.height - ORB_H - 12, s ? s.y : wa.y + wa.height * 0.55))
   return { x: right ? wa.x + wa.width - ORB_W - 6 : wa.x + 6, y, width: ORB_W, height: ORB_H, right }
 }
@@ -86,14 +102,14 @@ function openOrb () {
   orb.setContentProtection(!!settings().hidden)
   orb.setIgnoreMouseEvents(true, { forward: true }) // only the orb and its strip take clicks (orb.js switches this)
   orb.loadFile(path.join(dir, 'orb.html'), { hash: b.right ? 'right' : 'left' })
-  orb.once('ready-to-show', () => { if (settings().orb) orb.showInactive() })
+  orb.once('ready-to-show', () => { if (orbShown()) orb.showInactive() })
   orb.on('closed', () => { orb = null })
 }
 
 // ---- State shared with the windows ----
 const state = { mode: 'idle', strip: null, tag: '', asking: null, lines: [], signedIn: false }
 function broadcast () {
-  for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'state', state)
+  for (const w of [panel, orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'state', state)
 }
 function setMode (m) { state.mode = m; broadcast() }
 let hideTimer = null
@@ -114,7 +130,7 @@ function approve (title, detail) {
     approval = resolve
     state.asking = { title, detail }; broadcast()
     if (settings().speak) say(title)
-    if (!panel || !panel.isVisible()) { if (orb) orb.showInactive() }
+    if (!panel || !panel.isVisible()) { if (isPal()) openPanel(); else if (orb) orb.showInactive() }
   }).then((v) => { approval = null; state.asking = null; broadcast(); return v })
 }
 
@@ -137,7 +153,9 @@ const toolCtx = {
     try { await new Promise((r) => setTimeout(r, 120)); return await fn() } finally { for (const w of ws) w.setContentProtection(!!settings().hidden) }
   },
   showcase: (kind) => stageShow(kind),
+  hidden: () => !!settings().hidden,
   game: () => { game.open(!!settings().hidden); return 'Opened game mode' },
+  companion: (action) => companion(action),
   point: (rect, note) => showcase.point(rect, note, !!settings().hidden),
   async pickFile () {
     const r = await dialog.showOpenDialog(panel || undefined, { properties: ['openFile'], filters: [{ name: 'Documents and pictures', extensions: ['txt', 'md', 'csv', 'json', 'log', 'png', 'jpg', 'jpeg', 'webp'] }] })
@@ -163,10 +181,11 @@ async function stageShow (kind) {
   }
   const shown = await showcase.show(kind, from, {
     hideOrb: () => { if (orb && !orb.isDestroyed()) orb.hide() },
-    showOrb: () => { if (orb && !orb.isDestroyed() && settings().orb) orb.showInactive() },
+    showOrb: () => { if (orb && !orb.isDestroyed() && orbShown()) orb.showInactive() },
     current: () => settings().studioVoice,
     name: () => settings().name || 'Meshron',
-    hidden: () => !!settings().hidden
+    hidden: () => !!settings().hidden,
+    memory: () => tools.P(toolCtx).memory()
   })
   return shown ? showcase.describe(kind, shown) : 'I can\'t show that.'
 }
@@ -195,14 +214,30 @@ function toastNow (pic, d) {
   } catch {}
 }
 
+/** Tells the companion (Strider, Wisp, Drift or Bolt) to do something on the screen. */
+function companion (action) {
+  if (!isPal()) return 'Pick a companion first (Settings > Look: Strider, Wisp, Drift or Bolt).'
+  const c = { action }
+  if (action === 'come') { const p = screen.getCursorScreenPoint(); const wa = screen.getPrimaryDisplay().workArea; c.at = { x: p.x - wa.x, y: p.y - wa.y } }
+  pal.send('pal', c)
+  return { come: 'Coming!', sit: 'Sitting on your window.', sleep: 'Taking a nap.', wake: 'I\'m awake!', dance: 'Dancing!', fly: 'Up we go!', left: 'Heading left.', right: 'Heading right.', hide: 'Hiding. Say "show yourself" to bring me back.', show: 'Here I am!', jump: 'Jump!' }[action] || 'Okay.'
+}
+
 /** Commands that work at once, even offline. */
 async function local (t) {
   const s = t.toLowerCase().trim().replace(/[.!?]+$/, '')
   let m
+  // The companion (when one is chosen) moves around on request.
+  if (isPal()) {
+    const act = /\b(come here|come to me|come over)\b/.test(s) ? 'come' : /\b(sit (down|on)|perch|get on (my|the) window)\b/.test(s) ? 'sit' : /\b(go to sleep|take a nap|nap time)\b/.test(s) ? 'sleep' : /\bwake up\b/.test(s) ? 'wake'
+      : /\bdance\b/.test(s) ? 'dance' : /^(fly|fly around|take off)$/.test(s) ? 'fly' : /\b(walk|go|move) left\b/.test(s) ? 'left' : /\b(walk|go|move) right\b/.test(s) ? 'right' : /\bhide yourself\b|^hide$/.test(s) ? 'hide' : /\bshow yourself\b|come back/.test(s) ? 'show' : /^jump$/.test(s) ? 'jump' : null
+    if (act) return companion(act)
+  }
   // Showcases: the orb takes centre stage for these.
   if (/\b(game ?mode|play a game|open (the )?games?|hand tracking|face tracking|let'?s play)\b/.test(s)) { game.open(!!settings().hidden); return 'Game mode is open. Point at a game and pinch to start.' }
-  if (/what (?:can|could|else can) (?:you|u) do|^what can (?:you|u)|(?:your|ur) (?:features|abilities|skills)|^(?:help|show me what you can do|give me a tour)$/.test(s)) return stageShow('tour')
+  if (/what (?:can|could|else can) (?:you|u) do|^what can (?:you|u)|(?:your|ur) (?:features|abilities|skills)|^(?:help|show me what you can do|give me a tour)$|show me everything|everything you can do|feature tour/.test(s)) return stageShow('tour')
   if (/\b(recommend|suggest|show|change|pick|choose)\b.*\bvoices?\b|^voices$/.test(s)) return stageShow('voices')
+  if (/\b(ram|memory)\b.*\b(using|taking|hog|eating|used)\b|\b(using|taking|eating) (up )?(all )?(my )?(ram|memory)\b|^(?:ram|memory)( usage)?$/.test(s)) return stageShow('memory')
   if (/\b(storage|disk space|drive space|how much space|free space|my drives?)\b/.test(s)) return stageShow('storage')
   if (/\b(cpu|gpu|processor|graphics card|ram|memory usage|system usage|performance|how'?s my (pc|computer|laptop))\b/.test(s)) return stageShow('system')
   if (/^(?:show |what'?s |how'?s )?(?:my |the )?battery(?: level| status)?$/.test(s)) return stageShow('battery')
@@ -268,14 +303,14 @@ function reply (text) {
   if (settings().speak) say(text)
 }
 /** A moment's expression on face skins: happy, sad, surprised or love. */
-function mood (m, ms) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'mood', { mood: m, ms }) }
+function mood (m, ms) { for (const w of [orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'mood', { mood: m, ms }) }
 function say (text) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'say', text) }
 
 /** Starts listening in the orb window (it owns the microphone and the speaker). */
 function listen () {
   if (busy) return
   if (!orb || orb.isDestroyed()) openOrb()
-  orb.showInactive()
+  if (!isPal()) orb.showInactive()
   orb.webContents.send('a-event', 'listen')
 }
 
@@ -385,9 +420,11 @@ function setSettings (patch) {
   if ('always' in patch || 'name' in patch) startWake()
   if ('startup' in patch) applyStartup()
   if ('hidden' in patch) for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.setContentProtection(!!settings().hidden)
-  if ('orb' in patch && orb) { if (settings().orb) orb.showInactive(); else orb.hide() }
+  if ('orb' in patch && orb) { if (orbShown()) orb.showInactive(); else orb.hide() }
+  if ('orb' in patch || 'skin' in patch) applyCompanion()
+  if ('hidden' in patch && pal.window()) pal.window().setContentProtection(!!settings().hidden)
   if ('skin' in patch && orb && !orb.isDestroyed()) { const b = orbBounds(); orb.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height }); orb.webContents.send('a-event', 'side', b.island || !b.right ? 'left' : 'right') }
-  for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())
+  for (const w of [panel, orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())
   return settings()
 }
 
@@ -432,6 +469,7 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'testHotkey': return registerHotkey()
     // The orb: let clicks through its empty area; drag it and let it settle on a side.
     case 'orbMouse': if (orb) orb.setIgnoreMouseEvents(!arg, { forward: true }); return true
+    case 'palMouse': pal.mouse(!!arg); return true
     case 'orbMove': {
       if (!orb || FACES.includes(settings().skin)) return true
       const [x, y] = orb.getPosition()
@@ -443,8 +481,11 @@ ipcMain.handle('a', async (e, what, arg) => {
       const [x, y] = orb.getPosition()
       const orbCenter = { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
       const d = screen.getDisplayNearestPoint(orbCenter); const wa = d.workArea
-      const right = orbCenter.x > wa.x + wa.width / 2
-      data.orb = { x: orbCenter.x, y, right }; save()
+      // It settles on the nearest edge: left, right, top or bottom.
+      const dist = { left: orbCenter.x - wa.x, right: wa.x + wa.width - orbCenter.x, top: orbCenter.y - wa.y, bottom: wa.y + wa.height - orbCenter.y }
+      const edge = Object.keys(dist).sort((a, b) => dist[a] - dist[b])[0]
+      const right = edge === 'right' || (edge !== 'left' && orbCenter.x > wa.x + wa.width / 2)
+      data.orb = edge === 'top' || edge === 'bottom' ? { x: orbCenter.x, y: orbCenter.y, right, edge } : { x: orbCenter.x, y, right, edge }; save()
       const b = orbBounds()
       orb.setBounds(b)
       orb.webContents.send('a-event', 'side', right ? 'right' : 'left')
@@ -458,6 +499,7 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark'
   makeTray()
   openOrb()
+  applyCompanion()
   registerHotkey()
   startWake()
   applyStartup()
