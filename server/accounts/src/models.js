@@ -15,6 +15,25 @@ const GEMINI = 'https://generativelanguage.googleapis.com/v1beta'
 // Models sitting out, and until when (per server instance; it is only a shortcut, so a fresh
 // instance simply tries again and learns it in one request).
 const resting = new Map()
+const REST_KEY = 'https://meshron-internal/ai-resting'
+let restSync = 0
+/** Every server instance shares what it learned (a model out of quota, down…), so none re-tries it. */
+async function loadResting () {
+  if (Date.now() - restSync < 15000 || typeof caches === 'undefined') return
+  restSync = Date.now()
+  try {
+    const r = await caches.default.match(REST_KEY)
+    if (r) for (const [k, v] of Object.entries(await r.json())) if (v > Date.now() && !(resting.get(k) > v)) resting.set(k, v)
+  } catch {}
+}
+async function saveResting () {
+  if (typeof caches === 'undefined') return
+  try {
+    const now = Date.now(); const o = {}
+    for (const [k, v] of resting) if (v > now) o[k] = v
+    await caches.default.put(REST_KEY, new Response(JSON.stringify(o), { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=21600' } }))
+  } catch {}
+}
 
 const list = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => x.includes(':') ? x : 'groq:' + x)
 
@@ -51,7 +70,7 @@ async function discover (env) {
         const id = String(m.name || '').replace(/^models\//, '')
         if (!/^gemini-/.test(id) || !(m.supportedGenerationMethods || []).includes('generateContent')) continue
         if (/image/.test(id)) { images.push(id); continue }
-        if (!NOT_CHAT.test(id) && !/-\d{3}$|latest$/.test(id)) found.push('gemini:' + id)
+        if (!NOT_CHAT.test(id) && /^gemini-\d+(\.\d+)?-(pro|flash|flash-lite)(-preview)?(-\d\d-\d\d(\d\d)?)?$/.test(id)) found.push('gemini:' + id)
       }
     }).catch(() => {}))
   await Promise.all(jobs)
@@ -79,6 +98,7 @@ function endpoint (env, provider) {
 /** How long a model should sit out after this answer, in ms (0: it's the request, not the model). */
 function restFor (r, body) {
   if (r.status === 429) {
+    if (/limit: ?0\b|exceeded your current quota|per ?day|PerDay/i.test(body || '')) return 6 * 3600_000
     const m = /try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i.exec(body || '')
     const ms = m ? ((+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0)) * 1000 : (+r.headers.get('retry-after') || 0) * 1000
     return Math.min(Math.max(ms || 60_000, 5_000), 6 * 3600_000)
@@ -96,6 +116,7 @@ function restFor (r, body) {
 export async function chat (env, body, opts = {}) {
   const first = opts.first ? (opts.first.includes(':') ? opts.first : 'groq:' + opts.first) : null
   const names = opts.only ? [opts.only] : first ? [first, ...(await ladder(env, opts.vision)).filter((n) => n !== first)] : await ladder(env, opts.vision)
+  await loadResting()
   const now = Date.now()
   const ready = names.filter((n) => endpoint(env, n.split(':')[0]))
   if (!ready.length) throw Object.assign(new Error('AI is not set up on this server yet'), { status: 503 })
@@ -124,7 +145,7 @@ export async function chat (env, body, opts = {}) {
     if (r.status === 429) limited = true
     const rest = restFor(r, err)
     if (!rest) throw Object.assign(new Error('The AI is busy. Try again in a moment.'), { status: 502 })
-    if (rest > 1) resting.set(name, Date.now() + rest)
+    if (rest > 1) { resting.set(name, Date.now() + rest); await saveResting() }
     if (r.status === 404 && known) { known.text = known.text.filter((n) => n !== name); known.vision = known.vision.filter((n) => n !== name) }
   }
   throw Object.assign(new Error(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.'), { status: 502 })

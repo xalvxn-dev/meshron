@@ -64,7 +64,7 @@
     const d = drag; drag = null; $('orb').style.cursor = ''
     A.orbMouse(false)
     if (!d) return
-    if (d.moved) { const r = $('orb').getBoundingClientRect(); A.orbDrop(document.body.classList.contains('right'), window.screenX + r.left + r.width / 2, window.screenY + r.top + r.height / 2) }
+    if (d.moved) { const r = $('orb').getBoundingClientRect(); A.orbDrop(document.body.classList.contains('right'), null, null, r.left + r.width / 2, r.top + r.height / 2) }
     else tap()
   })
   $('orb').addEventListener('contextmenu', (e) => { e.preventDefault(); A.openPanel() })

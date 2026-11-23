@@ -113,7 +113,7 @@ function orbBounds () {
   if (s && (s.edge === 'top' || s.edge === 'bottom')) {
     const cx = Math.max(wa.x + 44, Math.min(wa.x + wa.width - 44, s.x))
     const x = Math.round(right ? cx - (ORB_W - 12 - ORB_SIZE / 2) : cx - (12 + ORB_SIZE / 2))
-    const cy = s.edge === 'top' ? wa.y + 6 + ORB_SIZE / 2 : wa.y + wa.height - 6 - ORB_SIZE / 2
+    const cy = s.edge === 'top' ? wa.y + 18 + ORB_SIZE / 2 : wa.y + wa.height - 12 - ORB_SIZE / 2
     return { x: Math.max(wa.x - (right ? 0 : 0), Math.min(wa.x + wa.width - ORB_W, x)), y: Math.round(cy - ORB_H / 2), width: ORB_W, height: ORB_H, right, edge: s.edge }
   }
   // Anywhere on the screen, where it was dropped.
@@ -127,7 +127,7 @@ function orbBounds () {
 // ---- The orb takes the mouse only over itself (the rest of its window lets clicks through) ----
 // Checked here from the cursor's position, so it keeps working when other see-through windows
 // (companions, showcases, the board) sit on top of it; it comes to the front when the mouse is on it.
-let orbRects = []; let orbHold = false; let orbTaking = null
+let orbRects = []; let orbHold = false; let orbTaking = null; let orbHoldTimer = null
 function orbHitTick () {
   if (!orb || orb.isDestroyed() || !orb.isVisible()) return
   const p = screen.getCursorScreenPoint(); const [wx, wy] = orb.getPosition()
@@ -590,7 +590,7 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'openPanel': openPanel(arg); return true
     case 'testHotkey': return registerHotkey()
     // The orb: let clicks through its empty area; drag it and let it settle on a side.
-    case 'orbMouse': orbHold = !!arg; orbHitTick(); return true
+    case 'orbMouse': orbHold = !!arg; clearTimeout(orbHoldTimer); if (orbHold) orbHoldTimer = setTimeout(() => { orbHold = false }, 15000); orbHitTick(); return true
     case 'orbRects': orbRects = Array.isArray(arg) ? arg.slice(0, 4) : []; return true
     case 'palMouse': pal.mouse(!!arg); return true
     case 'devices': return rc.register()
@@ -606,7 +606,7 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'orbDrop': {
       if (!orb) return true
       const [x, y] = orb.getPosition()
-      const orbCenter = arg.cx != null ? { x: arg.cx, y: arg.cy } : { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
+      const orbCenter = arg.rx != null ? { x: x + arg.rx, y: y + arg.ry } : arg.cx != null ? { x: arg.cx, y: arg.cy } : { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
       const d = screen.getDisplayNearestPoint(orbCenter); const wa = d.workArea
       // It stays where it is dropped. Dropped close to an edge, it docks on that edge.
       const dist = { left: orbCenter.x - wa.x, right: wa.x + wa.width - orbCenter.x, top: orbCenter.y - wa.y, bottom: wa.y + wa.height - orbCenter.y }
