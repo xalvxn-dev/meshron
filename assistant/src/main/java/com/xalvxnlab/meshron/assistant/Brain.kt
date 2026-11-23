@@ -41,6 +41,7 @@ class Brain(private val api: Api, private val host: Host) {
         val t = text.trim()
         if (t.isEmpty() && image == null) return
         lines += Line.You(shown ?: if (image != null) "📷 $t" else t)
+        if (Regex("\\b(thank(s| you)|love (you|u)|you'?re (the best|amazing|awesome)|good job|well done)\\b", RegexOption.IGNORE_CASE).containsMatchIn(t)) Look.feel("love", 2600)
         thinking.value = true
         try {
             if (shown == null && image == null) local(t)?.let { say(it); return }
@@ -74,7 +75,9 @@ class Brain(private val api: Api, private val host: Host) {
                 val c = calls.getJSONObject(i)
                 val name = c.getString("name"); val args = c.optJSONObject("args") ?: JSONObject()
                 val out = device.run(name, args)
-                lines += Line.Act(label(name, args), out.text.lineSequence().first().take(90), !out.text.startsWith("Failed") && !out.text.startsWith("The person didn't"))
+                val good = !out.text.startsWith("Failed") && !out.text.startsWith("The person didn't")
+                lines += Line.Act(label(name, args), out.text.lineSequence().first().take(90), good)
+                Look.feel(if (good) "happy" else "sad", 1800)
                 messages.put(JSONObject().put("role", "tool").put("tool_call_id", c.getString("id")).put("content", out.text))
                 if (out.image != null) nextPhoto = out
             }
@@ -178,6 +181,7 @@ class Brain(private val api: Api, private val host: Host) {
     private fun act(label: String, o: Outcome): String {
         val ok = !o.text.startsWith("Failed") && !o.text.startsWith("I couldn't") && !o.text.startsWith("Locking needs")
         lines += Line.Act(label, o.text, ok)
+        Look.feel(if (ok) "happy" else "sad", 1800)
         return if (ok) o.text + "." else o.text
     }
 }

@@ -17,6 +17,8 @@
   }
   const icon = (cp) => h('i', {}, String.fromCharCode(cp))
   window.Reactor(document.getElementById('mini'))
+  // Skin (orb) and theme (this window).
+  const applyLook = (s) => { window.ReactorSkin = s.skin || 'reactor'; document.body.dataset.theme = s.theme || 'midnight' }
 
   let st = { mode: 'idle', lines: [], signedIn: false }
   let page = location.hash === '#settings' ? 'settings' : 'home'
@@ -201,6 +203,21 @@
       card(0xE767, 'Speak replies', 'Read answers out loud.', toggle('speak')),
       card(0xE8D6, 'Studio voice', 'A lifelike AI voice. Off: Windows\' own voice.', toggle('studio')),
       card(0xE77B, 'Studio voice', 'Who speaks.', voice),
+      h('div', { class: 'group' }, 'Look'),
+      h('div', { class: 'look' },
+        h('div', { class: 'looktitle' }, 'Orb skin', h('span', {}, 'Skins with a face show feelings and sit at the top of the screen, like an island.')),
+        h('div', { class: 'skins' }, window.Reactor.SKINS.map((k) => {
+          const c = h('canvas')
+          const r = window.Reactor(c); r.skin = k.id; r.mode = 'idle'
+          const b = h('button', { class: 'skin' + ((settings.skin || 'reactor') === k.id ? ' on' : ''), title: k.name,
+            onMouseenter: () => { r.mode = 'speaking'; if (k.face) r.feel('happy', 1600) }, onMouseleave: () => { r.mode = 'idle' },
+            onClick: async () => { settings = await A.setSettings({ skin: k.id }); applyLook(settings); for (const x of document.querySelectorAll('.skin')) x.classList.toggle('on', x === b) } },
+          c, h('span', {}, k.name), k.face ? h('em', {}, 'Face') : null)
+          return b
+        })),
+        h('div', { class: 'looktitle' }, 'Theme', h('span', {}, 'The colours of this window.')),
+        h('div', { class: 'themes' }, THEMES.map(([id, name, a, b2]) => h('button', { class: 'theme' + ((settings.theme || 'midnight') === id ? ' on' : ''), style: '--a:' + a + ';--b:' + b2,
+          onClick: async (e) => { const el = e.currentTarget; settings = await A.setSettings({ theme: id }); applyLook(settings); for (const x of document.querySelectorAll('.theme')) x.classList.toggle('on', x === el) } }, h('i', {}), name)))),
       h('div', { class: 'group' }, 'On screen'),
       card(0xE8F4, 'Hide from screenshots', 'The chat, the orb and showcases won\'t appear in screenshots, recordings or screen sharing.', toggle('hidden')),
       card(0xE7F4, 'Floating orb', 'Stays over every app. Click to talk, drag to move, right-click to open this window.', toggle('orb')),
@@ -210,6 +227,8 @@
       h('div', { class: 'group' }, 'What it can do'),
       h('div', { class: 'sub', style: 'line-height:1.6' }, 'Open, switch and close apps, show the desktop, type, press shortcuts, click buttons by name, scroll, read your screen, make folders and tidy files (deletes go to the Recycle Bin after you approve), timers, reminders, tasks, volume, music controls, battery, lock the PC, read documents and pictures, and look things up on the web.')))
   }
+
+  const THEMES = [['midnight', 'Midnight', '#22D3C5', '#6E7BFF'], ['nebula', 'Nebula', '#B57BFF', '#FF6BD6'], ['ember', 'Ember', '#FF8A3D', '#FF4D5E'], ['forest', 'Forest', '#3DDC84', '#B6F36A'], ['ocean', 'Ocean', '#38BDF8', '#2563EB'], ['gold', 'Gold', '#FFD86B', '#FFB020'], ['mono', 'Mono', '#E6EDF5', '#7A8596']]
 
   // ---- Approval (ContentDialog) ----
   let dialog = null
@@ -239,8 +258,8 @@
       renderHome(); renderApproval()
     }
     if (ev === 'page') { page = data; draw() }
-    if (ev === 'settings') { settings = data }
+    if (ev === 'settings') { settings = data; applyLook(data) }
     if (ev === 'heard') { const el = document.getElementById('heard'); if (el) el.textContent = data }
   })
-  ;(async () => { settings = await A.settings(); st = await A.state(); document.querySelector('.appname').textContent = settings.name || 'Meshron Assistant'; draw(); renderApproval() })()
+  ;(async () => { settings = await A.settings(); applyLook(settings); st = await A.state(); document.querySelector('.appname').textContent = settings.name || 'Meshron Assistant'; draw(); renderApproval() })()
 })()

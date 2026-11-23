@@ -46,6 +46,7 @@ enum class Mode { Idle, Listening, Thinking, Speaking }
  */
 @Composable
 fun Reactor(mode: Mode, level: Float, modifier: Modifier = Modifier) {
+    if (Look.skin != "reactor") { SkinOrb(mode, level, modifier); return }
     val t = rememberInfiniteTransition(label = "reactor")
     val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(if (mode == Mode.Thinking) 1600 else 9000, easing = LinearEasing)), label = "spin")
     val counter by t.animateFloat(360f, 0f, infiniteRepeatable(tween(if (mode == Mode.Thinking) 2400 else 14000, easing = LinearEasing)), label = "counter")

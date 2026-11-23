@@ -140,6 +140,7 @@
   document.addEventListener('click', () => { if (show && show.kind === 'tour') leave() })
 
   const TITLES = { voices: 'RECOMMENDED VOICES', storage: 'STORAGE', system: 'SYSTEM', battery: 'BATTERY', tour: 'WHAT I CAN DO' }
+  if (A.settings) A.settings().then((s) => { window.ReactorSkin = s.skin || 'reactor' })
   A.on((ev, d) => {
     if (ev === 'show') {
       show = { kind: d.kind, data: d.data }

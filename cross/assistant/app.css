@@ -131,3 +131,26 @@ html { background: rgba(18, 18, 22, .78); }
 .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .3; animation: dot 1.2s infinite; font-size: 0; }
 .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
 @keyframes dot { 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* ---- Themes: the accent and a soft tint over Mica ---- */
+body[data-theme="nebula"] { --accent: #B57BFF; --accent2: #E0B8FF; --on-accent: #1A0630; --tint: rgba(181, 123, 255, .10); }
+body[data-theme="ember"] { --accent: #FF8A3D; --accent2: #FFB37A; --on-accent: #2A0E00; --tint: rgba(255, 110, 60, .09); }
+body[data-theme="forest"] { --accent: #3DDC84; --accent2: #9AF0B8; --on-accent: #00210F; --tint: rgba(61, 220, 132, .08); }
+body[data-theme="ocean"] { --accent: #38BDF8; --accent2: #93DDFF; --on-accent: #001A29; --tint: rgba(37, 99, 235, .10); }
+body[data-theme="gold"] { --accent: #FFD86B; --accent2: #FFE9A8; --on-accent: #241800; --tint: rgba(255, 176, 32, .08); }
+body[data-theme="mono"] { --accent: #E6EDF5; --accent2: #FFFFFF; --on-accent: #0A0C10; --tint: rgba(255, 255, 255, .03); }
+body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(120% 80% at 50% 0%, var(--tint, transparent), transparent 70%); z-index: -1; }
+
+.look { background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--r); padding: 14px 16px; margin-bottom: 4px; }
+.looktitle { font-weight: 600; margin: 2px 0 10px; } .looktitle span { display: block; font-weight: 400; font-size: 12px; color: var(--text2); margin-top: 2px; }
+.skins { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.skin { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 10px; border: 1px solid var(--stroke); background: rgba(0, 0, 0, .18); cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
+.skin:hover { background: var(--layer2); transform: translateY(-1px); }
+.skin.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.skin canvas { width: 64px; height: 64px; }
+.skin span { font-size: 12px; }
+.skin em { position: absolute; top: 6px; right: 6px; font: 600 9px/1 "Segoe UI Variable Text", "Segoe UI"; font-style: normal; letter-spacing: .5px; padding: 3px 5px; border-radius: 99px; background: rgba(255, 255, 255, .1); color: var(--text2); }
+.themes { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 99px; border: 1px solid var(--stroke); background: rgba(0, 0, 0, .18); cursor: pointer; }
+.theme i { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, var(--a), var(--b)); }
+.theme.on { border-color: var(--accent); }

@@ -9,6 +9,8 @@
   const strip = $('strip')
   const setSide = (s) => document.body.classList.toggle('right', s !== 'left')
   setSide(location.hash.slice(1) || 'right')
+  // Skin: faces dock at the top (island) and can't be dragged.
+  const look = (s) => { window.ReactorSkin = s.skin || 'reactor'; const sk = window.Reactor.SKINS.find((k) => k.id === window.ReactorSkin); document.body.classList.toggle('island', !!(sk && sk.face)) }
 
   // Clicks pass through the empty, transparent part of this window to whatever is behind it.
   for (const el of [$('orb'), strip]) {
@@ -36,6 +38,7 @@
   })
   $('orb').addEventListener('pointermove', (e) => {
     if (!drag) return
+    if (document.body.classList.contains('island')) return
     const dx = e.screenX - drag.x; const dy = e.screenY - drag.y
     if (!drag.moved && dx * dx + dy * dy < 25) return
     drag.moved = true; $('orb').style.cursor = 'grabbing'
@@ -76,7 +79,7 @@
   let voiceTurn = false
   let prevMode = 'idle'
   let speakOn = true
-  A.settings().then((s) => { speakOn = s.speak !== false })
+  A.settings().then((s) => { speakOn = s.speak !== false; look(s) })
 
   async function startListening (followUp) {
     if (mode === 'listening') return
@@ -100,11 +103,12 @@
       if (prevMode === 'thinking' && mode === 'idle' && !speakOn && !data.asking) followUp()
       prevMode = mode
     }
-    if (ev === 'settings') speakOn = data.speak !== false
+    if (ev === 'settings') { speakOn = data.speak !== false; look(data) }
+    if (ev === 'mood') reactor.feel(data.mood, data.ms || 2200)
     if (ev === 'side') setSide(data)
     if (ev === 'listen') startListening(false)
     if (ev === 'stop') { voiceTurn = false; Voice.listen.cancel && Voice.listen.cancel() }
-    if (ev === 'chime') chime()
+    if (ev === 'chime') { chime(); reactor.feel('surprised', 900) }
     if (ev === 'say') Voice.say(data, (on) => { if (on) A.mode('speaking'); else { if (mode === 'speaking') { A.mode('idle'); mode = 'idle' } followUp() } })
   })
   A.state().then(render)

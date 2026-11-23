@@ -23,7 +23,8 @@ const dataFile = () => path.join(app.getPath('userData'), 'assistant.json')
 let data = { settings: {}, tasks: [], reminders: [], orb: null }
 function load () { try { data = Object.assign(data, JSON.parse(fs.readFileSync(dataFile(), 'utf8'))) } catch {} }
 function save () { fs.mkdirSync(path.dirname(dataFile()), { recursive: true }); fs.writeFileSync(dataFile(), JSON.stringify(data)) }
-const DEFAULTS = { hidden: false, name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
+const FACES = ['buddy', 'cosmo', 'pixel', 'kitty'] // skins with a face sit at the top centre (island)
+const DEFAULTS = { skin: 'reactor', theme: 'midnight', hidden: false, name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
 const settings = () => Object.assign({}, DEFAULTS, data.settings)
 function account () {
   try { return data.account ? JSON.parse(safeStorage.decryptString(Buffer.from(data.account, 'base64'))) : null } catch { return null }
@@ -60,6 +61,11 @@ function openPanel (page) {
 }
 
 function orbBounds () {
+  if (FACES.includes(settings().skin)) {
+    const d = data.orb ? screen.getDisplayNearestPoint({ x: data.orb.x, y: data.orb.y }) : screen.getPrimaryDisplay()
+    const wa = d.workArea
+    return { x: Math.round(wa.x + (wa.width - ORB_W) / 2), y: wa.y + 2, width: ORB_W, height: ORB_H, right: false, island: true }
+  }
   const s = data.orb
   const d = s ? screen.getDisplayNearestPoint({ x: s.x, y: s.y }) : screen.getPrimaryDisplay()
   const wa = d.workArea
@@ -218,6 +224,7 @@ async function ask (text, image) {
   if (busy) return
   busy = true
   line({ who: 'you', text: image ? '📷 ' + text : text })
+  if (/\b(thank(s| you)|love (you|u)|you'?re (the best|amazing|awesome)|good job|well done)\b/i.test(text)) mood('love', 2600)
   setMode('thinking'); strip('YOU', text, false)
   try {
     const l = await local(text)
@@ -239,6 +246,7 @@ async function ask (text, image) {
         let out
         try { out = await tools.run(c.name, c.args || {}, toolCtx) } catch (e) { out = { text: 'Failed: ' + e.message } }
         illustrate(c.name, c.args || {}, out)
+        mood(/^(Failed|The person didn't|I can't|Couldn't)/.test(out.text) ? 'sad' : 'happy', 1800)
         line({ who: 'act', text: c.name.replace(/_/g, ' ') + ' · ' + out.text.split('\n')[0].slice(0, 80), ok: !/^(Failed|The person didn't|I can't|Couldn't)/.test(out.text) })
         messages.push({ role: 'tool', tool_call_id: c.id, content: out.text })
         if (out.image) photo = out
@@ -256,6 +264,8 @@ function reply (text) {
   setMode('idle')
   if (settings().speak) say(text)
 }
+/** A moment's expression on face skins: happy, sad, surprised or love. */
+function mood (m, ms) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'mood', { mood: m, ms }) }
 function say (text) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'say', text) }
 
 /** Starts listening in the orb window (it owns the microphone and the speaker). */
@@ -372,6 +382,7 @@ function setSettings (patch) {
   if ('startup' in patch) applyStartup()
   if ('hidden' in patch) for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.setContentProtection(!!settings().hidden)
   if ('orb' in patch && orb) { if (settings().orb) orb.showInactive(); else orb.hide() }
+  if ('skin' in patch && orb && !orb.isDestroyed()) { const b = orbBounds(); orb.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height }); orb.webContents.send('a-event', 'side', b.island || !b.right ? 'left' : 'right') }
   for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())
   return settings()
 }
@@ -414,13 +425,13 @@ ipcMain.handle('a', async (e, what, arg) => {
     // The orb: let clicks through its empty area; drag it and let it settle on a side.
     case 'orbMouse': if (orb) orb.setIgnoreMouseEvents(!arg, { forward: true }); return true
     case 'orbMove': {
-      if (!orb) return true
+      if (!orb || FACES.includes(settings().skin)) return true
       const [x, y] = orb.getPosition()
       orb.setPosition(Math.round(x + arg.dx), Math.round(y + arg.dy))
       return true
     }
     case 'orbDrop': {
-      if (!orb) return true
+      if (!orb || FACES.includes(settings().skin)) return true
       const [x, y] = orb.getPosition()
       const orbCenter = { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
       const d = screen.getDisplayNearestPoint(orbCenter); const wa = d.workArea

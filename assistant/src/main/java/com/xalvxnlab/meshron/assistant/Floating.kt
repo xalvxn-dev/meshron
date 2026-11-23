@@ -114,6 +114,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private var tag by mutableStateOf("")
     private var asking by mutableStateOf<Triple<String, String, CompletableDeferred<Boolean>>?>(null)
     private var onRight by mutableStateOf(true)
+    /** A face skin: the orb is an island at the top centre of the screen. */
+    var island by mutableStateOf(false)
 
     private var always = false
     private var busy = false
@@ -138,6 +140,8 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         Speaker.listeners += speakingHook
 
         wm = getSystemService(WindowManager::class.java)
+        Look.load(this)
+        island = Look.isFace(this)
         val (right, y) = Memory.orbSpot(this)
         onRight = right
         params = WindowManager.LayoutParams(
@@ -146,9 +150,9 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or if (right) Gravity.END else Gravity.START
+            gravity = Gravity.TOP or if (island) Gravity.CENTER_HORIZONTAL else if (right) Gravity.END else Gravity.START
             x = 0
-            this.y = (resources.displayMetrics.heightPixels * y).roundToInt().coerceIn(maxTop(), maxBottom())
+            this.y = if (island) (statusBar() * 0.15f).roundToInt() else (resources.displayMetrics.heightPixels * y).roundToInt().coerceIn(maxTop(), maxBottom())
         }
         val compose = ComposeView(this).apply { setContent { Bubble() } }
         view = DragFrame(this, compose).apply {
@@ -320,6 +324,17 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     // ---- The orb and its strip ----
     @Composable
     private fun Bubble() {
+        if (island) {
+            // Like an island in the status bar: a black pill with the face, growing sideways with the text.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(4.dp).clip(RoundedCornerShape(28.dp)).background(Color.Black).padding(3.dp)
+            ) {
+                Box(Modifier.size(50.dp).pointerInput(Unit) { detectTapGestures(onTap = { tap() }, onLongPress = { openApp() }) }, contentAlignment = Alignment.Center) { Reactor(mode, level, Modifier.size(48.dp)) }
+                AnimatedVisibility(strip != null || asking != null, enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start), exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)) { IslandText() }
+            }
+            return
+        }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(6.dp)) {
             if (!onRight) Orb()
             AnimatedVisibility(strip != null || asking != null, enter = fadeIn() + expandHorizontally(expandFrom = if (onRight) Alignment.End else Alignment.Start),
@@ -348,12 +363,14 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
 
     /** Follows the finger: [dx]/[dy] is how far it travelled on screen since the drag began. */
     fun moveTo(startX: Int, startY: Int, dx: Float, dy: Float) {
+        if (island) return
         params.x = (startX + (if (onRight) -dx else dx)).roundToInt().coerceAtLeast(0)
         params.y = (startY + dy).roundToInt().coerceIn(maxTop(), maxBottom())
         runCatching { wm.updateViewLayout(view, params) }
     }
 
     fun settle() {
+        if (island) return
         val w = resources.displayMetrics.widthPixels
         val orbPx = (60 * resources.displayMetrics.density).roundToInt()
         val left = if (onRight) w - params.x - orbPx else params.x
@@ -363,6 +380,19 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         params.x = 0
         runCatching { wm.updateViewLayout(view, params) }
         Memory.setOrbSpot(this, right, params.y / resources.displayMetrics.heightPixels.toFloat())
+    }
+
+    @Composable
+    private fun IslandText() {
+        val a = asking
+        Column(Modifier.widthIn(max = 240.dp).padding(start = 6.dp, end = 14.dp, top = 4.dp, bottom = 4.dp)) {
+            Text(if (a != null) "APPROVE?" else tag, color = if (a != null) Hud.amber else Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+            Text(if (a != null) a.first + "\n" + a.second else strip.orEmpty(), color = Hud.text, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (a != null) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Cancel", color = Hud.text, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Hud.line, RoundedCornerShape(50)).clickable { a.third.complete(false) }.padding(horizontal = 12.dp, vertical = 6.dp))
+                Text("Approve", color = Color(0xFF1A1000), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(50)).background(Hud.amber).clickable { a.third.complete(true) }.padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+        }
     }
 
     @Composable

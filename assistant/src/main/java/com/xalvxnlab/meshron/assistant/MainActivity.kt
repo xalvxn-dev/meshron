@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity(), Host {
     private val pendingAsk = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Look.load(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         api = Api(this)
@@ -446,6 +447,26 @@ class MainActivity : ComponentActivity(), Host {
             }
             SetRow("Quick Settings tile", "Pull down the shade, tap the pencil, and drag \"Meshron\" into your tiles.") { Text("", color = Hud.dim) }
             SetRow("Home-screen widget", "Long-press your home screen, tap Widgets, and add \"Meshron Assistant\".") { Text("", color = Hud.dim) }
+
+            Section("Look")
+            Text("Orb skin. Skins with a face show feelings, and the floating one sits at the top of the screen like an island.", color = Hud.dim, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp))
+            androidx.compose.foundation.lazy.LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(Look.SKINS.size) { i ->
+                    val k = Look.SKINS[i]
+                    val on = Look.skin == k.id
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) Hud.cyan.copy(alpha = 0.12f) else Hud.panel)
+                            .border(1.dp, if (on) Hud.cyan else Hud.line, RoundedCornerShape(14.dp))
+                            .clickable { Look.save(this@MainActivity, k.id); if (k.face) Look.feel("happy", 1600); FloatingService.restart(this@MainActivity) }
+                            .padding(horizontal = 10.dp, vertical = 10.dp)
+                    ) {
+                        SkinOrb(if (on) Mode.Speaking else Mode.Idle, 0f, Modifier.size(58.dp), skinId = k.id)
+                        Text(k.name, color = Hud.text, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        if (k.face) Text("FACE", color = Hud.dim, fontSize = 9.sp, letterSpacing = 1.sp)
+                    }
+                }
+            }
 
             Section("Floating assistant")
             var floating by remember { mutableStateOf(Memory.floating(this@MainActivity) && overlayAllowed.value) }
