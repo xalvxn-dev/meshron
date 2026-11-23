@@ -622,7 +622,7 @@ game({
 // Control modes (Windows only): they run over other apps from a small card in the corner.
 let inputSize = null
 async function screenPx () { if (!inputSize) inputSize = await A.gameScreen(); return inputSize }
-const VK = { W: 0x57, A: 0x41, S: 0x53, D: 0x44, SPACE: 0x20, E: 0x45, R: 0x52, C: 0x43, G: 0x47, Q: 0x51, SHIFT: 0x10, CTRL: 0x11, ESC: 0x1B, ALT: 0x12, LEFT: 0x25, RIGHT: 0x27 }
+const VK = { UP: 0x26, DOWN: 0x28, W: 0x57, A: 0x41, S: 0x53, D: 0x44, SPACE: 0x20, E: 0x45, R: 0x52, C: 0x43, G: 0x47, Q: 0x51, SHIFT: 0x10, CTRL: 0x11, ESC: 0x1B, ALT: 0x12, LEFT: 0x25, RIGHT: 0x27 }
 /** Keys and buttons held down by a control mode (pressed once, released once). */
 const down = new Map()
 function hold (what, on) {
@@ -726,11 +726,12 @@ if (!ANDROID) {
       // Gentle turns tap the key, sharp turns hold it: the further you turn, the longer it's held.
       this.pulse = (this.pulse + dt * 8) % 1
       const on = Math.abs(steer) > 0.85 || this.pulse < Math.abs(steer)
-      hold(VK.A, steer < 0 && on); hold(VK.D, steer > 0 && on)
+      // Both W/A/S/D and the arrow keys: racing games use one or the other.
+      hold(VK.A, steer < 0 && on); hold(VK.D, steer > 0 && on); hold(VK.LEFT, steer < 0 && on); hold(VK.RIGHT, steer > 0 && on)
       const hs = (R && R.hands) || []
       const palms = hs.length > 0 && hs.every((x) => x.gesture === 'palm' || x.gesture === 'four')
-      hold(VK.W, hs.length > 0 && !palms) // gripping the wheel: accelerate
-      hold(VK.S, palms) // open hands: brake / reverse
+      hold(VK.W, hs.length > 0 && !palms); hold(VK.UP, hs.length > 0 && !palms) // gripping the wheel: accelerate
+      hold(VK.S, palms); hold(VK.DOWN, palms) // open hands: brake / reverse
       if (hs.some((x) => x.punch) || hs.some((x) => became(x, 'pinch', 'race' + hs.indexOf(x)))) tap(VK.SPACE, 120) // nitro
       for (let i = 0; i < hs.length; i++) lastGesture['race' + i] = hs[i].gesture
     },

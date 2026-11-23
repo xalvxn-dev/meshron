@@ -56,12 +56,17 @@ public static class MI {
   [StructLayout(LayoutKind.Explicit)] struct U { [FieldOffset(0)] public MOUSEINPUT m; [FieldOffset(0)] public KEYBDINPUT k; }
   [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public U u; }
   [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] i, int size);
+  [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   static void Send(INPUT i) { SendInput(1, new[] { i }, Marshal.SizeOf(typeof(INPUT))); }
   public static void Move(int dx, int dy) { var i = new INPUT(); i.type = 0; i.u.m.dx = dx; i.u.m.dy = dy; i.u.m.flags = 1; Send(i); }
   public static void Btn(string b, bool down) { var i = new INPUT(); i.type = 0; i.u.m.flags = b == "r" ? (down ? 8u : 16u) : (down ? 2u : 4u); Send(i); }
   public static void Wheel(int d) { var i = new INPUT(); i.type = 0; i.u.m.flags = 0x800; i.u.m.data = (uint)d; Send(i); }
-  public static void Key(ushort vk, bool down) { var i = new INPUT(); i.type = 1; i.u.k.vk = vk; i.u.k.flags = down ? 0u : 2u; Send(i); }
+  public static void Key(ushort vk, bool down) {
+    var i = new INPUT(); i.type = 1
+    ; i.u.k.vk = vk; i.u.k.scan = (ushort)MapVirtualKey(vk, 0)
+    ; bool ext = (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E || vk == 0x5B || vk == 0x5C || vk == 0xA3 || vk == 0xA5
+    ; i.u.k.flags = (i.u.k.scan != 0 ? 8u : 0u) | (ext ? 1u : 0u) | (down ? 0u : 2u); Send(i); }
   public static void Text(string s) { foreach (char c in s) { var i = new INPUT(); i.type = 1; i.u.k.scan = c; i.u.k.flags = 4; Send(i); i.u.k.flags = 6; Send(i); } }
 }
 '@
