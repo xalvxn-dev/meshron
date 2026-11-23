@@ -3,27 +3,13 @@
 // limit, goes down or is retired sits out until it should be back, so weaker models only answer
 // while the stronger ones are all used up. A model whose key isn't set is skipped.
 //
-// Override with AI_LADDER / AI_VISION_LADDER: comma-separated "provider:model", e.g.
-// "groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash".
+// The list comes from the providers themselves (see discover). Override with AI_LADDER /
+// AI_VISION_LADDER: comma-separated "provider:model", e.g. "groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash".
 
-const TEXT_LADDER = [
-  'groq:openai/gpt-oss-120b',
-  'gemini:gemini-2.5-flash',
-  'groq:moonshotai/kimi-k2-instruct-0905',
-  'groq:qwen/qwen3-32b',
-  'groq:llama-3.3-70b-versatile',
-  'gemini:gemini-2.5-flash-lite',
-  'groq:openai/gpt-oss-20b',
-  'groq:meta-llama/llama-4-scout-17b-16e-instruct',
-  'groq:llama-3.1-8b-instant'
-]
-const VISION_LADDER = [
-  'gemini:gemini-2.5-flash',
-  'groq:meta-llama/llama-4-maverick-17b-128e-instruct',
-  'groq:meta-llama/llama-4-scout-17b-16e-instruct',
-  'gemini:gemini-2.5-flash-lite'
-]
-const IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-2.0-flash-preview-image-generation']
+// Used only when the providers can't be asked which models they have.
+const TEXT_LADDER = ['groq:openai/gpt-oss-120b', 'groq:openai/gpt-oss-20b']
+const VISION_LADDER = []
+const IMAGE_MODELS = ['gemini-2.5-flash-image']
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta'
 
 // Models sitting out, and until when (per server instance; it is only a shortcut, so a fresh
@@ -32,11 +18,57 @@ const resting = new Map()
 
 const list = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => x.includes(':') ? x : 'groq:' + x)
 
-export function ladder (env, vision) {
-  if (vision) return list(env.AI_VISION_LADDER).length ? list(env.AI_VISION_LADDER) : (env.AI_VISION_MODEL ? ['groq:' + env.AI_VISION_MODEL, ...VISION_LADDER] : VISION_LADDER)
-  if (list(env.AI_LADDER).length) return list(env.AI_LADDER)
-  const main = env.AI_MODEL && env.AI_MODEL !== 'openai/gpt-oss-120b' ? ['groq:' + env.AI_MODEL] : []
-  return [...new Set([...main, ...TEXT_LADDER])]
+// ---- Which models the keys can use right now (asked every few hours) ----
+// Providers retire and rename models often, so the list isn't written down: both are asked, and
+// what they offer is ranked by how capable each model is.
+let known = null // { at, text: [...], vision: [...], image: [...] }
+const NOT_CHAT = /whisper|tts|orpheus|playai|guard|embed|embedding|aqa|imagen|veo|live|audio|native-audio|compound|computer-use|robotics|learnlm|gemma|tuning|distil|transcribe|lyria|nano|deep-research|thinking-exp/i
+
+/** How capable a model is, roughly (higher is better): newer and bigger first, "lite" and small last. */
+export function score (name) {
+  const id = name.toLowerCase()
+  if (id.startsWith('gemini:')) {
+    const v = parseFloat((/gemini-(\d+(?:\.\d+)?)/.exec(id) || [])[1] || '1')
+    const tier = /pro/.test(id) ? 3 : /flash-lite|lite/.test(id) ? 0.5 : /flash/.test(id) ? 2.2 : 1
+    return v * 10 + tier * 3 - (/preview|exp/.test(id) ? 0.5 : 0)
+  }
+  const size = Math.max(...[...id.matchAll(/(\d+(?:\.\d+)?)b\b/g)].map((m) => +m[1]), 0)
+  const famous = /gpt-oss|kimi|qwen|llama-4|deepseek|llama-3\.3|mistral|claude|gpt-5|gpt-4/i.test(id) ? 4 : 0
+  return Math.min(36, 8 + Math.log2(Math.max(size, 1)) * 3.6) + famous - (/instant|mini|small|tiny/.test(id) ? 4 : 0)
+}
+const vision = (n) => /^gemini:/.test(n) || /llama-4|vision|maverick|scout|-vl\b|pixtral|qwen.*vl/i.test(n)
+
+async function discover (env) {
+  if (known && Date.now() - known.at < 3 * 3600_000) return known
+  const found = []
+  const jobs = []
+  if (env.AI_URL && env.AI_KEY) jobs.push(fetch(env.AI_URL.replace(/\/$/, '') + '/models', { headers: { authorization: 'Bearer ' + env.AI_KEY }, signal: AbortSignal.timeout(8000) })
+    .then((r) => r.ok ? r.json() : null).then((o) => { for (const m of (o && o.data) || []) if (m.id && m.active !== false && !NOT_CHAT.test(m.id)) found.push('groq:' + m.id) }).catch(() => {}))
+  const images = []
+  if (env.GEMINI_API_KEY) jobs.push(fetch(GEMINI + '/models?pageSize=200', { headers: { 'x-goog-api-key': env.GEMINI_API_KEY }, signal: AbortSignal.timeout(8000) })
+    .then((r) => r.ok ? r.json() : null).then((o) => {
+      for (const m of (o && o.models) || []) {
+        const id = String(m.name || '').replace(/^models\//, '')
+        if (!/^gemini-/.test(id) || !(m.supportedGenerationMethods || []).includes('generateContent')) continue
+        if (/image/.test(id)) { images.push(id); continue }
+        if (!NOT_CHAT.test(id) && !/-\d{3}$|latest$/.test(id)) found.push('gemini:' + id)
+      }
+    }).catch(() => {}))
+  await Promise.all(jobs)
+  const rank = (xs) => [...new Set(xs)].sort((x, y) => score(y) - score(x))
+  known = found.length
+    ? { at: Date.now(), text: rank(found), vision: rank(found.filter(vision)), image: images.sort((x, y) => score('gemini:' + y) - score('gemini:' + x)) }
+    : { at: Date.now() - 2.5 * 3600_000, text: TEXT_LADDER, vision: VISION_LADDER, image: IMAGE_MODELS } // ask again in 30 minutes
+  console.log('models', JSON.stringify({ text: known.text, vision: known.vision, image: known.image }))
+  return known
+}
+
+/** The models to try, strongest first (AI_LADDER / AI_VISION_LADDER override it). */
+export async function ladder (env, vision) {
+  if (vision && list(env.AI_VISION_LADDER).length) return list(env.AI_VISION_LADDER)
+  if (!vision && list(env.AI_LADDER).length) return list(env.AI_LADDER)
+  const k = await discover(env)
+  return vision ? k.vision : k.text
 }
 
 function endpoint (env, provider) {
@@ -63,7 +95,7 @@ function restFor (r, body) {
  */
 export async function chat (env, body, opts = {}) {
   const first = opts.first ? (opts.first.includes(':') ? opts.first : 'groq:' + opts.first) : null
-  const names = opts.only ? [opts.only] : first ? [first, ...ladder(env, opts.vision).filter((n) => n !== first)] : ladder(env, opts.vision)
+  const names = opts.only ? [opts.only] : first ? [first, ...(await ladder(env, opts.vision)).filter((n) => n !== first)] : await ladder(env, opts.vision)
   const now = Date.now()
   const ready = names.filter((n) => endpoint(env, n.split(':')[0]))
   if (!ready.length) throw Object.assign(new Error('AI is not set up on this server yet'), { status: 503 })
@@ -93,6 +125,7 @@ export async function chat (env, body, opts = {}) {
     const rest = restFor(r, err)
     if (!rest) throw Object.assign(new Error('The AI is busy. Try again in a moment.'), { status: 502 })
     if (rest > 1) resting.set(name, Date.now() + rest)
+    if (r.status === 404 && known) { known.text = known.text.filter((n) => n !== name); known.vision = known.vision.filter((n) => n !== name) }
   }
   throw Object.assign(new Error(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.'), { status: 502 })
 }
@@ -104,7 +137,7 @@ export const wantsImage = (t) => /^\s*(please\s+)?(draw|paint|sketch|illustrate|
 /** Makes a picture with Gemini (Google AI Studio). Returns { image: 'data:image/png;base64,…', text } . */
 export async function makeImage (env, prompt) {
   if (!env.GEMINI_API_KEY) throw Object.assign(new Error('Image making is not set up on this server yet.'), { status: 503 })
-  const models = list(env.AI_IMAGE_MODELS).length ? String(env.AI_IMAGE_MODELS).split(',').map((x) => x.trim()) : IMAGE_MODELS
+  const models = env.AI_IMAGE_MODELS ? String(env.AI_IMAGE_MODELS).split(',').map((x) => x.trim()) : (await discover(env)).image
   let limited = false
   for (const model of models) {
     if (resting.get('image:' + model) > Date.now()) continue

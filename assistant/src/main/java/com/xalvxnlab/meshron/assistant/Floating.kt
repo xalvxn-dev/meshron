@@ -185,7 +185,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             this.y = if (islandHome) (statusBar() * 0.15f).roundToInt() else (resources.displayMetrics.heightPixels * y).roundToInt().coerceIn(maxTop(), maxBottom())
             // Left on the top or bottom edge last time: put it back where it was along that edge.
             val prefs = getSharedPreferences("memory", MODE_PRIVATE)
-            if (!islandHome && palSkin == null && prefs.getString("orbEdge", "") in setOf("top", "bottom")) {
+            if (!islandHome && palSkin == null && prefs.getString("orbEdge", "") in setOf("top", "bottom", "free")) {
                 val w = resources.displayMetrics.widthPixels; val cx = (prefs.getFloat("orbX", 0.5f) * w).roundToInt(); val orbPx = (60 * resources.displayMetrics.density).roundToInt()
                 x = if (right) (w - cx - orbPx / 2).coerceAtLeast(0) else (cx - orbPx / 2).coerceAtLeast(0)
             }
@@ -562,18 +562,20 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         centreBase = -1
         if (island) { islandHome = false; getSharedPreferences("memory", MODE_PRIVATE).edit().putBoolean("islandMoved", true).apply() }
         if (palSkin == null) {
-            // Nearest edge: left, right, top or bottom (top and bottom keep where along it you left it).
+            // It stays where it is dropped; dropped close to an edge, it docks on that edge
+            // (top and bottom keep where along it you left it).
             val w = resources.displayMetrics.widthPixels; val h = resources.displayMetrics.heightPixels
             val orbPx = (60 * resources.displayMetrics.density).roundToInt()
             val left = if (onRight) w - params.x - orbPx else params.x
             val cx = left + orbPx / 2; val cy = params.y + orbPx / 2
             val d = mapOf("left" to cx, "right" to w - cx, "top" to cy - maxTop(), "bottom" to maxBottom() + orbPx - cy)
-            val edge = d.minByOrNull { it.value }!!.key
-            if (edge == "top" || edge == "bottom") {
+            val near = d.minByOrNull { it.value }!!
+            val edge = if (near.value > 70 * resources.displayMetrics.density) "free" else near.key
+            if (edge == "top" || edge == "bottom" || edge == "free") {
                 onRight = cx > w / 2
                 params.gravity = Gravity.TOP or if (onRight) Gravity.END else Gravity.START
                 params.x = if (onRight) (w - cx - orbPx / 2).coerceAtLeast(0) else (cx - orbPx / 2).coerceAtLeast(0)
-                params.y = if (edge == "top") maxTop() else maxBottom()
+                params.y = if (edge == "top") maxTop() else if (edge == "bottom") maxBottom() else params.y.coerceIn(maxTop(), maxBottom())
                 runCatching { wm.updateViewLayout(view, params) }
                 getSharedPreferences("memory", MODE_PRIVATE).edit().putString("orbEdge", edge).putFloat("orbX", cx / w.toFloat()).apply()
                 Memory.setOrbSpot(this, onRight, params.y / h.toFloat())

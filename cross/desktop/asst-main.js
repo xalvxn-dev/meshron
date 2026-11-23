@@ -116,6 +116,11 @@ function orbBounds () {
     const cy = s.edge === 'top' ? wa.y + 6 + ORB_SIZE / 2 : wa.y + wa.height - 6 - ORB_SIZE / 2
     return { x: Math.max(wa.x - (right ? 0 : 0), Math.min(wa.x + wa.width - ORB_W, x)), y: Math.round(cy - ORB_H / 2), width: ORB_W, height: ORB_H, right, edge: s.edge }
   }
+  // Anywhere on the screen, where it was dropped.
+  if (s && s.edge === 'free') {
+    const x = Math.round(right ? s.x - (ORB_W - 12 - ORB_SIZE / 2) : s.x - (12 + ORB_SIZE / 2))
+    return { x: Math.max(wa.x, Math.min(wa.x + wa.width - ORB_W, x)), y: Math.round(Math.max(wa.y, Math.min(wa.y + wa.height - ORB_H, s.y - ORB_H / 2))), width: ORB_W, height: ORB_H, right, edge: 'free' }
+  }
   const y = Math.max(wa.y + 12, Math.min(wa.y + wa.height - ORB_H - 12, s ? s.y : wa.y + wa.height * 0.55))
   return { x: right ? wa.x + wa.width - ORB_W - 6 : wa.x + 6, y, width: ORB_W, height: ORB_H, right }
 }
@@ -543,11 +548,13 @@ ipcMain.handle('a', async (e, what, arg) => {
       const [x, y] = orb.getPosition()
       const orbCenter = arg.cx != null ? { x: arg.cx, y: arg.cy } : { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
       const d = screen.getDisplayNearestPoint(orbCenter); const wa = d.workArea
-      // It settles on the nearest edge: left, right, top or bottom.
+      // It stays where it is dropped. Dropped close to an edge, it docks on that edge.
       const dist = { left: orbCenter.x - wa.x, right: wa.x + wa.width - orbCenter.x, top: orbCenter.y - wa.y, bottom: wa.y + wa.height - orbCenter.y }
-      const edge = Object.keys(dist).sort((a, b) => dist[a] - dist[b])[0]
+      const near = Object.keys(dist).sort((a, b) => dist[a] - dist[b])[0]
+      const edge = dist[near] < 70 ? near : 'free'
+      // The strip opens toward the middle of the screen.
       const right = edge === 'right' || (edge !== 'left' && orbCenter.x > wa.x + wa.width / 2)
-      data.orb = edge === 'top' || edge === 'bottom' ? { x: orbCenter.x, y: orbCenter.y, right, edge, moved: true } : { x: orbCenter.x, y: orbCenter.y - ORB_H / 2, right, edge, moved: true }; save()
+      data.orb = edge === 'left' || edge === 'right' ? { x: orbCenter.x, y: orbCenter.y - ORB_H / 2, right, edge, moved: true } : { x: orbCenter.x, y: orbCenter.y, right, edge, moved: true }; save()
       const b = orbBounds()
       orb.setBounds(b)
       orb.webContents.send('a-event', 'side', right ? 'right' : 'left')
