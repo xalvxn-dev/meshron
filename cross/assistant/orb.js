@@ -23,16 +23,21 @@
   }
 
   // Clicks pass through the empty, transparent part of this window to whatever is behind it.
-  for (const el of [$('orb'), strip]) {
-    el.addEventListener('mouseenter', () => A.orbMouse(true))
-    el.addEventListener('mouseleave', () => { if (!drag) A.orbMouse(false) })
+  // The app checks where the mouse is (other see-through windows on top can swallow mouseenter),
+  // so this only tells it where the orb and the strip are, and when a drag holds the mouse.
+  function reportRects () {
+    const rs = [$('orb'), strip].filter((el) => (el !== strip || strip.classList.contains('on')) && el.getBoundingClientRect().width > 0)
+      .map((el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height } })
+    A.orbRects(rs)
   }
+  reportRects(); setInterval(reportRects, 400)
+  new ResizeObserver(reportRects).observe(document.body)
 
   function render (s) {
     reactor.mode = s.mode
     const asking = s.asking
     strip.classList.toggle('ask', !!asking)
-    strip.classList.toggle('on', !!(asking || s.strip))
+    strip.classList.toggle('on', !!(asking || s.strip)); setTimeout(reportRects, 260)
     $('tag').textContent = asking ? 'APPROVE?' : s.tag || ''
     $('text').textContent = asking ? asking.title + (asking.detail ? ' — ' + asking.detail : '') : s.strip || ''
   }
@@ -45,6 +50,7 @@
     if (e.button !== 0) return
     drag = { x: e.screenX, y: e.screenY, moved: false }
     $('orb').setPointerCapture(e.pointerId)
+    A.orbMouse(true) // keep the mouse while dragging, even past the orb's edge
   })
   $('orb').addEventListener('pointermove', (e) => {
     if (!drag) return
@@ -56,6 +62,7 @@
   })
   $('orb').addEventListener('pointerup', () => {
     const d = drag; drag = null; $('orb').style.cursor = ''
+    A.orbMouse(false)
     if (!d) return
     if (d.moved) { const r = $('orb').getBoundingClientRect(); A.orbDrop(document.body.classList.contains('right'), window.screenX + r.left + r.width / 2, window.screenY + r.top + r.height / 2) }
     else tap()

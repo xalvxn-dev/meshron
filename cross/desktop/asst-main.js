@@ -124,6 +124,21 @@ function orbBounds () {
   const y = Math.max(wa.y + 12, Math.min(wa.y + wa.height - ORB_H - 12, s ? s.y : wa.y + wa.height * 0.55))
   return { x: right ? wa.x + wa.width - ORB_W - 6 : wa.x + 6, y, width: ORB_W, height: ORB_H, right }
 }
+// ---- The orb takes the mouse only over itself (the rest of its window lets clicks through) ----
+// Checked here from the cursor's position, so it keeps working when other see-through windows
+// (companions, showcases, the board) sit on top of it; it comes to the front when the mouse is on it.
+let orbRects = []; let orbHold = false; let orbTaking = null
+function orbHitTick () {
+  if (!orb || orb.isDestroyed() || !orb.isVisible()) return
+  const p = screen.getCursorScreenPoint(); const [wx, wy] = orb.getPosition()
+  const inside = orbRects.some((r) => p.x >= wx + r.x - 2 && p.x <= wx + r.x + r.w + 2 && p.y >= wy + r.y - 2 && p.y <= wy + r.y + r.h + 2)
+  const take = orbHold || inside
+  if (take === orbTaking) return
+  orbTaking = take
+  orb.setIgnoreMouseEvents(!take, { forward: true })
+  if (take) { orb.setAlwaysOnTop(true, 'screen-saver', 2); orb.moveTop() }
+}
+setInterval(orbHitTick, 40)
 function openOrb () {
   if (orb && !orb.isDestroyed()) return
   const b = orbBounds()
@@ -137,7 +152,7 @@ function openOrb () {
   orb.setIgnoreMouseEvents(true, { forward: true }) // only the orb and its strip take clicks (orb.js switches this)
   orb.loadFile(path.join(dir, 'orb.html'), { hash: b.island ? 'center' : b.right ? 'right' : 'left' })
   orb.once('ready-to-show', () => { if (orbShown()) orb.showInactive() })
-  orb.on('closed', () => { orb = null })
+  orb.on('closed', () => { orb = null; orbTaking = null })
 }
 
 // ---- State shared with the windows ----
@@ -575,7 +590,8 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'openPanel': openPanel(arg); return true
     case 'testHotkey': return registerHotkey()
     // The orb: let clicks through its empty area; drag it and let it settle on a side.
-    case 'orbMouse': if (orb) orb.setIgnoreMouseEvents(!arg, { forward: true }); return true
+    case 'orbMouse': orbHold = !!arg; orbHitTick(); return true
+    case 'orbRects': orbRects = Array.isArray(arg) ? arg.slice(0, 4) : []; return true
     case 'palMouse': pal.mouse(!!arg); return true
     case 'devices': return rc.register()
     case 'deviceId': return rc.id()
