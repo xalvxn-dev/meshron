@@ -100,7 +100,7 @@ function openPanel (page) {
 }
 
 function orbBounds () {
-  if (FACES.includes(settings().skin)) {
+  if (FACES.includes(settings().skin) && !(data.orb && data.orb.moved)) {
     const d = data.orb ? screen.getDisplayNearestPoint({ x: data.orb.x, y: data.orb.y }) : screen.getPrimaryDisplay()
     const wa = d.workArea
     return { x: Math.round(wa.x + (wa.width - ORB_W) / 2), y: wa.y + 2, width: ORB_W, height: ORB_H, right: false, island: true }
@@ -130,7 +130,7 @@ function openOrb () {
   orb.setAlwaysOnTop(true, 'screen-saver')
   orb.setContentProtection(!!settings().hidden)
   orb.setIgnoreMouseEvents(true, { forward: true }) // only the orb and its strip take clicks (orb.js switches this)
-  orb.loadFile(path.join(dir, 'orb.html'), { hash: b.right ? 'right' : 'left' })
+  orb.loadFile(path.join(dir, 'orb.html'), { hash: b.island ? 'center' : b.right ? 'right' : 'left' })
   orb.once('ready-to-show', () => { if (orbShown()) orb.showInactive() })
   orb.on('closed', () => { orb = null })
 }
@@ -468,7 +468,7 @@ function setSettings (patch) {
   if ('orb' in patch || 'skin' in patch) applyCompanion()
   if ('remote' in patch) { rc.register(); rc.kick() }
   if ('hidden' in patch && pal.window()) pal.window().setContentProtection(!!settings().hidden)
-  if ('skin' in patch && orb && !orb.isDestroyed()) { const b = orbBounds(); orb.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height }); orb.webContents.send('a-event', 'side', b.island || !b.right ? 'left' : 'right') }
+  if ('skin' in patch && orb && !orb.isDestroyed()) { const b = orbBounds(); orb.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height }); orb.webContents.send('a-event', 'side', b.island ? 'center' : b.right ? 'right' : 'left') }
   for (const w of [panel, orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())
   return settings()
 }
@@ -520,24 +520,29 @@ ipcMain.handle('a', async (e, what, arg) => {
     case 'boardMouse': showcase.boardMouse(!!arg); return true
     case 'boardClose': showcase.boardClose(); return true
     case 'orbMove': {
-      if (!orb || FACES.includes(settings().skin)) return true
+      if (!orb) return true
       const [x, y] = orb.getPosition()
       orb.setPosition(Math.round(x + arg.dx), Math.round(y + arg.dy))
       return true
     }
     case 'orbDrop': {
-      if (!orb || FACES.includes(settings().skin)) return true
+      if (!orb) return true
       const [x, y] = orb.getPosition()
-      const orbCenter = { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
+      const orbCenter = arg.cx != null ? { x: arg.cx, y: arg.cy } : { x: x + (arg.right ? ORB_W - ORB_SIZE / 2 - 12 : ORB_SIZE / 2 + 12), y: y + ORB_H / 2 }
       const d = screen.getDisplayNearestPoint(orbCenter); const wa = d.workArea
       // It settles on the nearest edge: left, right, top or bottom.
       const dist = { left: orbCenter.x - wa.x, right: wa.x + wa.width - orbCenter.x, top: orbCenter.y - wa.y, bottom: wa.y + wa.height - orbCenter.y }
       const edge = Object.keys(dist).sort((a, b) => dist[a] - dist[b])[0]
       const right = edge === 'right' || (edge !== 'left' && orbCenter.x > wa.x + wa.width / 2)
-      data.orb = edge === 'top' || edge === 'bottom' ? { x: orbCenter.x, y: orbCenter.y, right, edge } : { x: orbCenter.x, y, right, edge }; save()
+      data.orb = edge === 'top' || edge === 'bottom' ? { x: orbCenter.x, y: orbCenter.y, right, edge, moved: true } : { x: orbCenter.x, y: orbCenter.y - ORB_H / 2, right, edge, moved: true }; save()
       const b = orbBounds()
       orb.setBounds(b)
       orb.webContents.send('a-event', 'side', right ? 'right' : 'left')
+      return true
+    }
+    case 'orbHome': { // back to the default spot (island orbs: the top centre)
+      if (data.orb) delete data.orb.moved
+      save(); const b = orbBounds(); if (orb) { orb.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height }); orb.webContents.send('a-event', 'side', b.island ? 'center' : b.right ? 'right' : 'left') }
       return true
     }
   }

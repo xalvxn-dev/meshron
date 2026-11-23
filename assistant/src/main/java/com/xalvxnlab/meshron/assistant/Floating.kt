@@ -125,6 +125,9 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private var onRight by mutableStateOf(true)
     /** A face skin: the orb is an island at the top centre of the screen. */
     var island by mutableStateOf(false)
+    /** An island orb still at its home (the top centre); once dragged it stays where it was left. */
+    private var islandHome = false
+    private var centreBase = -1
 
     private var always = false
     private var busy = false
@@ -156,8 +159,17 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         Speaker.listeners += speakingHook
 
         wm = getSystemService(WindowManager::class.java)
+        placeOrb()
+        life.currentState = Lifecycle.State.RESUMED
+        if (always) main.postDelayed({ listen(wake = true) }, 800)
+    }
+
+    /** Builds the orb (or companion) and adds it over other apps, if it is turned on. Also runs when
+     *  the service was already up for listening or remote control and the orb is switched on later. */
+    private fun placeOrb() {
         Look.load(this)
         island = Look.isFace(this)
+        islandHome = island && !getSharedPreferences("memory", MODE_PRIVATE).getBoolean("islandMoved", false)
         palSkin = Look.of(Look.skin).takeIf { it.pal != null }
         val (right, y) = Memory.orbSpot(this)
         onRight = right
@@ -167,12 +179,12 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or if (palSkin != null) Gravity.START else if (island) Gravity.CENTER_HORIZONTAL else if (right) Gravity.END else Gravity.START
+            gravity = Gravity.TOP or if (palSkin != null) Gravity.START else if (islandHome) Gravity.CENTER_HORIZONTAL else if (right) Gravity.END else Gravity.START
             x = 0
-            this.y = if (island) (statusBar() * 0.15f).roundToInt() else (resources.displayMetrics.heightPixels * y).roundToInt().coerceIn(maxTop(), maxBottom())
+            this.y = if (islandHome) (statusBar() * 0.15f).roundToInt() else (resources.displayMetrics.heightPixels * y).roundToInt().coerceIn(maxTop(), maxBottom())
             // Left on the top or bottom edge last time: put it back where it was along that edge.
             val prefs = getSharedPreferences("memory", MODE_PRIVATE)
-            if (!island && palSkin == null && prefs.getString("orbEdge", "") in setOf("top", "bottom")) {
+            if (!islandHome && palSkin == null && prefs.getString("orbEdge", "") in setOf("top", "bottom")) {
                 val w = resources.displayMetrics.widthPixels; val cx = (prefs.getFloat("orbX", 0.5f) * w).roundToInt(); val orbPx = (60 * resources.displayMetrics.density).roundToInt()
                 x = if (right) (w - cx - orbPx / 2).coerceAtLeast(0) else (cx - orbPx / 2).coerceAtLeast(0)
             }
@@ -184,13 +196,13 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         }
         // The orb shows only if it is turned on; otherwise this just listens for the name.
         if (Memory.floating(this) && Settings.canDrawOverlays(this)) wm.addView(view, params) else view = null
-        life.currentState = Lifecycle.State.RESUMED
-        if (always) main.postDelayed({ listen(wake = true) }, 800)
         if (palSkin != null && view != null) startPal()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) { Memory.setFloating(this, false); stopSelf() }
+        // Already running (listening or remote control) when the orb was switched on: show it now.
+        else if (view == null && Memory.floating(this) && Settings.canDrawOverlays(this)) runCatching { placeOrb() }
         return START_STICKY
     }
 
@@ -534,14 +546,21 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     /** Follows the finger: [dx]/[dy] is how far it travelled on screen since the drag began. */
     fun moveTo(startX: Int, startY: Int, dx: Float, dy: Float) {
         if (palSkin != null) { palMode = "held"; px = startX + palWinW / 2f + dx; py = startY + palWinH + dy; placePal(); return }
-        if (island) return
-        params.x = (startX + (if (onRight) -dx else dx)).roundToInt().coerceAtLeast(0)
+        if ((params.gravity and Gravity.CENTER_HORIZONTAL) == Gravity.CENTER_HORIZONTAL) {
+            // Leaving the top centre: switch to edge placement from where it is now.
+            onRight = false; params.gravity = Gravity.TOP or Gravity.START
+            centreBase = (resources.displayMetrics.widthPixels - (view?.width ?: 0)) / 2
+        }
+        val sx = if (centreBase >= 0) centreBase else startX
+        params.x = (sx + (if (onRight) -dx else dx)).roundToInt().coerceAtLeast(0)
         params.y = (startY + dy).roundToInt().coerceIn(maxTop(), maxBottom())
         runCatching { wm.updateViewLayout(view, params) }
     }
 
     fun settle() {
-        if (palSkin == null && !island) {
+        centreBase = -1
+        if (island) { islandHome = false; getSharedPreferences("memory", MODE_PRIVATE).edit().putBoolean("islandMoved", true).apply() }
+        if (palSkin == null) {
             // Nearest edge: left, right, top or bottom (top and bottom keep where along it you left it).
             val w = resources.displayMetrics.widthPixels; val h = resources.displayMetrics.heightPixels
             val orbPx = (60 * resources.displayMetrics.density).roundToInt()
@@ -562,7 +581,6 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
             getSharedPreferences("memory", MODE_PRIVATE).edit().putString("orbEdge", edge).apply()
         }
         if (palSkin != null) { palMode = if (palSkin?.pal == "fly") "fly" else if (palSkin?.pal == "float") "stand" else "fall"; vy = 0f; vx = 0f; palTarget = null; Look.feel("surprised", 900); return }
-        if (island) return
         val w = resources.displayMetrics.widthPixels
         val orbPx = (60 * resources.displayMetrics.density).roundToInt()
         val left = if (onRight) w - params.x - orbPx else params.x

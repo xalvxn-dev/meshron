@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('Assistant', {
   testHotkey: () => call('testHotkey'),
   orbMouse: (on) => call('orbMouse', on),
   orbMove: (dx, dy) => call('orbMove', { dx, dy }),
-  orbDrop: (right) => call('orbDrop', { right }),
+  orbDrop: (right, cx, cy) => call('orbDrop', { right, cx, cy }),
   palMouse: (on) => call('palMouse', on),
   boardMouse: (on) => call('boardMouse', on),
   devices: () => call('devices'),

@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity(), Host {
     override fun onResume() {
         super.onResume()
         overlayAllowed.value = Settings.canDrawOverlays(this)
-        if (api.signedIn && !FloatingService.running && FloatingService.wanted(this)) FloatingService.start(this)
+        if (api.signedIn && FloatingService.wanted(this)) FloatingService.start(this)
         // Answers and approval questions for commands sent from this screen to the person's other devices.
         if (api.signedIn) { Remote.approver = { t, d -> approve(t, d) }; Remote.start(this) }
     }

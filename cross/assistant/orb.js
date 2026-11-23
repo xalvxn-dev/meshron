@@ -7,9 +7,9 @@
   const $ = (id) => document.getElementById(id)
   const reactor = window.Reactor($('c'))
   const strip = $('strip')
-  const setSide = (s) => document.body.classList.toggle('right', s !== 'left')
+  const setSide = (s) => { document.body.classList.toggle('right', s === 'right'); document.body.classList.toggle('center', s === 'center') }
   setSide(location.hash.slice(1) || 'right')
-  // Skin: faces dock at the top (island) and can't be dragged.
+  // Skin: faces and island orbs are a black capsule (at the top centre until you move them).
   const THEME = { midnight: '#22D3C5', nebula: '#B57BFF', ember: '#FF8A3D', forest: '#3DDC84', ocean: '#38BDF8', gold: '#FFD86B', mono: '#E6EDF5' }
   const look = (s) => {
     window.ReactorSkin = s.skin || 'reactor'
@@ -48,7 +48,6 @@
   })
   $('orb').addEventListener('pointermove', (e) => {
     if (!drag) return
-    if (document.body.classList.contains('island')) return
     const dx = e.screenX - drag.x; const dy = e.screenY - drag.y
     if (!drag.moved && dx * dx + dy * dy < 25) return
     drag.moved = true; $('orb').style.cursor = 'grabbing'
@@ -58,7 +57,7 @@
   $('orb').addEventListener('pointerup', () => {
     const d = drag; drag = null; $('orb').style.cursor = ''
     if (!d) return
-    if (d.moved) A.orbDrop(document.body.classList.contains('right'))
+    if (d.moved) { const r = $('orb').getBoundingClientRect(); A.orbDrop(document.body.classList.contains('right'), window.screenX + r.left + r.width / 2, window.screenY + r.top + r.height / 2) }
     else tap()
   })
   $('orb').addEventListener('contextmenu', (e) => { e.preventDefault(); A.openPanel() })
