@@ -15,6 +15,11 @@ fs.copyFileSync(path.join(__dirname, 'node_modules', 'kokoro-js', 'dist', 'kokor
 // Its speech engine (ONNX Runtime), shipped with the app instead of fetched from a CDN at run time;
 // the exact version Kokoro's build expects (transformers 3.5.1, installed as "kokoro-ort").
 for (const f of ['ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm']) fs.copyFileSync(path.join(__dirname, 'node_modules', 'kokoro-ort', 'dist', f), path.join(out, 'vendor', f))
+// Game mode's hand and face tracking (MediaPipe tasks-vision, Apache-2.0). The models are downloaded on first use.
+const mp = path.join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision')
+fs.mkdirSync(path.join(out, 'vendor', 'mediapipe', 'wasm'), { recursive: true })
+fs.copyFileSync(path.join(mp, 'vision_bundle.mjs'), path.join(out, 'vendor', 'mediapipe', 'vision_bundle.mjs'))
+for (const f of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']) fs.copyFileSync(path.join(mp, 'wasm', f), path.join(out, 'vendor', 'mediapipe', 'wasm', f))
 
 // The icon: a dark disc, broken cyan / blue / lime rings and a bright core (GDI+, 512 px).
 const icons = path.join(out, 'icons')

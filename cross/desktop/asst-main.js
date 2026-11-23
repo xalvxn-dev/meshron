@@ -9,6 +9,7 @@ const fs = require('fs')
 const { spawn } = require('child_process')
 const tools = require('./asst-tools')
 const showcase = require('./asst-show')
+const game = require('./asst-game')
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0) }
 app.setAppUserModelId('com.xalvxnlab.meshron.assistant.desktop')
@@ -136,6 +137,7 @@ const toolCtx = {
     try { await new Promise((r) => setTimeout(r, 120)); return await fn() } finally { for (const w of ws) w.setContentProtection(!!settings().hidden) }
   },
   showcase: (kind) => stageShow(kind),
+  game: () => { game.open(!!settings().hidden); return 'Opened game mode' },
   point: (rect, note) => showcase.point(rect, note, !!settings().hidden),
   async pickFile () {
     const r = await dialog.showOpenDialog(panel || undefined, { properties: ['openFile'], filters: [{ name: 'Documents and pictures', extensions: ['txt', 'md', 'csv', 'json', 'log', 'png', 'jpg', 'jpeg', 'webp'] }] })
@@ -198,6 +200,7 @@ async function local (t) {
   const s = t.toLowerCase().trim().replace(/[.!?]+$/, '')
   let m
   // Showcases: the orb takes centre stage for these.
+  if (/\b(game ?mode|play a game|open (the )?games?|hand tracking|face tracking|let'?s play)\b/.test(s)) { game.open(!!settings().hidden); return 'Game mode is open. Point at a game and pinch to start.' }
   if (/what (?:can|could|else can) (?:you|u) do|^what can (?:you|u)|(?:your|ur) (?:features|abilities|skills)|^(?:help|show me what you can do|give me a tour)$/.test(s)) return stageShow('tour')
   if (/\b(recommend|suggest|show|change|pick|choose)\b.*\bvoices?\b|^voices$/.test(s)) return stageShow('voices')
   if (/\b(storage|disk space|drive space|how much space|free space|my drives?)\b/.test(s)) return stageShow('storage')
@@ -369,6 +372,7 @@ function makeTray () {
     { label: 'Open Meshron Assistant', click: () => openPanel() },
     { label: settings().orb ? 'Hide the orb' : 'Show the orb', click: () => { setSettings({ orb: !settings().orb }); tray.setContextMenu(menu()) } },
     { type: 'separator' },
+    { label: 'Game mode', click: () => game.open(!!settings().hidden) },
     { label: 'Settings', click: () => openPanel('settings') },
     { label: 'Quit', click: () => { app.isQuitting = true; app.quit() } }
   ])
@@ -389,6 +393,10 @@ function setSettings (patch) {
 
 // ---- Messages from the windows ----
 ipcMain.handle('a', async (e, what, arg) => {
+  // Game mode's own calls.
+  if (what === 'openGame') { game.open(!!settings().hidden); return true }
+  if (what === 'gameMood') { mood(String(arg || 'happy'), 3000); return true }
+  if (String(what).startsWith('game')) { const r = await game.handle(what, arg, (ev, d) => { const w = game.window(); if (w && !w.isDestroyed()) w.webContents.send('a-event', ev, d) }); if (r !== undefined) return r }
   switch (what) {
     case 'state': return Object.assign({}, state, { signedIn: !!account(), user: (account() || {}).u || '' })
     case 'settings': return settings()

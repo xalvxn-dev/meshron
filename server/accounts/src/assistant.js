@@ -96,6 +96,7 @@ const WINDOWS_TOOLS = [
   fn('lock_pc', 'Lock the PC.'),
   fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question']),
   fn('showcase', 'Show something visually: the orb moves to the centre of the screen and displays it around itself. Use when the person asks to see or pick voices, their storage / disk space, CPU, GPU or memory use, the battery, or what you can do (tour).', { kind: S('voices, storage, system, battery or tour') }, ['kind']),
+  fn('game_mode', 'Open game mode: games played with hands and face (hand tracking), a hand-gesture school, an air keyboard, mood mirror, sign-language letters, controlling the PC by hand, and a game pad for PC games like Minecraft.'),
   fn('point_at', 'While teaching or explaining something on the PC, point at it on screen: circles it with an arrow and a short note. Give target (the button or menu name as shown) or x and y (0-1 fractions of the screen, from what read_screen showed). Point at each step as you explain it.', { target: S('Name of the button, menu, tab or field'), x: N('0-1 from the left'), y: N('0-1 from the top'), note: S('A few words, e.g. "Click here first"') }, ['note'])
 ]
 

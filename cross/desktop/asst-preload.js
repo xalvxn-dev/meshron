@@ -24,5 +24,16 @@ contextBridge.exposeInMainWorld('Assistant', {
   testHotkey: () => call('testHotkey'),
   orbMouse: (on) => call('orbMouse', on),
   orbMove: (dx, dy) => call('orbMove', { dx, dy }),
-  orbDrop: (right) => call('orbDrop', { right })
+  orbDrop: (right) => call('orbDrop', { right }),
+  // Game mode.
+  openGame: () => call('openGame'),
+  gameModels: () => call('gameModels'),
+  gameDownload: () => call('gameDownload'),
+  gameModel: (k) => call('gameModel', k),
+  gameInput: (cmd) => call('gameInput', cmd),
+  gameRelease: () => call('gameRelease'),
+  gameCompact: (on) => call('gameCompact', on),
+  gameScreen: () => call('gameScreen'),
+  gameClose: () => call('gameClose'),
+  gameMood: (m) => call('gameMood', m)
 })

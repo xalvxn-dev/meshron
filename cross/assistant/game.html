@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: data:">
+  <title>Meshron Game Mode</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #05070D; color: #E6F7FF; overflow: hidden; font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: none; }
+    [hidden] { display: none !important; }
+    video { display: none; }
+    canvas#c { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .screen { position: absolute; inset: 0; display: grid; place-items: center; }
+    .card { width: min(560px, 90vw); padding: 34px 36px; border-radius: 22px; background: rgba(12, 18, 30, .92); border: 1px solid rgba(34, 211, 197, .25); box-shadow: 0 30px 80px rgba(0, 0, 0, .5); text-align: center; }
+    .card h1 { margin: 10px 0 8px; font: 700 28px "Segoe UI Variable Display", "Segoe UI"; }
+    .card p { color: #A9C3D6; line-height: 1.5; margin: 8px 0; }
+    .card canvas { width: 120px; height: 120px; }
+    .btns { display: flex; gap: 10px; justify-content: center; margin-top: 22px; }
+    button { border: 0; border-radius: 999px; padding: 11px 22px; font: 600 15px "Segoe UI Variable Text", "Segoe UI"; cursor: pointer; background: rgba(255, 255, 255, .08); color: #E6F7FF; }
+    button.go { background: linear-gradient(90deg, #6E7BFF, #22D3C5 55%, #B6F36A); color: #00110F; }
+    .bar { height: 8px; border-radius: 8px; background: rgba(255, 255, 255, .08); overflow: hidden; margin-top: 18px; }
+    .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6E7BFF, #22D3C5, #B6F36A); transition: width .2s; }
+    .fine { font-size: 12px; color: #7D8DA6; margin-top: 14px; }
+    body.small .hide-small { display: none; }
+  </style>
+</head>
+<body>
+  <video id="v" playsinline muted></video>
+  <canvas id="c"></canvas>
+  <div class="screen" id="gate" hidden>
+    <div class="card">
+      <canvas id="gateorb"></canvas>
+      <h1>Game mode</h1>
+      <p>Play with your hands and face, steer games, type in the air and control your PC with gestures.</p>
+      <p>It uses your camera to follow your hands and face. Everything is worked out on this PC: the video is never sent anywhere.</p>
+      <p id="dlnote"></p>
+      <div class="bar" id="bar" hidden><i id="barfill"></i></div>
+      <div class="btns" id="gatebtns"><button id="later">Not now</button><button class="go" id="dl">Download and start</button></div>
+      <div class="fine">The tracking models come from Google (MediaPipe, Apache 2.0) and are kept on this PC.</div>
+    </div>
+  </div>
+  <script src="reactor.js"></script>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

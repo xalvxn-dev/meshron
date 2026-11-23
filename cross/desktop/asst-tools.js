@@ -291,6 +291,7 @@ $r = $hit.Current.BoundingRectangle
       return ok('Document "' + path.basename(f) + '":\n' + text.slice(0, 12000))
     }
     case 'showcase': return ok(await ctx.showcase(String(x.kind || '')))
+    case 'game_mode': return ok(ctx.game())
     case 'point_at': {
       // Teaching: circle a control by its name (UI Automation, window in front first), or a spot
       // given as fractions of the screen (from what read_screen showed).
