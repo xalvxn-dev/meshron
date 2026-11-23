@@ -54,7 +54,7 @@ import com.xalvxnlab.meshron.ui.theme.MeshColors
 @Composable
 fun AuroraHeader(title: String, subtitle: String? = null, leading: (@Composable () -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 10.dp, top = 6.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading?.invoke()
@@ -69,9 +69,10 @@ fun AuroraHeader(title: String, subtitle: String? = null, leading: (@Composable 
 /** Round tonal icon button used in headers. */
 @Composable
 fun HeaderButton(icon: ImageVector, label: String, tint: Color = MeshColors.TextPrimary, badge: Int = 0, onClick: () -> Unit) {
-    Box(Modifier.padding(horizontal = 3.dp)) {
+    val press = rememberPress()
+    Box(Modifier.padding(horizontal = 3.dp).pressScale(press, 0.9f)) {
         Box(
-            Modifier.size(44.dp).clip(CircleShape).background(MeshColors.Surface1).border(1.dp, MeshColors.Hairline, CircleShape).clickable(onClick = onClick),
+            Modifier.size(44.dp).clip(CircleShape).background(MeshColors.Surface1).border(1.dp, MeshColors.Hairline, CircleShape).clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) { Icon(icon, label, tint = tint, modifier = Modifier.size(21.dp)) }
         if (badge > 0) Box(
@@ -89,10 +90,15 @@ fun FilterChips(options: List<Pair<String, String>>, selected: String, onSelect:
             val on = id == selected
             val bg by animateColorAsState(if (on) MeshColors.TextPrimary else MeshColors.Surface1, label = "chip")
             val fg by animateColorAsState(if (on) MeshColors.Bg else MeshColors.TextSecondary, label = "chipText")
+            val press = rememberPress()
+            val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
             Row(
-                Modifier.height(36.dp).clip(RoundedCornerShape(50)).background(bg)
+                Modifier.pressScale(press).height(36.dp).clip(RoundedCornerShape(50)).background(bg)
                     .border(1.dp, if (on) Color.Transparent else MeshColors.Hairline, RoundedCornerShape(50))
-                    .clickable { onSelect(id) }.padding(horizontal = 15.dp),
+                    .clickable(press, androidx.compose.foundation.LocalIndication.current) {
+                        if (!on) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        onSelect(id)
+                    }.padding(horizontal = 15.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(label, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold)
@@ -148,12 +154,13 @@ fun AuroraDock(items: List<DockItem>, selected: String, onSelect: (String) -> Un
                         on -> if (overVideo) Color.White else MeshColors.OnAccentContainer
                         else -> if (overVideo) Color.White.copy(alpha = 0.65f) else MeshColors.TextSecondary
                     }
+                    val press = rememberPress()
                     Box(
                         Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(19.dp))
-                            .clickable(remember { MutableInteractionSource() }, null) { onSelect(item.id) },
+                            .clickable(press, null) { onSelect(item.id) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.pressScale(press, 0.86f), horizontalAlignment = Alignment.CenterHorizontally) {
                             Box {
                                 Icon(if (on) item.selectedIcon else item.icon, null, tint = tint, modifier = Modifier.size(23.dp))
                                 if (item.badge > 0) Box(
@@ -182,10 +189,11 @@ fun AuroraDock(items: List<DockItem>, selected: String, onSelect: (String) -> Un
 /** Round shutter: aurora ring around a solid core, like a camera's record button. */
 @Composable
 private fun Shutter(onClick: () -> Unit) {
+    val press = rememberPress()
     Box(
-        Modifier.size(58.dp)
+        Modifier.pressScale(press, 0.9f).size(58.dp)
             .shadow(16.dp, CircleShape, ambientColor = MeshColors.GradStart.copy(alpha = 0.5f), spotColor = MeshColors.GradMid.copy(alpha = 0.6f))
-            .clip(CircleShape).background(MeshColors.Gradient).clickable(onClick = onClick),
+            .clip(CircleShape).background(MeshColors.Gradient).clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(androidx.compose.material.icons.Icons.Rounded.Add, "Create", tint = Color.White, modifier = Modifier.size(28.dp)) }
 }
@@ -193,8 +201,9 @@ private fun Shutter(onClick: () -> Unit) {
 /** A large tappable card row for menus and sheets. */
 @Composable
 fun MenuTile(icon: ImageVector, tint: Color, title: String, detail: String? = null, onClick: () -> Unit) {
+    val press = rememberPress()
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).defaultMinSize(minHeight = 64.dp).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.pressScale(press, 0.98f).fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick).defaultMinSize(minHeight = 64.dp).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {

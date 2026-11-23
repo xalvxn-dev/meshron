@@ -1,5 +1,13 @@
 package com.xalvxnlab.meshron.ui.components
 
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -39,6 +47,21 @@ import com.xalvxnlab.meshron.ui.theme.MeshColors
  * always starts 80dp from the edge and dividers start there too.
  */
 val RowTextStart: Dp = 80.dp
+
+/** One interaction source for a pressable thing (pairs with [pressScale]). */
+@Composable
+fun rememberPress(): MutableInteractionSource = remember { MutableInteractionSource() }
+
+/**
+ * Press feedback: the thing dips a little while a finger is on it and springs back.
+ * Put it first in the chain (before clip/background) and pass the same source to clickable.
+ */
+@Composable
+fun Modifier.pressScale(source: InteractionSource, scale: Float = 0.96f): Modifier {
+    val pressed by source.collectIsPressedAsState()
+    val s by animateFloatAsState(if (pressed) scale else 1f, spring(dampingRatio = 0.55f, stiffness = 800f), label = "press")
+    return this.graphicsLayer { scaleX = s; scaleY = s }
+}
 
 /** The standard list row: leading (avatar or tile), title, optional subtitle, trailing. */
 @OptIn(ExperimentalFoundationApi::class)

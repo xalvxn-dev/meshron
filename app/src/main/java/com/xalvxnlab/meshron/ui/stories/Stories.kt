@@ -1,5 +1,7 @@
 package com.xalvxnlab.meshron.ui.stories
 
+import com.xalvxnlab.meshron.ui.components.rememberPress
+import com.xalvxnlab.meshron.ui.components.pressScale
 import androidx.compose.foundation.rememberScrollState
 
 import androidx.compose.foundation.horizontalScroll
@@ -148,8 +150,8 @@ fun StoriesStrip(
     val activeOnly = added.filter { online(it.keyHex) && it.keyHex !in withStories }
     val live = activeOnly.size + stories.friends.count { online(it.key) }
 
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp)) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp)) {
+        Row(Modifier.padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Moments", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             if (live > 0) {
                 Spacer(Modifier.width(8.dp))
@@ -167,16 +169,16 @@ fun StoriesStrip(
                             .background(MeshColors.Gradient, CircleShape).clickable { composing = true }, contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Add, "New story", Modifier.size(14.dp), tint = Color.White)
                         }
-                    }) { Avatar(me.username, me.publicKey.joinToString("") { "%02x".format(it) }, 58.dp) }
+                    }) { Avatar(me.username, me.publicKey.joinToString("") { "%02x".format(it) }, 54.dp) }
             }
             items(stories.friends, key = { "s" + it.key }) { f ->
                 val name = nameOf(f.key)
                 StoryBubble(name.substringBefore(' '), if (f.allSeen) RingStyle.SEEN else RingStyle.NEW, onClick = { viewing = f.key },
-                    badge = { if (online(f.key)) OnlineDot() }) { Avatar(name, f.key, 58.dp) }
+                    badge = { if (online(f.key)) OnlineDot() }) { Avatar(name, f.key, 54.dp) }
             }
             items(activeOnly, key = { "a" + it.keyHex }) { c ->
                 StoryBubble(c.displayName.substringBefore(' '), RingStyle.NONE, onClick = { onOpenChat(c.keyHex) }, badge = { OnlineDot() }) {
-                    Avatar(c.displayName, c.keyHex, 58.dp)
+                    Avatar(c.displayName, c.keyHex, 54.dp)
                 }
             }
         }
@@ -199,11 +201,12 @@ private fun BoxScope.OnlineDot() {
 private fun StoryBubble(label: String, ring: RingStyle, onClick: () -> Unit, badge: @Composable BoxScope.() -> Unit = {}, avatar: @Composable () -> Unit) {
     // A still ring: many bubbles turning forever kept the home screen redrawing (slow phones felt it).
     val spin = 0f
+    val press = rememberPress()
     Column(
-        Modifier.width(80.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
+        Modifier.pressScale(press, 0.94f).width(76.dp).clip(RoundedCornerShape(16.dp)).clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick).padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(70.dp)) {
+        Box(Modifier.size(66.dp)) {
             Box(
                 Modifier.fillMaxSize().drawBehind {
                     val stroke = 3.dp.toPx()
@@ -228,7 +231,7 @@ private fun StoryBubble(label: String, ring: RingStyle, onClick: () -> Unit, bad
             ) { avatar() }
             badge()
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(5.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MeshColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

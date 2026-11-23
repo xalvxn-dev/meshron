@@ -12,6 +12,8 @@
 //   { t: 'cdel', cid }                  comment removed
 //   { t: 'f', by, on }                  follower
 //   { t: 'v', id, n }                   view count
+// Likes, follows and reposts written since 1.6.5 also carry ts (when the author wrote them),
+// so Activity can say when they happened.
 // Viewers never write to someone else's channel. They keep what they want (likes, follows,
 // pending comments) in their own private core and send it to the author as a 'sync' when
 // they're connected; the author appends whatever changed. So likes and comments arrive even
@@ -71,6 +73,20 @@ module.exports = function createReels (x) {
   let mine = null // { ch, chKey, blobsCore, blobs, priv }
   const chans = new Map() // chHex -> channel state
   const byId = new Map() // identity hex -> chHex
+  // Activity: what people did to my videos, comments and profile, in the order it arrived.
+  //   { k: 'like' | 'comment' | 'reply' | 'follow' | 'repost', by, name, ch, reel, cid, text, ts, n }
+  const acts = []
+  let actSeq = 0
+  const myIdHex = () => hex(x.keyPair().publicKey)
+  const isMine = (c) => !!mine && c.key === mine.chKey
+  function addAct (a) {
+    if (a.by === myIdHex()) return
+    acts.push({ ...a, n: actSeq++ })
+    if (acts.length > 500) acts.splice(0, acts.length - 500)
+  }
+  function dropAct (match) {
+    for (let i = acts.length - 1; i >= 0; i--) if (match(acts[i])) { acts.splice(i, 1); return }
+  }
   const conns = new Map() // identity hex -> Set<{ conn, message }>
   const dialing = new Set() // identity keys we dialled for Reels only
   // Feed settings: hidden creators, muted words, "not interested", and how For You ranks.
@@ -226,21 +242,36 @@ module.exports = function createReels (x) {
         const s = c.likes.get(e.id) || new Set()
         e.on ? s.add(e.by) : s.delete(e.by)
         c.likes.set(e.id, s)
+        if (isMine(c)) {
+          if (e.on) addAct({ k: 'like', by: e.by, ch: c.key, reel: e.id, ts: +e.ts || 0 })
+          else dropAct((a) => a.k === 'like' && a.by === e.by && a.reel === e.id)
+        }
         return
       }
       case 'c': {
         if (!HEX64.test(e.by) || typeof e.cid !== 'string') return
         if (e.by === AI_ID && !aiOk(c.key + ':' + e.reel, e.re, e.text, e.ai)) return
         const m = c.comments.get(e.reel) || new Map()
+        {
+          // A comment on my video, or an answer to a comment of mine anywhere.
+          const parent = typeof e.re === 'string' ? m.get(e.re) : null
+          const toMe = !!parent && parent.by === myIdHex()
+          if (toMe || isMine(c)) addAct({ k: toMe ? 'reply' : 'comment', by: e.by, name: e.by === AI_ID ? 'Meshron AI' : str(e.name, 32), ch: c.key, reel: e.reel, cid: e.cid, text: str(e.text, 140), ts: +e.ts || 0 })
+        }
         m.set(e.cid, { cid: e.cid, by: e.by, name: e.by === AI_ID ? 'Meshron AI' : str(e.name, 32), text: str(e.text, e.by === AI_ID ? MAX_AI : MAX_COMMENT), ts: +e.ts || 0, re: typeof e.re === 'string' && ID.test(e.re) ? e.re : null, ai: e.by === AI_ID ? e.ai : undefined })
         c.comments.set(e.reel, m)
         return
       }
       case 'cdel':
         for (const m of c.comments.values()) m.delete(e.cid)
+        dropAct((a) => a.cid === e.cid && a.ch === c.key)
         return
       case 'f':
         if (HEX64.test(e.by)) e.on ? c.followers.add(e.by) : c.followers.delete(e.by)
+        if (HEX64.test(e.by) && isMine(c)) {
+          if (e.on) addAct({ k: 'follow', by: e.by, ch: c.key, ts: +e.ts || 0 })
+          else dropAct((a) => a.k === 'follow' && a.by === e.by)
+        }
         return
       case 'v':
         c.views.set(e.id, Math.max(c.views.get(e.id) || 0, e.n | 0))
@@ -255,6 +286,10 @@ module.exports = function createReels (x) {
         const s2 = c.reposts.get(e.id) || new Set()
         e.on ? s2.add(e.by) : s2.delete(e.by)
         c.reposts.set(e.id, s2)
+        if (isMine(c)) {
+          if (e.on) addAct({ k: 'repost', by: e.by, ch: c.key, reel: e.id, ts: +e.ts || 0 })
+          else dropAct((a) => a.k === 'repost' && a.by === e.by && a.reel === e.id)
+        }
         return
       }
       case 'repost':
@@ -445,14 +480,14 @@ module.exports = function createReels (x) {
     const want = new Set(Array.isArray(m.likes) ? m.likes.filter((id) => typeof id === 'string') : [])
     for (const id of c.reels.keys()) {
       const has = !!(c.likes.get(id) && c.likes.get(id).has(by))
-      if (want.has(id) !== has) out.push({ t: 'l', id, by, on: !has })
+      if (want.has(id) !== has) out.push({ t: 'l', id, by, on: !has, ts: now() })
     }
-    if (typeof m.follow === 'boolean' && m.follow !== c.followers.has(by)) out.push({ t: 'f', by, on: m.follow })
+    if (typeof m.follow === 'boolean' && m.follow !== c.followers.has(by)) out.push({ t: 'f', by, on: m.follow, ts: now() })
     if (Array.isArray(m.reposts)) {
       const want2 = new Set(m.reposts.filter((id) => typeof id === 'string'))
       for (const id of c.reels.keys()) {
         const has = !!(c.reposts.get(id) && c.reposts.get(id).has(by))
-        if (want2.has(id) !== has) out.push({ t: 'rp', id, by, on: !has })
+        if (want2.has(id) !== has) out.push({ t: 'rp', id, by, on: !has, ts: now() })
       }
     }
     // Collaborators: only people I invited to that reel.
@@ -1005,6 +1040,28 @@ module.exports = function createReels (x) {
           changed(mine.chKey)
           hiAll()
           return reply('reel-ok', {})
+        }
+        case 'reel-activity': {
+          // Newest first: people I follow who are live now, then what happened to my things.
+          const list = []
+          for (const c of chans.values()) {
+            if (!c.profile || isMine(c) || !state.follows.has(c.key) || !c.live || now() - c.live.ts > LIVE_MAX) continue
+            list.push({ k: 'live', who: author(c), ts: c.live.ts, text: c.live.title, lid: c.live.id })
+          }
+          const seen = new Set()
+          for (let i = acts.length - 1; i >= 0 && list.length < 120; i--) {
+            const a = acts[i]
+            // One line per person and thing (liking, unliking and liking again shows once).
+            const key = a.k + a.by + (a.reel || '') + (a.cid || '')
+            if (seen.has(key)) continue
+            seen.add(key)
+            const wc = chans.get(byId.get(a.by))
+            const who = wc && wc.profile ? author(wc) : { ch: '', id: a.by, name: a.name || 'Someone', handle: '', photo: '', following: false, mine: false, live: null, cm: 'everyone', followsMe: false }
+            const rc = chans.get(a.ch)
+            const r = rc && a.reel ? rc.reels.get(a.reel) : null
+            list.push({ k: a.k, who, ts: a.ts, text: a.text || '', ch: a.ch, reel: a.reel || '', thumb: r ? r.thumb : '', cid: a.cid || '' })
+          }
+          return reply('reel-activity', { list })
         }
         case 'reels-lives': {
           // Who is live now: people I follow first, then everyone else I know.

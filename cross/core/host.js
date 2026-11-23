@@ -1391,6 +1391,8 @@ function createHost({ fs, path, dataDir, secrets, loadWorklet, emit, platform, o
     async 'reels.setPrivate'({ id, on }) { needReels(); await reelCmd({ cmd: 'reel-private', id, on: !!on }) },
     // Live: going live is written to my Reels channel; video/audio/chat go over the live link.
     async 'reels.lives'() { needReels(); return (await reelCmd({ cmd: 'reels-lives' })).list },
+    // Activity: likes, comments, replies, follows and reposts on my things, plus follows going live.
+    async 'reels.activity'() { needReels(); return (await reelCmd({ cmd: 'reel-activity' })).list },
     async 'live.start'({ id, title }) { needReels(); await reelCmd({ cmd: 'reel-live', on: true, id, title }); cmd({ cmd: 'live-start', id, title }) },
     async 'live.stop'({ id }) { cmd({ cmd: 'live-stop' }); if (reelsCh) await reelCmd({ cmd: 'reel-live', on: false, id }) },
     async 'live.frame'({ kind, data }) { cmd({ cmd: 'live-frame', kind, data }) },

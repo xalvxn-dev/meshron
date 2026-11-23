@@ -24,7 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Delete
@@ -211,8 +212,9 @@ fun HomeScreen(
         targetState = target,
         contentKey = { it?.conversation },
         transitionSpec = {
-            if (targetState != null) (slideInHorizontally(tween(280)) { it / 4 } + fadeIn(tween(220))) togetherWith fadeOut(tween(180))
-            else fadeIn(tween(220)) togetherWith (slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(200)))
+            val ease = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+            if (targetState != null) (slideInHorizontally(tween(340, easing = ease)) { it / 3 } + fadeIn(tween(220))) togetherWith fadeOut(tween(160))
+            else fadeIn(tween(220)) togetherWith (slideOutHorizontally(tween(300, easing = ease)) { it / 3 } + fadeOut(tween(200)))
         },
         label = "chat",
     ) { open ->
@@ -221,7 +223,7 @@ fun HomeScreen(
             return@AnimatedContent
         }
         Box(Modifier.fillMaxSize().background(MeshColors.Bg)) {
-            AnimatedContent(tab, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) }, label = "tab") { t ->
+            AnimatedContent(tab, transitionSpec = { (fadeIn(tween(220)) + androidx.compose.animation.scaleIn(tween(260), initialScale = 0.985f)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 when (t) {
                     "discover" -> com.xalvxnlab.meshron.ui.reels.ReelsScreen(
                         app.reels,
@@ -280,7 +282,8 @@ fun HomeScreen(
             // The dock floats over everything (over videos on Discover).
             if (!(immersive && tab == "discover")) Box(Modifier.align(Alignment.BottomCenter)) {
                 val items = buildList {
-                    add(DockItem("home", "Chats", Icons.Outlined.Home, Icons.Rounded.Home, unread))
+                    // Same icons as the Windows app: chat bubble, compass, heart, person.
+                    add(DockItem("home", "Chats", Icons.Outlined.ChatBubbleOutline, Icons.Rounded.ChatBubble, unread))
                     if (!anon) add(DockItem("discover", "Discover", Icons.Outlined.Explore, Icons.Rounded.Explore))
                     add(DockItem("activity", "Activity", Icons.Outlined.FavoriteBorder, Icons.Rounded.Favorite, requests))
                     add(DockItem("profile", "Me", Icons.Outlined.Person, Icons.Rounded.Person))

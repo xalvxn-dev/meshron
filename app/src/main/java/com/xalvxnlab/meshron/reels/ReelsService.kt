@@ -217,6 +217,21 @@ class ReelsService(
         return List(arr.length()) { val o = arr.getJSONObject(it); LiveNow(author(o), o.optString("lid"), o.optString("title"), o.optLong("ts"), o.optBoolean("screen")) }
     }
 
+    /**
+     * One line in Activity: [kind] is "like", "comment", "reply" (to your comment), "follow",
+     * "repost" or "live" (someone you follow is live). [ts] is 0 for old likes and follows.
+     */
+    data class ActivityItem(val kind: String, val who: ReelAuthor, val ts: Long, val text: String, val ch: String, val reel: String, val thumb: String)
+
+    suspend fun activity(): List<ActivityItem> {
+        need()
+        val arr = call(JSONObject().put("cmd", "reel-activity")).optJSONArray("list") ?: JSONArray()
+        return List(arr.length()) {
+            val o = arr.getJSONObject(it)
+            ActivityItem(o.optString("k"), author(o.optJSONObject("who") ?: JSONObject()), o.optLong("ts"), o.optString("text"), o.optString("ch"), o.optString("reel"), o.optString("thumb"))
+        }
+    }
+
     data class People(val list: List<ReelAuthor>, val following: Int, val followers: Int, val friends: Int)
 
     /** "following", "followers" or "friends" (people who follow each other). */

@@ -19,8 +19,8 @@ android {
         resValue("string", "app_name", if (applicationId!!.endsWith(".test")) "Meshron Test" else "Meshron")
         minSdk = 29 // required by bare-kit-kotlin
         targetSdk = 37
-        versionCode = 12
-        versionName = "1.6.4"
+        versionCode = 13
+        versionName = "1.6.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

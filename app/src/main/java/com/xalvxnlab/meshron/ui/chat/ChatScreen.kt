@@ -1,5 +1,8 @@
 package com.xalvxnlab.meshron.ui.chat
 
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.filled.LocationOn
 
 import androidx.compose.material.icons.filled.Bolt
@@ -310,7 +313,7 @@ fun ChatScreen(
     var suggesting by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = {
+        topBar = { Column {
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
@@ -335,7 +338,7 @@ fun ChatScreen(
                             Text(
                                 subtitle,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (theyAreTyping) MeshColors.GradMid else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (theyAreTyping) MeshColors.GradMid else if (subtitle == "Online") MeshColors.Online else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -346,17 +349,17 @@ fun ChatScreen(
                         IconButton(onClick = {
                             if (calls.hasMicPermission() && calls.hasCameraPermission()) calls.call(target.contact.keyHex, video = true)
                             else askVideo.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA))
-                        }) { Icon(Icons.Filled.Videocam, "Video call") }
+                        }) { Icon(Icons.Rounded.Videocam, "Video call", tint = MeshColors.TextPrimary) }
                         IconButton(onClick = {
                             if (calls.hasMicPermission()) calls.call(target.contact.keyHex)
                             else askMic.launch(Manifest.permission.RECORD_AUDIO)
-                        }) { Icon(Icons.Filled.Call, "Voice call") }
+                        }) { Icon(Icons.Rounded.Call, "Voice call", tint = MeshColors.TextPrimary) }
                     }
                     if (target is ChatTarget.Group) {
                         IconButton(onClick = { showMembers = true }) { Icon(Icons.Filled.People, "Members") }
                     }
                     Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More", tint = MeshColors.TextSecondary) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             if (target is ChatTarget.Direct && !isRequest) {
                                 DropdownMenuItem(
@@ -387,7 +390,8 @@ fun ChatScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MeshColors.Bg),
             )
-        },
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(MeshColors.Hairline))
+        } },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             Box(Modifier.weight(1f).drawBehind {

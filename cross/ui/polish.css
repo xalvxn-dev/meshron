@@ -47,3 +47,35 @@
   #create-btn > span, #create-btn > span > span { background: none; padding: 0; color: #fff; }
   #create-btn > span { display: grid; place-items: center; }
 }
+
+/* ---- Round 2: press feedback, quieter secondary actions, small fixes ---- */
+.chip, .circ, .ai-entry, .story, .icon-btn, #create-btn, .rail-btn, .btn { transition: transform .18s var(--ease), background .15s, color .15s, box-shadow .15s, filter .15s; }
+.chip:active, .ai-entry:active, .story:active { transform: scale(.96); }
+.circ:active, .icon-btn:active, #create-btn:active { transform: scale(.9); }
+.rail-btn:active svg { transform: scale(.88); }
+.rail-btn svg { transition: transform .18s var(--ease); }
+.row:active { background: var(--s2); }
+.ai-entry:hover { filter: brightness(1.08); }
+
+/* "No thanks" next to Add / Accept: a small round ×. */
+.icon-btn.dismiss { width: 36px; height: 36px; background: var(--s2); color: var(--text2); }
+.icon-btn.dismiss:hover { background: var(--s3); color: var(--text); }
+
+/* The logo on a gradient tile is drawn white, so it doesn't vanish into the tile. */
+.orb > svg[viewBox="0 0 100 100"] path { stroke: #fff; }
+
+/* Chat header: green when they're online; hairline under it. */
+.chat-head { box-shadow: 0 1px 0 var(--hair); border-bottom-color: transparent; }
+
+/* Keyboard focus that's visible but calm. */
+:focus-visible { outline: 2px solid rgba(142, 155, 255, .7); outline-offset: 2px; }
+.input:focus-visible, textarea:focus-visible { outline: none; }
+
+/* ---- Activity: likes, comments, follows ---- */
+.feed-row { gap: 12px; align-items: center; }
+.feed-face { position: relative; flex: none; }
+.feed-face.live .avatar { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #f0545c; }
+.feed-mark { position: absolute; right: -2px; bottom: -2px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: #fff; box-shadow: 0 0 0 2px var(--bg); }
+.feed-text { font-size: 14px; line-height: 19px; color: var(--text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.feed-text b { color: var(--text); font-weight: 600; }
+.feed-thumb { width: 42px; height: 56px; object-fit: cover; border-radius: 8px; flex: none; }

@@ -1,5 +1,7 @@
 package com.xalvxnlab.meshron.ui.ai
 
+import com.xalvxnlab.meshron.ui.components.rememberPress
+import com.xalvxnlab.meshron.ui.components.pressScale
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -121,9 +123,10 @@ fun AiChat(onBack: () -> Unit) {
                             Icons.Rounded.Cake to "Help me write a birthday message",
                             Icons.Rounded.Lock to "Explain how Meshron keeps chats private",
                         ).forEach { (ic, s) ->
+                            val press = rememberPress()
                             Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MeshColors.Surface1)
-                                    .border(1.dp, MeshColors.Hairline, RoundedCornerShape(16.dp)).clickable { send(s) }
+                                Modifier.pressScale(press, 0.98f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MeshColors.Surface1)
+                                    .border(1.dp, MeshColors.Hairline, RoundedCornerShape(16.dp)).clickable(press, androidx.compose.foundation.LocalIndication.current) { send(s) }
                                     .padding(horizontal = 14.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -224,9 +227,10 @@ internal fun cleanAi(raw: String): androidx.compose.ui.text.AnnotatedString = an
 /** "Ask Meshron AI" card for the chats screen. */
 @Composable
 fun AiEntry(onClick: () -> Unit) {
+    val press = rememberPress()
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(MeshColors.AccentContainer)
-            .border(1.dp, MeshColors.Accent.copy(alpha = 0.18f), RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 11.dp),
+        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).pressScale(press, 0.98f).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MeshColors.AccentContainer)
+            .border(1.dp, MeshColors.Accent.copy(alpha = 0.18f), RoundedCornerShape(18.dp)).clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick).padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(MeshColors.Gradient), contentAlignment = Alignment.Center) {

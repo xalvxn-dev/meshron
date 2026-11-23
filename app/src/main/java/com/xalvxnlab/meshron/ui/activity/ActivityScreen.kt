@@ -1,5 +1,8 @@
 package com.xalvxnlab.meshron.ui.activity
 
+import androidx.compose.material.icons.rounded.Close
+import com.xalvxnlab.meshron.ui.components.rememberPress
+import com.xalvxnlab.meshron.ui.components.pressScale
 import androidx.compose.foundation.background
 import com.xalvxnlab.meshron.ui.components.FilterChips
 import androidx.compose.material.icons.rounded.Shield
@@ -25,6 +28,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -72,8 +80,13 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
     // People active on Meshron lately, to make friends with (not already contacts, not dismissed).
     var active by remember { mutableStateOf<List<com.xalvxnlab.meshron.reels.ReelAuthor>>(emptyList()) }
     var hiddenActive by remember { mutableStateOf(setOf<String>()) }
-    suspend fun loadActive() { if (!anon) runCatching { app.reels.active(40) }.onSuccess { active = it } }
+    // Likes, comments, replies, follows and reposts on your things, and follows going live.
+    var feed by remember { mutableStateOf<List<com.xalvxnlab.meshron.reels.ReelsService.ActivityItem>>(emptyList()) }
+    suspend fun loadFeed() { if (!anon) runCatching { app.reels.activity() }.onSuccess { feed = it } }
+    suspend fun loadActive() { if (!anon) runCatching { app.reels.active(40) }.onSuccess { active = it }; loadFeed() }
     LaunchedEffect(Unit) { loadActive() }
+    // New likes and comments arrive while you look.
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(20_000); loadFeed() } }
     fun refresh() = scope.launch {
         refreshing = true
         loadActive()
@@ -92,7 +105,7 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
     Column(Modifier.fillMaxSize()) {
         AuroraHeader("Activity") { HeaderButton(Icons.Rounded.PersonAdd, "Add friends", onClick = onAddFriend) }
         FilterChips(
-            listOfNotNull("all" to "All", "requests" to "Requests", if (anon) null else "people" to "Suggestions", if (anon) null else "moderation" to "From Meshron"),
+            listOfNotNull("all" to "All", if (anon) null else "reels" to "Likes & comments", "requests" to "Requests", if (anon) null else "people" to "Suggestions", if (anon) null else "moderation" to "From Meshron"),
             filter, { filter = it },
             counts = mapOf("requests" to requests.size, "moderation" to unseen),
         )
@@ -117,7 +130,24 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
                 Pill("Appeal", primary = true) { appealing = com.xalvxnlab.meshron.moderation.ModerationService.Notice("", 0, "Suspension", "", "person", "", "ban") }
             }
         }
-        if (filter == "all" && notices.isEmpty() && requests.isEmpty() && (anon || suggestions.isEmpty())) item { Note("Nothing new. Chat requests, people you may know and updates from Meshron show up here.") }
+        if (filter == "all" && feed.isEmpty() && notices.isEmpty() && requests.isEmpty() && (anon || suggestions.isEmpty())) item { Note("Nothing new. Likes, comments, follows, chat requests, people you may know and updates from Meshron show up here.") }
+        if (!anon && show("reels") && (filter == "reels" || feed.isNotEmpty())) {
+            if (filter == "all") item { Section("Likes & comments") }
+            if (feed.isEmpty()) item { Note("When people like or comment on your videos, answer your comments or follow you, and when someone you follow goes live, it shows up here.") }
+            val shown = if (filter == "all") feed.take(12) else feed
+            items(shown, key = { "f" + it.kind + it.who.id + it.reel + it.ts + it.text.hashCode() }) { f ->
+                FeedRow(app, f, onClick = {
+                    when {
+                        f.reel.isNotEmpty() && f.ch.isNotEmpty() -> app.openReelRequests.tryEmit("meshron://reel/${f.ch}/${f.reel}")
+                        f.who.id.isNotEmpty() -> app.openProfileRequests.tryEmit(f.who.id)
+                    }
+                })
+            }
+            if (filter == "all" && feed.size > shown.size) item {
+                Text("See all ${feed.size}", color = MeshColors.Accent, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(50)).clickable { filter = "reels" }.padding(horizontal = 8.dp, vertical = 8.dp))
+            }
+        }
         // In All, empty sections are left out; their hints show only on their own tab.
         if (!anon && show("moderation") && (filter == "moderation" || notices.isNotEmpty())) {
             item { Section("From Meshron") }
@@ -146,7 +176,7 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
             Person(name, c.keyHex, if (c.handle.isNotEmpty()) "@${c.handle} wants to chat" else "Wants to chat", onClick = { onOpen(c.keyHex) }) {
                 Pill("Accept", primary = true) { scope.launch { contactsRepo.add(c.keyHex, name) } }
                 Spacer(Modifier.width(6.dp))
-                Pill("Ignore") { scope.launch { contactsRepo.remove(c.keyHex) } }
+                Dismiss("Ignore") { scope.launch { contactsRepo.remove(c.keyHex) } }
             }
         }
         val known = contacts.map { it.keyHex }.toSet()
@@ -158,7 +188,7 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
                 Person(label, a.id, listOfNotNull(if (a.handle.isNotEmpty()) "@" + a.handle else null, if (a.followers > 0) "${a.followers} followers" else null, "active recently").joinToString(" · "), onClick = { app.openProfileRequests.tryEmit(a.id) }) {
                     Pill("Add", primary = true) { scope.launch { contactsRepo.add(a.id, label); hiddenActive = hiddenActive + a.id } }
                     Spacer(Modifier.width(6.dp))
-                    Pill("Remove") { hiddenActive = hiddenActive + a.id }
+                    Dismiss("Remove") { hiddenActive = hiddenActive + a.id }
                 }
             }
         }
@@ -169,7 +199,7 @@ fun ActivityScreen(contactsRepo: ContactsRepository, network: NetworkService, on
                 Person(s.name, s.key, s.reason, onClick = {}) {
                     Pill("Add", primary = true) { scope.launch { contactsRepo.add(s.key, s.name); app.suggestions.dismiss(s.key) } }
                     Spacer(Modifier.width(6.dp))
-                    Pill("Remove") { app.suggestions.dismiss(s.key) }
+                    Dismiss("Remove") { app.suggestions.dismiss(s.key) }
                 }
             }
         }
@@ -232,8 +262,74 @@ private fun Person(name: String, key: String, detail: String, onClick: () -> Uni
 
 @Composable
 private fun Pill(label: String, primary: Boolean = false, onClick: () -> Unit) {
+    val press = rememberPress()
     Box(
-        Modifier.height(36.dp).clip(RoundedCornerShape(50)).background(if (primary) MeshColors.TextPrimary else MeshColors.Surface2).clickable(onClick = onClick).padding(horizontal = 14.dp),
+        Modifier.pressScale(press).height(36.dp).clip(RoundedCornerShape(50)).background(if (primary) MeshColors.TextPrimary else MeshColors.Surface2).clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick).padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = if (primary) MeshColors.Bg else MeshColors.TextPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge) }
+}
+
+/** "Ada liked your video · 5m", their photo on the left, the video on the right. */
+@Composable
+private fun FeedRow(app: MeshronApp, f: com.xalvxnlab.meshron.reels.ReelsService.ActivityItem, onClick: () -> Unit) {
+    val name = f.who.name.ifBlank { if (f.who.handle.isNotEmpty()) "@" + f.who.handle else "Someone" }
+    val (what, mark, tint) = when (f.kind) {
+        "like" -> Triple("liked your video", Icons.Rounded.Favorite, MeshColors.Danger)
+        "comment" -> Triple("commented: " + f.text, Icons.Rounded.ChatBubble, MeshColors.Accent)
+        "reply" -> Triple("replied to your comment: " + f.text, Icons.AutoMirrored.Rounded.Reply, MeshColors.GradMid)
+        "follow" -> Triple("started following you", Icons.Rounded.PersonAdd, MeshColors.Accent)
+        "repost" -> Triple("reposted your video", Icons.Rounded.Repeat, MeshColors.Online)
+        "live" -> Triple("is live now" + if (f.text.isNotBlank()) ": " + f.text else "", Icons.Rounded.Sensors, MeshColors.Danger)
+        else -> Triple(f.kind, Icons.Rounded.Favorite, MeshColors.Accent)
+    }
+    val photo = remember(f.who.photo) { app.reels.image(f.who.photo) }
+    val thumb = remember(f.thumb) { app.reels.image(f.thumb) }
+    val press = rememberPress()
+    Row(
+        Modifier.fillMaxWidth().clickable(press, androidx.compose.foundation.LocalIndication.current, onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.pressScale(press, 0.94f)) {
+            if (f.who.id == com.xalvxnlab.meshron.account.MeshronAi.ID) com.xalvxnlab.meshron.ui.reels.MeshronAiAvatar(48.dp)
+            else Avatar(name, f.who.id.ifEmpty { f.who.ch }, 48.dp, image = photo, ring = f.kind == "live")
+            // What happened, as a small badge on the photo.
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(20.dp).clip(RoundedCornerShape(50)).background(MeshColors.Bg).padding(2.dp)
+                    .clip(RoundedCornerShape(50)).background(tint),
+                contentAlignment = Alignment.Center,
+            ) { Icon(mark, null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(11.dp)) }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            androidx.compose.ui.text.buildAnnotatedString {
+                pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold, color = MeshColors.TextPrimary)); append(name); pop()
+                append(" "); append(what)
+                if (f.ts > 0) {
+                    pushStyle(androidx.compose.ui.text.SpanStyle(color = MeshColors.TextTertiary))
+                    append(" · " + android.text.format.DateUtils.getRelativeTimeSpanString(f.ts, System.currentTimeMillis(), 60_000, android.text.format.DateUtils.FORMAT_ABBREV_RELATIVE))
+                    pop()
+                }
+            },
+            color = MeshColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 3,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
+        if (thumb != null) {
+            Spacer(Modifier.width(12.dp))
+            androidx.compose.foundation.Image(
+                thumb, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.size(width = 42.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)),
+            )
+        }
+    }
+}
+
+/** The quiet "no thanks" next to a Pill: a small round ×, named for screen readers. */
+@Composable
+private fun Dismiss(label: String, onClick: () -> Unit) {
+    val press = rememberPress()
+    Box(
+        Modifier.pressScale(press, 0.9f).size(36.dp).clip(RoundedCornerShape(50)).background(MeshColors.Surface2)
+            .clickable(press, androidx.compose.foundation.LocalIndication.current, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(androidx.compose.material.icons.Icons.Rounded.Close, label, tint = MeshColors.TextSecondary, modifier = Modifier.size(18.dp)) }
 }

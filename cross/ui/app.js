@@ -430,7 +430,8 @@
 
   // ---- Shell: rail -----------------------------------------------------------------
 
-  const ALL_TABS = [['chats', 'Chats', 'chat'], ['reels', 'Discover', 'play'], ['contacts', 'Activity', 'bell'], ['me', 'Me', 'user']]
+  // Same icons as the Android app: chat bubble, compass, heart, person.
+  const ALL_TABS = [['chats', 'Chats', 'chat'], ['reels', 'Discover', 'explore'], ['contacts', 'Activity', 'heart'], ['me', 'Me', 'user']]
   // Reels are public, so the anonymous identity doesn't have them.
   const TABS = { find: (f) => ALL_TABS.find(f), map: (f) => ALL_TABS.filter((t) => !(st.anon && t[0] === 'reels')).map(f) }
   const unreadTotal = () => st.summaries.reduce((n, s) => n + (st.prefs.muted.includes(s.conv) ? 0 : s.unread), 0)
@@ -725,7 +726,7 @@
   function renderContacts(body) {
     const af = st.activityFilter || 'all'
     const show = (what) => af === 'all' || af === what
-    const chipRow = h('div', { class: 'chips' }, ...[['all', 'All'], ['requests', 'Requests'], ['suggestions', 'Suggestions'], ['meshron', 'From Meshron'], ['contacts', 'Contacts']].map(([id, label]) =>
+    const chipRow = h('div', { class: 'chips' }, ...[['all', 'All'], st.anon ? null : ['likes', 'Likes & comments'], ['requests', 'Requests'], ['suggestions', 'Suggestions'], ['meshron', 'From Meshron'], ['contacts', 'Contacts']].filter(Boolean).map(([id, label]) =>
       h('button', { class: 'chip' + (af === id ? ' on' : ''), onClick: () => { st.activityFilter = id; renderSide() } }, label)))
     // From Meshron: moderators' and Meshron AI's notices, right here.
     const fromMeshron = h('div', {})
@@ -751,6 +752,45 @@
     const blocked = list.filter((c) => c.status === 'BLOCKED')
     const added = list.filter((c) => c.status === 'ADDED').sort((a, b) => a.displayName.localeCompare(b.displayName))
     const kids = [chipRow]
+    // Likes, comments, replies, follows and reposts on my things, and people I follow going live.
+    if (!q && !st.anon && show('likes')) {
+      const box = h('div', {})
+      kids.push(box)
+      const R = () => window.MeshronReels
+      const paintFeed = (list) => {
+        const all = list || []
+        if (!all.length) {
+          box.replaceChildren(...(af === 'likes' ? [h('p', { class: 'dim', style: { padding: '24px', textAlign: 'center' } }, 'When people like or comment on your videos, answer your comments or follow you, and when someone you follow goes live, it shows up here.')] : []))
+          return
+        }
+        const rows = af === 'likes' ? all : all.slice(0, 12)
+        const what = { like: ['liked your video', 'heart', '#f0545c'], comment: ['commented:', 'chat', '#6e7bff'], reply: ['replied to your comment:', 'reply', '#22d3c5'], follow: ['started following you', 'userPlus', '#6e7bff'], repost: ['reposted your video', 'share', '#2fd07f'], live: ['is live now', 'play', '#f0545c'] }
+        box.replaceChildren(...[af === 'all' ? h('div', { class: 'section big' }, 'Likes & comments') : null, ...rows.map((f) => {
+          const who = f.who || {}
+          const name = who.name || (who.handle ? '@' + who.handle : 'Someone')
+          const [verb, ic, color] = what[f.k] || [f.k, 'heart', '#6e7bff']
+          const face = window.MeshronAI && who.id === window.MeshronAI.AI_ID ? window.MeshronAI.aiAvatar(48) : who.photo && R() ? h('div', { class: 'avatar has-photo', style: { width: '48px', height: '48px' } }, h('img', { src: R().imgSrc(who.photo), alt: '' })) : avatar(name, who.id || who.ch || name, 48)
+          const open = () => {
+            if (f.reel && f.ch && R()) { setTab('reels'); setTimeout(() => R().openReel(f.ch, f.reel), 80) } else if (who.ch && R()) { setTab('reels'); setTimeout(() => R().openProfile(who.ch), 80) }
+          }
+          return h('div', { class: 'row feed-row', onClick: open },
+            h('div', { class: 'feed-face' + (f.k === 'live' ? ' live' : '') }, face, h('span', { class: 'feed-mark', style: { background: color } }, icon(ic, 12))),
+            h('div', { class: 'grow feed-text' },
+              h('b', {}, name), ' ', verb, f.text ? (f.k === 'live' ? ': ' : ' ') + f.text : '',
+              f.ts ? h('span', { class: 'dimmer' }, ' · ' + friendlyTime(f.ts)) : null),
+            f.thumb && R() ? h('img', { class: 'feed-thumb', src: R().imgSrc(f.thumb), alt: '' }) : null)
+        }), af === 'all' && all.length > rows.length ? h('button', { class: 'btn ghost small', style: { margin: '2px 12px 6px' }, onClick: () => { st.activityFilter = 'likes'; renderSide() } }, 'See all ' + all.length) : null].filter(Boolean))
+      }
+      if (st.feedCache) paintFeed(st.feedCache)
+      if (!st.feedAt || Date.now() - st.feedAt > 20000) {
+        st.feedAt = Date.now()
+        M.call('reels.activity').then((list) => {
+          const changed = JSON.stringify(list) !== JSON.stringify(st.feedCache)
+          st.feedCache = list
+          if (changed) renderSide()
+        }).catch(() => paintFeed(st.feedCache))
+      } else if (!st.feedCache) paintFeed([])
+    }
     if (show('meshron')) kids.push(fromMeshron)
     if (!q && af === 'contacts') {
       kids.push(h('div', { class: 'row action', onClick: () => showAddContact() }, h('div', { class: 'action-circle' }, icon('userPlus')),
@@ -774,7 +814,7 @@
             h('div', { class: 'grow' }, h('div', { class: 'top' }, h('span', { class: 'name ellipsis' }, name), verifiedBadge(u.id)),
               h('div', { class: 'sub ellipsis' }, [u.handle ? '@' + u.handle : null, u.followers ? u.followers + ' followers' : null, 'active recently'].filter(Boolean).join(' · '))),
             h('button', { class: 'btn light small', onClick: async (e) => { e.stopPropagation(); await M.call('contacts.add', { key: u.id, name }).catch(oops); st.hiddenActive.add(u.id); toast('Added ' + name) } }, 'Add'),
-            h('button', { class: 'btn dark small', onClick: (e) => { e.stopPropagation(); st.hiddenActive.add(u.id); e.currentTarget.closest('.row').remove() } }, 'Remove'))
+            h('button', { class: 'icon-btn dismiss', title: 'Remove', 'aria-label': 'Remove', onClick: (e) => { e.stopPropagation(); st.hiddenActive.add(u.id); e.currentTarget.closest('.row').remove() } }, icon('x', 20)))
         }))
       }
       // Draw what we had (same as last time, so nothing jumps), then refresh quietly now and then.
@@ -794,8 +834,8 @@
         kids.push(h('div', { class: 'row', onClick: () => openChat(c.keyHex) },
           avatar(c.displayName, c.keyHex, 48),
           h('div', { class: 'grow' }, h('div', { class: 'name ellipsis' }, c.displayName), h('div', { class: 'sub ellipsis' }, c.handle ? `@${c.handle} · added you` : 'Added you')),
-          h('button', { class: 'icon-btn', title: 'Ignore', onClick: (e) => { e.stopPropagation(); M.call('contacts.remove', { key: c.keyHex }) } }, icon('x', 20)),
-          h('button', { class: 'btn primary small', onClick: (e) => { e.stopPropagation(); M.call('contacts.add', { key: c.keyHex, name: c.name }) } }, 'Accept')))
+          h('button', { class: 'btn primary small', onClick: (e) => { e.stopPropagation(); M.call('contacts.add', { key: c.keyHex, name: c.name }) } }, 'Accept'),
+          h('button', { class: 'icon-btn dismiss', title: 'Ignore', 'aria-label': 'Ignore', onClick: (e) => { e.stopPropagation(); M.call('contacts.remove', { key: c.keyHex }) } }, icon('x', 20))))
       }
     }
     const section = (title, people) => {
