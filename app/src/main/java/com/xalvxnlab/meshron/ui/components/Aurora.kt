@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
@@ -70,7 +71,7 @@ fun AuroraHeader(title: String, subtitle: String? = null, leading: (@Composable 
 fun HeaderButton(icon: ImageVector, label: String, tint: Color = MeshColors.TextPrimary, badge: Int = 0, onClick: () -> Unit) {
     Box(Modifier.padding(horizontal = 3.dp)) {
         Box(
-            Modifier.size(42.dp).clip(CircleShape).background(MeshColors.Surface2).clickable(onClick = onClick),
+            Modifier.size(44.dp).clip(CircleShape).background(MeshColors.Surface1).border(1.dp, MeshColors.Hairline, CircleShape).clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) { Icon(icon, label, tint = tint, modifier = Modifier.size(21.dp)) }
         if (badge > 0) Box(
@@ -86,17 +87,24 @@ fun FilterChips(options: List<Pair<String, String>>, selected: String, onSelect:
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(options, key = { it.first }) { (id, label) ->
             val on = id == selected
-            val bg by animateColorAsState(if (on) MeshColors.TextPrimary else MeshColors.Surface2, label = "chip")
+            val bg by animateColorAsState(if (on) MeshColors.TextPrimary else MeshColors.Surface1, label = "chip")
+            val fg by animateColorAsState(if (on) MeshColors.Bg else MeshColors.TextSecondary, label = "chipText")
             Row(
-                Modifier.clip(RoundedCornerShape(50)).background(bg).clickable { onSelect(id) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                Modifier.height(36.dp).clip(RoundedCornerShape(50)).background(bg)
+                    .border(1.dp, if (on) Color.Transparent else MeshColors.Hairline, RoundedCornerShape(50))
+                    .clickable { onSelect(id) }.padding(horizontal = 15.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(label, color = if (on) MeshColors.Bg else MeshColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
+                Text(label, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold)
                 val n = counts[id] ?: 0
                 if (n > 0) {
                     Spacer(Modifier.width(6.dp))
-                    Box(Modifier.clip(RoundedCornerShape(50)).background(if (on) MeshColors.Bg.copy(alpha = 0.2f) else MeshColors.AccentStrong).padding(horizontal = 6.dp, vertical = 1.dp)) {
-                        Text("$n", color = if (on) MeshColors.Bg else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Box(
+                        Modifier.defaultMinSize(minWidth = 18.dp, minHeight = 18.dp).clip(RoundedCornerShape(50))
+                            .background(if (on) MeshColors.Bg.copy(alpha = 0.16f) else MeshColors.AccentStrong).padding(horizontal = 5.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("$n", color = if (on) MeshColors.Bg else Color.White, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -121,20 +129,18 @@ fun AuroraDock(items: List<DockItem>, selected: String, onSelect: (String) -> Un
         verticalAlignment = Alignment.CenterVertically,
     ) {
         androidx.compose.foundation.layout.BoxWithConstraints(
-            Modifier.weight(1f).height(56.dp)
+            Modifier.weight(1f).height(62.dp)
                 .shadow(if (overVideo) 0.dp else 14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.2f), spotColor = Color.Black.copy(alpha = 0.2f))
                 .clip(shape).background(bg).border(1.dp, if (overVideo) Color.White.copy(alpha = 0.08f) else MeshColors.Hairline, shape)
-                .padding(5.dp),
+                .padding(6.dp),
         ) {
             val slot = maxWidth / items.size
             val x by animateDpAsState(slot * index, spring(dampingRatio = 0.78f, stiffness = 420f), label = "glow")
             // The glow under the current place.
             Box(
-                Modifier.offset(x = x).width(slot).fillMaxHeight().clip(RoundedCornerShape(19.dp))
-                    .background(if (overVideo) Color.White.copy(alpha = 0.16f) else MeshColors.AccentContainer),
-            ) {
-                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp).width(18.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(MeshColors.GradientH))
-            }
+                Modifier.offset(x = x).width(slot).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                    .background(if (overVideo) Color.White.copy(alpha = 0.14f) else MeshColors.AccentContainer.copy(alpha = if (MeshColors.isDark) 0.85f else 1f)),
+            )
             Row(Modifier.fillMaxSize()) {
                 items.forEach { item ->
                     val on = item.id == selected
@@ -147,14 +153,20 @@ fun AuroraDock(items: List<DockItem>, selected: String, onSelect: (String) -> Un
                             .clickable(remember { MutableInteractionSource() }, null) { onSelect(item.id) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(item.label, color = tint, style = MaterialTheme.typography.labelLarge, fontWeight = if (on) FontWeight.ExtraBold else FontWeight.SemiBold, maxLines = 1)
-                            if (item.badge > 0) {
-                                Spacer(Modifier.width(4.dp))
-                                Box(Modifier.clip(RoundedCornerShape(50)).background(MeshColors.Danger).padding(horizontal = 5.dp, vertical = 1.dp)) {
-                                    Text(if (item.badge > 9) "9+" else "${item.badge}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box {
+                                Icon(if (on) item.selectedIcon else item.icon, null, tint = tint, modifier = Modifier.size(23.dp))
+                                if (item.badge > 0) Box(
+                                    Modifier.align(Alignment.TopEnd).offset(x = 9.dp, y = (-5).dp)
+                                        .defaultMinSize(minWidth = 17.dp, minHeight = 17.dp)
+                                        .clip(RoundedCornerShape(50)).background(MeshColors.Danger)
+                                        .border(1.5.dp, if (overVideo) Color.Transparent else MeshColors.Surface1, RoundedCornerShape(50))
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) { Text(if (item.badge > 9) "9+" else "${item.badge}", color = Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold) }
                             }
+                            Spacer(Modifier.height(2.dp))
+                            Text(item.label, color = tint, fontSize = 11.sp, lineHeight = 13.sp, letterSpacing = 0.1.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
                         }
                     }
                 }
@@ -171,17 +183,18 @@ fun AuroraDock(items: List<DockItem>, selected: String, onSelect: (String) -> Un
 @Composable
 private fun Shutter(onClick: () -> Unit) {
     Box(
-        Modifier.size(56.dp).clip(CircleShape).background(MeshColors.Gradient).clickable(onClick = onClick).padding(4.dp)
-            .clip(CircleShape).background(MeshColors.Bg).padding(5.dp).clip(CircleShape).background(MeshColors.TextPrimary),
+        Modifier.size(58.dp)
+            .shadow(16.dp, CircleShape, ambientColor = MeshColors.GradStart.copy(alpha = 0.5f), spotColor = MeshColors.GradMid.copy(alpha = 0.6f))
+            .clip(CircleShape).background(MeshColors.Gradient).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(androidx.compose.material.icons.Icons.Rounded.Add, "Create", tint = MeshColors.Bg, modifier = Modifier.size(24.dp)) }
+    ) { Icon(androidx.compose.material.icons.Icons.Rounded.Add, "Create", tint = Color.White, modifier = Modifier.size(28.dp)) }
 }
 
 /** A large tappable card row for menus and sheets. */
 @Composable
 fun MenuTile(icon: ImageVector, tint: Color, title: String, detail: String? = null, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).defaultMinSize(minHeight = 64.dp).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {

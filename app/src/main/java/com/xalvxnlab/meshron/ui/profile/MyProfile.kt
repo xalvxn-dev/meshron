@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -152,19 +153,29 @@ fun MyProfile(identity: Identity, onEdit: () -> Unit, onSettings: () -> Unit, on
                         Column(Modifier.weight(1f).clickable { tab = id }.padding(top = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(ic, id, tint = if (on) MeshColors.TextPrimary else MeshColors.TextTertiary, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.height(8.dp))
-                            Box(Modifier.fillMaxWidth().height(2.dp).background(if (on) MeshColors.TextPrimary else MeshColors.Surface3))
+                            Box(Modifier.fillMaxWidth().height(2.dp), contentAlignment = Alignment.BottomCenter) {
+                                Box(Modifier.fillMaxWidth().height(1.dp).background(MeshColors.Hairline))
+                                if (on) Box(Modifier.width(36.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(MeshColors.GradientH))
+                            }
                         }
                     }
                 }
                 Spacer(Modifier.height(2.dp))
                 val shownHere = when (tab) { "videos" -> videos; "private" -> privateVideos; else -> other }
-                if (!anon && shownHere.isEmpty()) Text(when (tab) {
-                    "private" -> "Videos you make private show up here. Only you can see them."
-                    "reposts" -> "Videos you repost show up here."
-                    "favourites" -> "Videos you save show up here. Only you can see them."
-                    "liked" -> "Videos you like show up here. Only you can see them."
-                    else -> "Your reels show up here. Post one from the + button."
-                }, color = MeshColors.TextSecondary, textAlign = TextAlign.Center, modifier = Modifier.padding(24.dp))
+                if (!anon && shownHere.isEmpty()) Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 36.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)).background(MeshColors.Surface2), contentAlignment = Alignment.Center) {
+                        Icon(when (tab) { "private" -> Icons.Rounded.Lock; "reposts" -> Icons.Rounded.Repeat; "favourites" -> Icons.Rounded.Bookmark; "liked" -> Icons.Rounded.Favorite; else -> Icons.Rounded.GridView },
+                            null, tint = MeshColors.TextSecondary, modifier = Modifier.size(26.dp))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text(when (tab) {
+                        "private" -> "Videos you make private show up here. Only you can see them."
+                        "reposts" -> "Videos you repost show up here."
+                        "favourites" -> "Videos you save show up here. Only you can see them."
+                        "liked" -> "Videos you like show up here. Only you can see them."
+                        else -> "Your reels show up here. Post one from the + button."
+                    }, color = MeshColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 280.dp))
+                }
             }
         }
         val shown = when (tab) { "videos" -> videos; "private" -> privateVideos; else -> other }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -223,4 +224,13 @@ fun GlobalSearch(
 }
 
 @Composable private fun Section(t: String) = Text(t, style = MaterialTheme.typography.titleMedium, color = MeshColors.TextSecondary, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp))
-@Composable private fun Hint(t: String) = Text(t, color = MeshColors.TextSecondary, modifier = Modifier.padding(24.dp))
+@Composable private fun Hint(t: String) = androidx.compose.foundation.layout.Column(
+    Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally,
+) {
+    androidx.compose.foundation.layout.Box(
+        Modifier.size(56.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).background(MeshColors.Surface2),
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.Rounded.Search, null, tint = MeshColors.TextSecondary, modifier = Modifier.size(26.dp)) }
+    Text(t, color = MeshColors.TextSecondary, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 14.dp).widthIn(max = 280.dp))
+}

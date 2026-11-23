@@ -28,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.AlternateEmail
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Key
@@ -348,9 +350,9 @@ fun SecuritySection() {
             SettingsDivider()
             SettingsRow(Icons.Rounded.Key, MeshColors.TileOrange, "Change password") { need = Need.Password }
             SettingsDivider()
-            SettingsRow(Icons.Rounded.Lock, MeshColors.Danger, "Delete account", subtitle = "Frees your @username. Chats on this phone stay.") { need = Need.Delete }
+            SettingsRow(Icons.Rounded.DeleteForever, MeshColors.Danger, "Delete account", subtitle = "Frees your @username. Chats on this phone stay.") { need = Need.Delete }
             SettingsDivider()
-            SettingsRow(Icons.Rounded.AlternateEmail, MeshColors.TileBlue, "Log out · switch account", subtitle = "Sign in as @" + s.username + " or another account") { loggingOut = true }
+            SettingsRow(Icons.AutoMirrored.Rounded.Logout, MeshColors.TileGrey, "Log out · switch account", subtitle = "Sign in as @" + s.username + " or another account") { loggingOut = true }
         }
     }
     if (loggingOut && s != null) androidx.compose.material3.AlertDialog(

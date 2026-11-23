@@ -941,7 +941,7 @@ private fun Bubble(
                         }),
                         onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
                     )
-                    .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 6.dp),
+                    .padding(start = 13.dp, end = 11.dp, top = 7.dp, bottom = 6.dp),
                 horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
             ) {
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -996,7 +996,7 @@ private fun Bubble(
                         modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = m.senderKey != null) { m.senderKey?.let { nameApp.openProfileRequests.tryEmit(it) } },
                     )
                 }
-                when {
+                InlineMeta(alignEnd = mine, content = { when {
                     deleted -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Block, null, Modifier.size(15.dp), tint = metaColor)
                         Spacer(Modifier.width(6.dp))
@@ -1070,8 +1070,7 @@ private fun Bubble(
                             }
                         }
                     }
-                }
-                Spacer(Modifier.height(1.dp))
+                } }, meta = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (edited && !deleted) {
                         Text("edited · ", style = MaterialTheme.typography.labelSmall, color = metaColor)
@@ -1094,7 +1093,7 @@ private fun Bubble(
                             else -> Text(status, style = MaterialTheme.typography.labelSmall, color = metaColor)
                         }
                     }
-                }
+                } })
             }
             // Reactions sit on the bubble's lower edge; they pop in.
             AnimatedVisibility(
@@ -1414,6 +1413,33 @@ private fun VoiceNote(path: String) {
                 Box(Modifier.fillMaxWidth(pos).height(4.dp).background(Color.White))
             }
             Text("%d:%02d".format(dur / 60000, (dur / 1000) % 60), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}
+
+/**
+ * A bubble's words and its time and ticks. A one-line message keeps the time on the same line,
+ * at the end; longer ones put it under the text, bottom-right.
+ */
+@Composable
+private fun InlineMeta(alignEnd: Boolean, content: @Composable () -> Unit, meta: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content = {
+        Column(horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) { content() }
+        Box { meta() }
+    }) { ms, c ->
+        val gap = 8.dp.roundToPx()
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val body = ms[0].measure(loose)
+        val tag = ms[1].measure(loose)
+        val oneLine = body.height <= 30.dp.roundToPx()
+        if (oneLine && body.width + gap + tag.width <= c.maxWidth) {
+            val w = maxOf(c.minWidth, body.width + gap + tag.width)
+            val h = maxOf(body.height, tag.height + 2.dp.roundToPx())
+            layout(w, h) { body.place(0, 0); tag.place(w - tag.width, h - tag.height) }
+        } else {
+            val w = maxOf(c.minWidth, body.width, tag.width)
+            val h = body.height + 1.dp.roundToPx() + tag.height
+            layout(w, h) { body.place(if (alignEnd) w - body.width else 0, 0); tag.place(w - tag.width, h - tag.height) }
         }
     }
 }

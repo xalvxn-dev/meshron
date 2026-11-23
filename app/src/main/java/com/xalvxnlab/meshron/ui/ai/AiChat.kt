@@ -21,6 +21,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Cake
+import androidx.compose.material.icons.rounded.Celebration
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -96,12 +102,36 @@ fun AiChat(onBack: () -> Unit) {
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.fillMaxWidth().padding(top = if (history.isEmpty()) 40.dp else 12.dp, bottom = 12.dp, start = 4.dp, end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (history.isEmpty()) {
+                        Box(Modifier.size(64.dp).clip(RoundedCornerShape(22.dp)).background(MeshColors.Gradient), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(30.dp))
+                        }
+                        Spacer(Modifier.size(16.dp))
+                    }
                     Text("Ask anything", style = MaterialTheme.typography.headlineSmall)
-                    Text("What you type here goes to the AI service, so don't share secrets.", color = MeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-                    if (history.isEmpty()) Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("Plan a fun weekend with friends", "Help me write a birthday message", "Explain how Meshron keeps chats private").forEach { s ->
-                            Box(Modifier.clip(RoundedCornerShape(16.dp)).background(MeshColors.Surface2).clickable { send(s) }.padding(horizontal = 14.dp, vertical = 10.dp)) { Text(s) }
+                    Text(
+                        "What you type here goes to the AI service, so don't share secrets.", color = MeshColors.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(top = 6.dp).widthIn(max = 300.dp),
+                    )
+                    if (history.isEmpty()) Column(Modifier.fillMaxWidth().padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        listOf(
+                            Icons.Rounded.Celebration to "Plan a fun weekend with friends",
+                            Icons.Rounded.Cake to "Help me write a birthday message",
+                            Icons.Rounded.Lock to "Explain how Meshron keeps chats private",
+                        ).forEach { (ic, s) ->
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MeshColors.Surface1)
+                                    .border(1.dp, MeshColors.Hairline, RoundedCornerShape(16.dp)).clickable { send(s) }
+                                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(ic, null, tint = MeshColors.Accent, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.size(12.dp))
+                                Text(s, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Icon(Icons.Rounded.ArrowUpward, null, tint = MeshColors.TextTertiary, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
@@ -195,7 +225,8 @@ internal fun cleanAi(raw: String): androidx.compose.ui.text.AnnotatedString = an
 @Composable
 fun AiEntry(onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(MeshColors.AccentContainer).clickable(onClick = onClick).padding(12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(MeshColors.AccentContainer)
+            .border(1.dp, MeshColors.Accent.copy(alpha = 0.18f), RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(MeshColors.Gradient), contentAlignment = Alignment.Center) {
@@ -205,6 +236,6 @@ fun AiEntry(onClick: () -> Unit) {
             Text("Meshron AI", fontWeight = FontWeight.Bold, color = MeshColors.OnAccentContainer)
             Text("Ask anything, plan, write, translate", style = MaterialTheme.typography.bodySmall, color = MeshColors.OnAccentContainer.copy(alpha = 0.75f))
         }
-        Spacer(Modifier.size(4.dp))
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MeshColors.OnAccentContainer.copy(alpha = 0.6f))
     }
 }
