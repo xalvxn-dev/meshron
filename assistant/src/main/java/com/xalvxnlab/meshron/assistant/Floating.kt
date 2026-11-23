@@ -134,7 +134,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         running = true; instance = this
         startShake()
         brain = Brain(Api(this), this)
-        brain.onReply = { reply -> show("MESHRON", reply, autoHide = !Memory.speak(this)); if (Memory.speak(this)) Speaker.say(this, reply) }
+        brain.onReply = { reply -> show(Memory.name(this).uppercase(), plain(reply), autoHide = !Memory.speak(this)); if (Memory.speak(this)) Speaker.say(this, reply) }
         Speaker.listeners += speakingHook
 
         wm = getSystemService(WindowManager::class.java)

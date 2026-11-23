@@ -94,7 +94,7 @@ async function show (kind, from, hooks) {
     webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false }
   })
   stage.setAlwaysOnTop(true, 'screen-saver')
-  stage.setContentProtection(true)
+  stage.setContentProtection(hooks.hidden ? hooks.hidden() : false)
   const fromLocal = from ? { x: from.x - x - size / 2, y: from.y - y - size / 2 } : { x: 0, y: size }
   stage.loadFile(path.join(__dirname, 'asst-bundle', 'stage.html'))
   stage.webContents.once('did-finish-load', () => {

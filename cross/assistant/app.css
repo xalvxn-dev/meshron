@@ -99,3 +99,35 @@ select, .keys { background: rgba(255, 255, 255, .06); color: var(--text); border
 @keyframes fade { from { opacity: 0; } } @keyframes pop { from { opacity: 0; transform: scale(.96); } }
 /* A dark base under Windows 11's Mica (and the whole look where Mica isn't available). */
 html { background: rgba(18, 18, 22, .78); }
+
+/* Settings header with a back arrow. */
+.pagehead { display: flex; align-items: center; gap: 10px; margin: 4px 0 18px; }
+.pagehead h1 { margin: 0; }
+.back { width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; display: grid; place-items: center; }
+.back:hover { background: var(--layer2); }
+
+/* Replies: tidy paragraphs, lists, headings, code and links. */
+.me p { margin: 0 0 8px; } .me p:last-child { margin-bottom: 0; }
+.me ul, .me ol { margin: 4px 0 10px; padding-left: 22px; }
+.me li { margin: 3px 0; } .me li::marker { color: var(--accent); }
+.me .mh { font: 600 15px "Segoe UI Variable Display", "Segoe UI"; margin: 10px 0 4px; }
+.me code { font: 12.5px "Cascadia Mono", Consolas, monospace; background: rgba(255, 255, 255, .07); border: 1px solid var(--stroke); border-radius: 4px; padding: 1px 5px; }
+.me a { color: var(--accent2); }
+.me { background: rgba(255, 255, 255, .03); border: 1px solid var(--stroke); border-radius: 4px var(--r-l) var(--r-l) var(--r-l); padding: 10px 14px; }
+.me .who { display: flex; align-items: center; gap: 8px; }
+.time { font: 400 10.5px "Segoe UI"; color: var(--text3); letter-spacing: 0; margin-left: auto; padding-left: 10px; }
+.you { display: flex; align-items: baseline; gap: 6px; }
+.you .time { margin-left: 8px; }
+
+/* Actions: an icon chip and a short line. */
+.act { align-items: center; font: 12.5px "Segoe UI Variable Text", "Segoe UI"; color: var(--text2); }
+.act .ai { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; background: rgba(34, 211, 197, .1); color: var(--accent); flex: none; }
+.act.no .ai { background: rgba(255, 176, 32, .12); color: var(--amber); }
+.act .ai i { font-size: 12px; }
+.oops { display: flex; align-items: center; gap: 4px; }
+
+/* Typing: three dots while it works. */
+.typing { display: flex; gap: 5px; padding: 10px 14px; width: max-content; border-radius: 4px 12px 12px 12px; background: rgba(255, 255, 255, .03); border: 1px solid var(--stroke); }
+.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .3; animation: dot 1.2s infinite; font-size: 0; }
+.typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 30% { opacity: 1; transform: translateY(-3px); } }

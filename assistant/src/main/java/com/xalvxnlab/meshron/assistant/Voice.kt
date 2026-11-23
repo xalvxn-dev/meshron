@@ -85,6 +85,20 @@ object Speaker {
     fun say(c: Context, text: String) {
         val clean = text.replace(Regex("[*#_`]"), "").replace("•", ",").replace(Regex("\\s+"), " ").trim()
         if (clean.isEmpty()) return
+        // Kokoro: on the phone, offline, once its voice is downloaded (until then, the server's voice).
+        val chosen = Memory.studioVoice(c)
+        if (Memory.studio(c) && chosen.startsWith("kokoro:") && Kokoro.ready(c)) {
+            studioJob = scope.launch {
+                studioLock.lock()
+                try {
+                    talking = true; tell(true)
+                    val ok = Kokoro.speak(c, clean, chosen.removePrefix("kokoro:"))
+                    talking = false; tell(false)
+                    if (!ok) device(c, clean)
+                } finally { studioLock.unlock() }
+            }
+            return
+        }
         if (Memory.studio(c) && System.currentTimeMillis() > studioOffUntil) {
             studioJob = scope.launch { studioLock.lock(); try { if (!studio(c, clean)) device(c, clean) } finally { studioLock.unlock() } }
             return
@@ -137,7 +151,7 @@ object Speaker {
 
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private fun speakNow(t: String) { tts?.speak(t, TextToSpeech.QUEUE_ADD, null, "u" + System.nanoTime()) }
-    fun stop() { studioJob?.cancel(); runCatching { player?.stop(); player?.release() }; player = null; tts?.stop(); talking = false; tell(false) }
+    fun stop() { Kokoro.stop(); studioJob?.cancel(); runCatching { player?.stop(); player?.release() }; player = null; tts?.stop(); talking = false; tell(false) }
 }
 
 /**

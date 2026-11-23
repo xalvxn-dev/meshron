@@ -31,7 +31,7 @@ android {
             manifestPlaceholders["cleartext"] = "false"
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -41,6 +41,16 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+    // Kokoro runs on the phone (sherpa-onnx): one APK per phone type, each with only its own engine.
+    splits {
+        abi {
+            // Only for APKs: an app bundle already splits per phone type on the Play Store.
+            isEnable = gradle.startParameter.taskNames.none { it.contains("bundle", ignoreCase = true) }
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
     }
     buildFeatures {
         compose = true
@@ -58,4 +68,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.bouncycastle.bcprov)
     implementation(libs.kotlinx.coroutines.android)
+    // Kokoro voices on the phone: sherpa-onnx (Apache-2.0, k2-fsa) and unpacking its model download.
+    implementation(files("libs/sherpa-onnx-static-link-onnxruntime-2.0.1.aar"))
+    implementation("org.apache.commons:commons-compress:1.27.1")
 }

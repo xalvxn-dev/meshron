@@ -83,13 +83,62 @@
       return
     }
     const atEnd = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 60
-    convo.replaceChildren(...st.lines.map((l) =>
-      l.who === 'you' ? h('div', { class: 'you' }, l.text)
-        : l.who === 'me' ? h('div', { class: 'me' }, h('div', { class: 'who' }, (settings.name || 'Meshron').toUpperCase()), l.text)
-          : l.who === 'act' ? h('div', { class: 'act ' + (l.ok ? 'ok' : 'no') }, h('b', {}, l.ok ? '✓' : '!'), l.text)
-            : h('div', { class: 'oops' }, '⚠ ' + l.text)))
+    const time = (l) => l.at ? h('span', { class: 'time' }, new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : null
+    const kids = st.lines.map((l) =>
+      l.who === 'you' ? h('div', { class: 'you' }, l.text, time(l))
+        : l.who === 'me' ? h('div', { class: 'me' }, h('div', { class: 'who' }, (settings.name || 'Meshron').toUpperCase(), time(l)), md(l.text))
+          : l.who === 'act' ? h('div', { class: 'act ' + (l.ok ? 'ok' : 'no') }, h('span', { class: 'ai' }, icon(actIcon(l.text))), h('span', {}, l.text.replace(/^([a-z ]+?) · /, (m, n) => n.charAt(0).toUpperCase() + n.slice(1) + ' · ')))
+            : h('div', { class: 'oops' }, icon(0xE7BA), ' ', l.text))
+    if (st.mode === 'thinking') kids.push(h('div', { class: 'typing' }, h('i'), h('i'), h('i')))
+    convo.replaceChildren(...kids)
     if (atEnd) convo.scrollTop = convo.scrollHeight
   }
+  /** A Fluent icon for each kind of action in the conversation. */
+  function actIcon (t) {
+    const n = String(t).toLowerCase()
+    const map = [[/^web search/, 0xE721], [/^open app|^switch|^open path|^open url/, 0xE8A7], [/^close app|^show desktop/, 0xE8BB], [/^type|^press keys/, 0xE765], [/^click/, 0xE962], [/^scroll/, 0xE74B],
+      [/^read screen|^read document/, 0xE7B3], [/files|folder/, 0xE8B7], [/^delete/, 0xE74D], [/timer/, 0xE916], [/reminder/, 0xE823], [/task/, 0xE73E], [/volume|media/, 0xE767],
+      [/battery/, 0xE83F], [/lock/, 0xE72E], [/showcase/, 0xE9D9], [/window/, 0xE737]]
+    for (const [re, code] of map) if (re.test(n)) return code
+    return 0xE945
+  }
+
+  /** Light formatting for replies: paragraphs, bullet and numbered lists, headings, bold, italics, code and links. No raw asterisks. */
+  function md (text) {
+    const frag = document.createDocumentFragment()
+    const inline = (str) => {
+      const span = document.createElement('span')
+      const re = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\s][^*]*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g
+      let last = 0; let m
+      while ((m = re.exec(str))) {
+        span.append(str.slice(last, m.index))
+        const t = m[0]; let el
+        if (t.startsWith('**') || t.startsWith('__')) { el = document.createElement('b'); el.textContent = t.slice(2, -2) }
+        else if (t.startsWith('`')) { el = document.createElement('code'); el.textContent = t.slice(1, -1) }
+        else if (t.startsWith('[')) { const mm = /\[([^\]]+)\]\(([^)]+)\)/.exec(t); el = document.createElement('a'); el.textContent = mm[1]; el.href = mm[2]; el.target = '_blank' }
+        else { el = document.createElement('em'); el.textContent = t.slice(1, -1) }
+        span.append(el); last = m.index + t.length
+      }
+      span.append(str.slice(last).replace(/\*\*/g, ''))
+      return span
+    }
+    let list = null
+    for (const raw of String(text || '').replace(/\r/g, '').split('\n')) {
+      const l = raw.trim()
+      if (!l) { list = null; continue }
+      let m
+      if ((m = /^#{1,4}\s+(.*)$/.exec(l)) || (m = /^\*\*([^*]+)\*\*:?$/.exec(l))) { list = null; const hd = document.createElement('div'); hd.className = 'mh'; hd.textContent = m[1].replace(/\*/g, ''); frag.append(hd); continue }
+      if ((m = /^(?:[-*•]|\d+[.)])\s+(.*)$/.exec(l))) {
+        const ordered = /^\d/.test(l)
+        if (!list || list.tagName !== (ordered ? 'OL' : 'UL')) { list = document.createElement(ordered ? 'ol' : 'ul'); frag.append(list) }
+        const li = document.createElement('li'); li.append(inline(m[1])); list.append(li); continue
+      }
+      list = null
+      const p = document.createElement('p'); p.append(inline(l)); frag.append(p)
+    }
+    return frag
+  }
+
   function greeting () {
     const hr = new Date().getHours()
     return (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + (st.user ? ', ' + st.user : '')
@@ -142,7 +191,7 @@
     const seg = h('div', { class: 'seg' }, [[false, 'Push to talk'], [true, 'Always listening']].map(([v, l]) =>
       h('button', { class: settings.always === v ? 'on' : '', onClick: async () => { settings = await A.setSettings({ always: v }); settingsPage() } }, l)))
     root.replaceChildren(h('div', { class: 'page' },
-      h('h1', {}, 'Settings'),
+      h('div', { class: 'pagehead' }, h('button', { class: 'back', title: 'Back to chat', onClick: () => { page = 'home'; draw() } }, icon(0xE72B)), h('h1', {}, 'Settings')),
       h('div', { class: 'group' }, 'Name'),
       card(0xE8D4, 'What it\'s called', 'Also the wake word ("Hey ' + (settings.name || 'Meshron') + '"). Short, clear names like Nova, Jarvis or Atlas are heard best.', nameField()),
       h('div', { class: 'group' }, 'Talking'),
@@ -153,6 +202,7 @@
       card(0xE8D6, 'Studio voice', 'A lifelike AI voice. Off: Windows\' own voice.', toggle('studio')),
       card(0xE77B, 'Studio voice', 'Who speaks.', voice),
       h('div', { class: 'group' }, 'On screen'),
+      card(0xE8F4, 'Hide from screenshots', 'The chat, the orb and showcases won\'t appear in screenshots, recordings or screen sharing.', toggle('hidden')),
       card(0xE7F4, 'Floating orb', 'Stays over every app. Click to talk, drag to move, right-click to open this window.', toggle('orb')),
       card(0xE7E8, 'Start with Windows', 'Quietly in the tray, ready for your shortcut.', toggle('startup')),
       h('div', { class: 'group' }, 'Account'),

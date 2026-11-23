@@ -90,14 +90,22 @@
   }
   /** Kokoro: generate on this PC and play each sentence as it's ready. */
   async function kokoro (text, voice) {
+    // Not downloaded / warmed up yet: never make the person wait in silence. Another voice speaks
+    // now, and Kokoro keeps loading in the background for next time.
+    if (!window.Kokoro.ready()) { window.Kokoro.load().catch(() => {}); return false }
     try {
-      await window.Kokoro.speak(text, voice, (blob) => new Promise((resolve) => {
+      // And if generating ever stalls, give up after 20 s so speech never gets stuck behind it.
+      let timer
+      const stall = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Kokoro took too long')), 20000) })
+      await Promise.race([stall, window.Kokoro.speak(text, voice, (blob) => new Promise((resolve) => {
+        clearTimeout(timer)
         if (current === null && stopped) return resolve(true)
         const a = new Audio(URL.createObjectURL(blob))
         current = a
         a.onended = a.onerror = () => { URL.revokeObjectURL(a.src); resolve(stopped) }
         a.play().catch(() => resolve(false))
-      }), (pct) => A.partial && A.mode && window.dispatchEvent(new CustomEvent('kokoro-progress', { detail: pct })))
+      }), (pct) => window.dispatchEvent(new CustomEvent('kokoro-progress', { detail: pct })))])
+      clearTimeout(timer)
       return true
     } catch (e) { console.warn('kokoro', e); return false }
   }

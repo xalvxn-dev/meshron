@@ -323,6 +323,29 @@ class MainActivity : ComponentActivity(), Host {
             }
         }
         BackHandler(ask != null) { ask?.third?.complete(false) }
+
+        // Once: may it download the on-phone (Kokoro) voices? Then it fetches them in the background.
+        var offerKokoro by remember { mutableStateOf(Kokoro.ENABLED && !Memory.kokoroAsked(this) && !Kokoro.ready(this)) }
+        var kokoroPct by remember { mutableStateOf(Kokoro.progress) }
+        LaunchedEffect(Unit) { while (true) { kokoroPct = Kokoro.progress; kotlinx.coroutines.delay(700) } }
+        if (kokoroPct >= 0) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Text("DOWNLOADING VOICES · $kokoroPct%", color = Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.statusBarsPadding().padding(top = 46.dp))
+        }
+        if (offerKokoro && ask == null) {
+            Box(Modifier.fillMaxSize().background(Color(0xAA000000)), contentAlignment = Alignment.BottomCenter) {
+                Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp).clip(RoundedCornerShape(24.dp)).background(Hud.panel).border(1.dp, Hud.line, RoundedCornerShape(24.dp)).padding(22.dp)) {
+                    Text("ON-DEVICE VOICES", color = Hud.cyan, fontFamily = FontFamily.Monospace, letterSpacing = 3.sp, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Download natural voices to this phone?", color = Hud.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+                    Text("Kylie, Alvin, Clement and more, that speak offline with no account. About 130 MB, once. Best on Wi-Fi.", color = Hud.dim, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+                    Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(50)).border(1.dp, Hud.line, RoundedCornerShape(50))
+                            .clickable { Memory.setKokoroAsked(this@MainActivity); offerKokoro = false }, contentAlignment = Alignment.Center) { Text("Not now", color = Hud.text, fontWeight = FontWeight.SemiBold) }
+                        Box(Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(50)).background(Hud.cyan)
+                            .clickable { Memory.setKokoroAsked(this@MainActivity); offerKokoro = false; Kokoro.downloadInBackground(this@MainActivity) }, contentAlignment = Alignment.Center) { Text("Download", color = Color(0xFF02060C), fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+        }
     }
 
     @Composable
@@ -331,7 +354,7 @@ class MainActivity : ComponentActivity(), Host {
             is Line.You -> Text(l.text, color = Hud.dim, fontSize = 15.sp, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth().padding(start = 48.dp))
             is Line.Me -> Column(Modifier.fillMaxWidth().padding(end = 24.dp)) {
                 Text(Memory.name(this@MainActivity).uppercase() + " ›", color = Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 2.sp)
-                Text(l.text, color = Hud.text, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 3.dp))
+                Text(pretty(l.text), color = Hud.text, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 3.dp))
             }
             is Line.Act -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("▸ " + l.label, color = if (l.ok) Hud.green else Hud.amber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
@@ -367,14 +390,34 @@ class MainActivity : ComponentActivity(), Host {
             SetRow("Studio voice", "A lifelike AI voice (needs the internet). Off: the phone's own voice below.") { Switch(studio, { studio = it; Memory.setStudio(this@MainActivity, it) }, colors = hudSwitch()) }
             if (studio) {
                 var sv by remember { mutableStateOf(Memory.studioVoice(this@MainActivity)) }
-                LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(listOf("george" to "George", "daniel" to "Daniel", "brian" to "Brian", "adam" to "Adam", "sarah" to "Sarah", "charlotte" to "Charlotte", "lily" to "Lily", "rachel" to "Rachel", "ms:ava" to "Ava (Microsoft)", "ms:andrew" to "Andrew (Microsoft)", "ms:emma" to "Emma (Microsoft)", "ms:brian" to "Brian (Microsoft)", "ms:ryan" to "Ryan (Microsoft)", "ms:sonia" to "Sonia (Microsoft)", "ms:jenny" to "Jenny (Microsoft)", "ms:guy" to "Guy (Microsoft)")) { (id, label) ->
+                var kokoroNote by remember { mutableStateOf<String?>(null) }
+                val online = listOf("george" to "George", "daniel" to "Daniel", "brian" to "Brian", "adam" to "Adam", "sarah" to "Sarah", "charlotte" to "Charlotte", "lily" to "Lily", "rachel" to "Rachel", "ms:ava" to "Ava (Microsoft)", "ms:andrew" to "Andrew (Microsoft)", "ms:emma" to "Emma (Microsoft)", "ms:brian" to "Brian (Microsoft)", "ms:ryan" to "Ryan (Microsoft)", "ms:sonia" to "Sonia (Microsoft)", "ms:jenny" to "Jenny (Microsoft)", "ms:guy" to "Guy (Microsoft)")
+                // Kokoro: on the phone, offline after a one-time download of about 130 MB.
+                val onPhone = listOf("kokoro:af_heart" to "Kylie", "kokoro:af_bella" to "Glauxnycti", "kokoro:am_michael" to "Alvin", "kokoro:am_fenrir" to "Clement", "kokoro:am_puck" to "Xalvxn", "kokoro:bm_george" to "Kadmiel", "kokoro:bm_fable" to "Dhorpas")
+                fun pick(id: String, label: String) {
+                    sv = id; Memory.setStudioVoice(this@MainActivity, id); Speaker.stop()
+                    val hello = "Hi, I'm " + label.substringBefore(" (") + ". This is how I'll sound."
+                    if (!id.startsWith("kokoro:") || Kokoro.ready(this@MainActivity)) { kokoroNote = null; Speaker.say(this@MainActivity, hello); return }
+                    scope.launch {
+                        kokoroNote = "Downloading $label's voice (about 130 MB, once)…"
+                        val ok = Kokoro.download(this@MainActivity) { p -> kokoroNote = "Downloading $label's voice… $p%" }
+                        kokoroNote = if (ok) "$label is on this phone now and works offline." else "Couldn't download the voice: " + (Kokoro.lastError ?: "try again on Wi-Fi") + ". Until then it uses an online voice."
+                        if (ok) Speaker.say(this@MainActivity, hello)
+                    }
+                }
+                @Composable fun chips(list: List<Pair<String, String>>) = LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(list) { (id, label) ->
                         Text(label, color = if (sv == id) Color(0xFF02060C) else Hud.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sv == id) Hud.cyan else Color.Transparent).border(1.dp, Hud.line, RoundedCornerShape(50))
-                                .clickable { sv = id; Memory.setStudioVoice(this@MainActivity, id); Speaker.stop(); Speaker.say(this@MainActivity, "Hi, I'm " + label.substringBefore(" (") + ". This is how I'll sound.") }
+                                .clickable { pick(id, label) }
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
                     }
                 }
+                Text("ONLINE", color = Hud.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(start = 20.dp, top = 4.dp, bottom = 6.dp))
+                chips(online)
+                if (Kokoro.ENABLED) Text("ON THIS PHONE · KOKORO" + if (Kokoro.ready(this@MainActivity)) " · DOWNLOADED" else " · ~130 MB ONCE", color = Hud.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
+                if (Kokoro.ENABLED) chips(onPhone)
+                kokoroNote?.let { Text(it, color = Hud.cyan, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
             }
 
             Section("Hands")

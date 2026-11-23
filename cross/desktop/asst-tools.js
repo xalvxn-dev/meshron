@@ -206,7 +206,7 @@ $r = $hit.Current.BoundingRectangle
     }
     case 'read_screen': {
       const d = screen.getPrimaryDisplay()
-      const s = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.min(1600, d.size.width), height: Math.round(Math.min(1600, d.size.width) * d.size.height / d.size.width) } })
+      const s = await ctx.unseen(() => desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.min(1600, d.size.width), height: Math.round(Math.min(1600, d.size.width) * d.size.height / d.size.width) } }))
       if (!s.length) return ok('Couldn\'t see the screen')
       const img = 'data:image/jpeg;base64,' + s[0].thumbnail.toJPEG(80).toString('base64')
       return ok('A screenshot of the screen is attached.', { image: img, question: String(x.question || 'What is on my screen?') })

@@ -170,3 +170,6 @@ object Wake {
         return null
     }
 }
+/** Whether the person was already asked about downloading the Kokoro voices (asked once). */
+fun Memory.kokoroAsked(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).getBoolean("kokoroAsked", false)
+fun Memory.setKokoroAsked(c: Context) = c.getSharedPreferences("memory", Context.MODE_PRIVATE).edit().putBoolean("kokoroAsked", true).apply()

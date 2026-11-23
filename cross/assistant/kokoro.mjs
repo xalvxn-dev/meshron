@@ -55,7 +55,9 @@ async function speak (text, voice, play, onProgress) {
   }
 }
 
-window.Kokoro = { speak, load }
+/** True once the model is downloaded and warmed up (until then, other voices speak). */
+const ready = () => !!tts
+window.Kokoro = { speak, load, ready }
 
 // With a Kokoro voice chosen, get the model ready in the background (the first time it downloads).
 async function warm () {

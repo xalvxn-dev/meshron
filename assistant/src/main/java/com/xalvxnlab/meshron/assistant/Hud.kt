@@ -108,3 +108,36 @@ fun HudGrid() {
         drawRect(Brush.radialGradient(listOf(Color.Transparent, Color(0xCC000000)), center, size.maxDimension * 0.75f))
     }
 }
+
+/**
+ * Replies without raw Markdown: "**bold**" becomes bold, "*x*" italic, `code` monospaced,
+ * "# Heading" a bold line, "- item" / "* item" a "•" bullet, and stray asterisks disappear.
+ */
+fun pretty(text: String): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+    val lines = text.replace("\r", "").split('\n')
+    lines.forEachIndexed { n, raw ->
+        var l = raw.trimEnd()
+        val heading = Regex("""^\s*#{1,4}\s+(.*)$""").find(l)?.groupValues?.get(1)
+        if (heading != null) {
+            pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)); append(heading.replace("*", "")); pop()
+        } else {
+            Regex("""^(\s*)[-*•]\s+(.*)$""").find(l)?.let { l = it.groupValues[1] + "•  " + it.groupValues[2] }
+            var i = 0
+            val tok = Regex("""\*\*([^*]+)\*\*|__([^_]+)__|`([^`]+)`|\*([^*\s][^*]*)\*""")
+            for (m in tok.findAll(l)) {
+                append(l.substring(i, m.range.first))
+                when {
+                    m.groupValues[1].isNotEmpty() || m.groupValues[2].isNotEmpty() -> { pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)); append(m.groupValues[1].ifEmpty { m.groupValues[2] }); pop() }
+                    m.groupValues[3].isNotEmpty() -> { pushStyle(androidx.compose.ui.text.SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, background = Color(0x2222D3C5))); append(m.groupValues[3]); pop() }
+                    else -> { pushStyle(androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)); append(m.groupValues[4]); pop() }
+                }
+                i = m.range.last + 1
+            }
+            append(l.substring(i).replace("**", ""))
+        }
+        if (n < lines.size - 1) append('\n')
+    }
+}
+
+/** The same, as plain text (for the floating orb's strip and for speaking). */
+fun plain(text: String) = pretty(text).text

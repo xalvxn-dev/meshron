@@ -23,7 +23,7 @@ const dataFile = () => path.join(app.getPath('userData'), 'assistant.json')
 let data = { settings: {}, tasks: [], reminders: [], orb: null }
 function load () { try { data = Object.assign(data, JSON.parse(fs.readFileSync(dataFile(), 'utf8'))) } catch {} }
 function save () { fs.mkdirSync(path.dirname(dataFile()), { recursive: true }); fs.writeFileSync(dataFile(), JSON.stringify(data)) }
-const DEFAULTS = { name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
+const DEFAULTS = { hidden: false, name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
 const settings = () => Object.assign({}, DEFAULTS, data.settings)
 function account () {
   try { return data.account ? JSON.parse(safeStorage.decryptString(Buffer.from(data.account, 'base64'))) : null } catch { return null }
@@ -51,7 +51,7 @@ function openPanel (page) {
     titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', symbolColor: '#E6EDF5', height: 40 },
     webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false }
   })
-  panel.setContentProtection(true) // left out of its own screenshots (read_screen)
+  panel.setContentProtection(!!settings().hidden) // "Hide from screenshots" (Settings)
   panel.loadFile(path.join(dir, 'index.html'), page ? { hash: page } : undefined)
   panel.once('ready-to-show', () => panel.show())
   panel.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' } })
@@ -76,7 +76,7 @@ function openOrb () {
     webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false }
   })
   orb.setAlwaysOnTop(true, 'screen-saver')
-  orb.setContentProtection(true)
+  orb.setContentProtection(!!settings().hidden)
   orb.setIgnoreMouseEvents(true, { forward: true }) // only the orb and its strip take clicks (orb.js switches this)
   orb.loadFile(path.join(dir, 'orb.html'), { hash: b.right ? 'right' : 'left' })
   orb.once('ready-to-show', () => { if (settings().orb) orb.showInactive() })
@@ -95,7 +95,7 @@ function strip (tag, text, autoHide) {
   clearTimeout(hideTimer)
   if (autoHide) hideTimer = setTimeout(() => { if (state.mode === 'idle' && !state.asking) { state.strip = null; broadcast() } }, 7000)
 }
-const line = (l) => { state.lines.push(l); if (state.lines.length > 200) state.lines.shift(); broadcast() }
+const line = (l) => { l.at = Date.now(); state.lines.push(l); if (state.lines.length > 200) state.lines.shift(); broadcast() }
 
 // ---- The conversation ----
 let messages = []
@@ -123,6 +123,12 @@ const toolCtx = {
   },
   tasks: () => data.tasks,
   saveTasks (t) { data.tasks = t; save() },
+  /** Its own screen reading never sees itself: its windows are hidden from the capture just for that moment. */
+  async unseen (fn) {
+    const ws = [panel, orb].filter((w) => w && !w.isDestroyed())
+    for (const w of ws) w.setContentProtection(true)
+    try { await new Promise((r) => setTimeout(r, 120)); return await fn() } finally { for (const w of ws) w.setContentProtection(!!settings().hidden) }
+  },
   showcase: (kind) => stageShow(kind),
   async pickFile () {
     const r = await dialog.showOpenDialog(panel || undefined, { properties: ['openFile'], filters: [{ name: 'Documents and pictures', extensions: ['txt', 'md', 'csv', 'json', 'log', 'png', 'jpg', 'jpeg', 'webp'] }] })
@@ -149,7 +155,8 @@ async function stageShow (kind) {
   const shown = await showcase.show(kind, from, {
     hideOrb: () => { if (orb && !orb.isDestroyed()) orb.hide() },
     showOrb: () => { if (orb && !orb.isDestroyed() && settings().orb) orb.showInactive() },
-    current: () => settings().studioVoice
+    current: () => settings().studioVoice,
+    hidden: () => !!settings().hidden
   })
   return shown ? showcase.describe(kind, shown) : 'I can\'t show that.'
 }
@@ -331,6 +338,7 @@ function setSettings (patch) {
   if ('hotkey' in patch) registerHotkey()
   if ('always' in patch || 'name' in patch) startWake()
   if ('startup' in patch) applyStartup()
+  if ('hidden' in patch) for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.setContentProtection(!!settings().hidden)
   if ('orb' in patch && orb) { if (settings().orb) orb.showInactive(); else orb.hide() }
   for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())
   return settings()
