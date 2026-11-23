@@ -448,6 +448,11 @@ class MainActivity : ComponentActivity(), Host {
             SetRow("Quick Settings tile", "Pull down the shade, tap the pencil, and drag \"Meshron\" into your tiles.") { Text("", color = Hud.dim) }
             SetRow("Home-screen widget", "Long-press your home screen, tap Widgets, and add \"Meshron Assistant\".") { Text("", color = Hud.dim) }
 
+            Section("Game mode")
+            SetRow("Game mode", "Games played with your hands and face: Hand School, Block Drop, Block Builder, Orb Pop, Face Dash, Air Keys, Mood Mirror and sign-language letters. Your camera picture stays hidden unless you turn it on.") {
+                Text("Open", color = Hud.cyan, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Hud.cyan, RoundedCornerShape(50)).clickable { startActivity(Intent(this@MainActivity, GameActivity::class.java)) }.padding(horizontal = 14.dp, vertical = 8.dp))
+            }
+
             Section("Look")
             Text("Orb skin. Skins with a face show feelings, and the floating one sits at the top of the screen like an island.", color = Hud.dim, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp))
             androidx.compose.foundation.lazy.LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

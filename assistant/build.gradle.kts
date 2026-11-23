@@ -58,6 +58,18 @@ android {
     }
 }
 
+// Game mode uses the same hologram screens as Windows (cross/assistant) with MediaPipe's web
+// tracking (cross/desktop/node_modules/@mediapipe/tasks-vision), copied into the APK's assets.
+val gameAssets = layout.buildDirectory.dir("generated/gameAssets").get().asFile
+val copyGameAssets by tasks.registering(Copy::class) {
+    into(File(gameAssets, "game"))
+    from(rootProject.file("cross/assistant")) { include("game.html", "game.js", "track.mjs", "reactor.js", "shim-android.js") }
+    from(rootProject.file("cross/desktop/node_modules/@mediapipe/tasks-vision")) { include("vision_bundle.mjs"); into("vendor/mediapipe") }
+    from(rootProject.file("cross/desktop/node_modules/@mediapipe/tasks-vision/wasm")) { include("vision_wasm_internal.js", "vision_wasm_internal.wasm"); into("vendor/mediapipe/wasm") }
+}
+android.sourceSets.getByName("main").assets.srcDir(gameAssets)
+tasks.named("preBuild") { dependsOn(copyGameAssets) }
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

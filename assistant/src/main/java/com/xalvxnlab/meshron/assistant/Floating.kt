@@ -386,7 +386,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private fun IslandText() {
         val a = asking
         Column(Modifier.widthIn(max = 240.dp).padding(start = 6.dp, end = 14.dp, top = 4.dp, bottom = 4.dp)) {
-            Text(if (a != null) "APPROVE?" else tag, color = if (a != null) Hud.amber else Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+            Text(if (a != null) "APPROVE?" else tag, color = if (a != null) Hud.amber else Color(Look.of(Look.skin).c1), fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
             Text(if (a != null) a.first + "\n" + a.second else strip.orEmpty(), color = Hud.text, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (a != null) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Cancel", color = Hud.text, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Hud.line, RoundedCornerShape(50)).clickable { a.third.complete(false) }.padding(horizontal = 12.dp, vertical = 6.dp))
@@ -403,7 +403,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
                 .background(Color(0xF00A1220)).border(1.dp, if (a != null) Hud.amber.copy(alpha = 0.6f) else Hud.line, RoundedCornerShape(18.dp))
                 .padding(horizontal = 14.dp, vertical = 9.dp)
         ) {
-            Text(if (a != null) "APPROVE?" else tag, color = if (a != null) Hud.amber else Hud.cyan, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+            Text(if (a != null) "APPROVE?" else tag, color = if (a != null) Hud.amber else Color(Look.of(Look.skin).c1), fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
             Text(if (a != null) a.first + "\n" + a.second else strip.orEmpty(), color = Hud.text, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
             if (a != null) Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Cancel", color = Hud.text, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Hud.line, RoundedCornerShape(50)).clickable { a.third.complete(false) }.padding(horizontal = 12.dp, vertical = 6.dp))

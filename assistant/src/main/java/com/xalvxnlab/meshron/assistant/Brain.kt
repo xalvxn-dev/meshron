@@ -137,6 +137,10 @@ class Brain(private val api: Api, private val host: Host) {
         val s = t.lowercase(Locale.ROOT).trim().trimEnd('.', '!', '?')
         val phrase = Memory.lockPhrase(host.ctx)
         if (phrase.isNotEmpty() && s.contains(phrase)) return act("lock", device.lock())
+        if (Regex("\\b(game ?mode|play a game|open (the )?games?|hand tracking|face tracking|let'?s play)\\b").containsMatchIn(s)) {
+            host.ctx.startActivity(Intent(host.ctx, GameActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return act("game mode", Outcome("Game mode is open"))
+        }
         Regex("^(?:please )?(?:open|launch|start)(?: the)? (.+?)(?: app)?$").find(s)?.let { m ->
             val app = m.groupValues[1]
             if (app == "camera") { host.ctx.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return act("open · camera", Outcome("Camera open")) }

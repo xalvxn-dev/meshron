@@ -10,7 +10,17 @@
   const setSide = (s) => document.body.classList.toggle('right', s !== 'left')
   setSide(location.hash.slice(1) || 'right')
   // Skin: faces dock at the top (island) and can't be dragged.
-  const look = (s) => { window.ReactorSkin = s.skin || 'reactor'; const sk = window.Reactor.SKINS.find((k) => k.id === window.ReactorSkin); document.body.classList.toggle('island', !!(sk && sk.face)) }
+  const THEME = { midnight: '#22D3C5', nebula: '#B57BFF', ember: '#FF8A3D', forest: '#3DDC84', ocean: '#38BDF8', gold: '#FFD86B', mono: '#E6EDF5' }
+  const look = (s) => {
+    window.ReactorSkin = s.skin || 'reactor'
+    const sk = window.Reactor.SKINS.find((k) => k.id === window.ReactorSkin)
+    document.body.classList.toggle('island', !!(sk && sk.face))
+    // The strip's colours follow the chosen theme (and the skin's own colour when the theme is the default).
+    const acc = s.theme && s.theme !== 'midnight' ? THEME[s.theme] : sk ? sk.colors[0] : THEME.midnight
+    const n = parseInt(acc.slice(1), 16)
+    document.body.style.setProperty('--acc', acc)
+    document.body.style.setProperty('--acc-soft', 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',.3)')
+  }
 
   // Clicks pass through the empty, transparent part of this window to whatever is behind it.
   for (const el of [$('orb'), strip]) {

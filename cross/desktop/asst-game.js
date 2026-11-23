@@ -138,7 +138,12 @@ function compact (on) {
   if (!win || win.isDestroyed()) return false
   small = !!on
   const wa = screen.getPrimaryDisplay().workArea
-  if (on) {
+  if (on === 'keyboard') {
+    // A keyboard docked at the bottom, over other apps, never taking their focus.
+    const w = Math.min(1000, wa.width - 40); const h = 340
+    win.setAlwaysOnTop(true, 'screen-saver'); win.setFocusable(false)
+    win.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + wa.height - h - 10, width: w, height: h })
+  } else if (on) {
     win.setAlwaysOnTop(true, 'screen-saver'); win.setFocusable(false)
     win.setBounds({ x: wa.x + wa.width - 340, y: wa.y + wa.height - 290, width: 320, height: 270 })
   } else {
