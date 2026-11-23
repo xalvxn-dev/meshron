@@ -1,6 +1,6 @@
 import { sendMail } from './mail.js'
 import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT, RULES_PROMPT } from './moderation.js'
-import { assistant } from './assistant.js'
+import { assistant, fallbackModels } from './assistant.js'
 import { PANEL_HTML } from './panel.js'
 import { d1Store, migrateStep } from './store.js'
 // Meshron accounts: usernames, email codes and the locked account copy for public profiles.
@@ -81,24 +81,39 @@ const AI_TASKS = {
 
 async function ai (env, task, messages, jsonMode, model) {
   if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
-  const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
+  // Each model has its own daily and per-minute allowance: when one is used up, the next one answers.
+  const first = model || env.AI_MODEL || 'auto'
+  const models = [first, ...fallbackModels(env).filter((m) => m !== first)]
+  let r = null
+  for (const m of models) {
+    r = await aiCall(env, task, messages, jsonMode, m)
+    if (r.ok || r.status !== 429) break
+    console.log('ai limited', m, (await r.text()).slice(0, 200))
+  }
+  if (!r.ok) {
+    console.log('ai failed', r.status, (await r.text().catch(() => '')).slice(0, 300))
+    throw fail(r.status === 429 ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
+  }
+  const o = await r.json()
+  const text = String((o.choices && o.choices[0] && o.choices[0].message && o.choices[0].message.content) || '').trim()
+  if (!jsonMode) return text
+  try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')) } catch { throw fail('The AI answered oddly. Try again.', 502) }
+}
+
+function aiCall (env, task, messages, jsonMode, model) {
+  return fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
     method: 'POST',
     headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: model || env.AI_MODEL || 'auto',
+      model,
       messages: [{ role: 'system', content: AI_TASKS[task] }, ...messages],
       max_tokens: task === 'helper' || task === 'ask' ? 2000 : task === 'translate' || task === 'autotranslate' ? 1200 : 600, // room for a short think
       temperature: task === 'moderate' || task === 'rules' || task === 'review' || task === 'translate' || task === 'autotranslate' ? 0 : 0.7,
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       // Reasoning models (gpt-oss): think briefly, so short replies come fast and fit the token cap.
-      ...(/gpt-oss|qwen3/i.test(model || env.AI_MODEL || '') ? { reasoning_effort: 'low' } : {})
+      ...(/gpt-oss/i.test(model) ? { reasoning_effort: 'low' } : {})
     })
   })
-  if (!r.ok) { console.log('ai failed', r.status, (await r.text()).slice(0, 300)); throw fail('The AI is busy. Try again in a moment.', 502) }
-  const o = await r.json()
-  const text = String((o.choices && o.choices[0] && o.choices[0].message && o.choices[0].message.content) || '').trim()
-  if (!jsonMode) return text
-  try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')) } catch { throw fail('The AI answered oddly. Try again.', 502) }
 }
 
 const clip = (s, n) => String(s || '').slice(0, n)

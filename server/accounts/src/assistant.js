@@ -140,17 +140,30 @@ const ELEVEN_TO_ORPHEUS = { george: 'troy', daniel: 'daniel', brian: 'austin', a
 
 const VISION_MODEL ='meta-llama/llama-4-scout-17b-16e-instruct'
 const SEARCH_MODEL = 'groq/compound-mini'
+// Tried in order when the main model hits its rate limit (all support tool calls).
+export const fallbackModels = (env) => (env.AI_FALLBACK_MODELS || 'openai/gpt-oss-20b,llama-3.3-70b-versatile,meta-llama/llama-4-scout-17b-16e-instruct').split(',').map((m) => m.trim()).filter(Boolean)
 
 export function assistant ({ fail, limit, authed, clip }) {
   async function groq (env, body) {
     if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
-    const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify(body)
-    })
-    if (!r.ok) { console.log('assistant ai failed', r.status, (await r.text()).slice(0, 300)); throw fail('The AI is busy. Try again in a moment.', 502) }
-    return r.json()
+    // Each model has its own daily and per-minute allowance: when one is used up, the next one answers.
+    const special = [VISION_MODEL, SEARCH_MODEL, env.AI_VISION_MODEL, env.AI_SEARCH_MODEL].includes(body.model)
+    const models = special ? [body.model] : [body.model, ...fallbackModels(env).filter((m) => m !== body.model)]
+    let limited = false
+    for (const model of models) {
+      const b = { ...body, model }
+      if (!/gpt-oss/i.test(model)) delete b.reasoning_effort
+      const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
+        body: JSON.stringify(b)
+      })
+      if (r.ok) return r.json()
+      console.log('assistant ai failed', model, r.status, (await r.text()).slice(0, 300))
+      if (r.status !== 429) throw fail('The AI is busy. Try again in a moment.', 502)
+      limited = true
+    }
+    throw fail(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
   }
 
   async function webSearch (env, query) {
