@@ -312,7 +312,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private fun show(t: String, text: String, autoHide: Boolean) {
         tag = t; strip = text
         hideJob?.cancel()
-        if (autoHide) hideSoon(6000)
+        if (autoHide) hideSoon(6000) else hideSoon(60_000) // never lingers: back to just the orb after a minute idle
     }
 
     private fun hideSoon(ms: Long) {

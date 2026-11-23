@@ -165,7 +165,13 @@ let hideTimer = null
 function strip (tag, text, autoHide) {
   state.tag = tag; state.strip = text; broadcast()
   clearTimeout(hideTimer)
-  if (autoHide) hideTimer = setTimeout(() => { if (state.mode === 'idle' && !state.asking) { state.strip = null; broadcast() } }, 7000)
+  // Read silently: gone after 7 s. Read out loud: gone a few seconds after the voice ends (see 'mode').
+  // Either way it never lingers: after a minute of idling the orb is just the orb again.
+  hideTimer = setTimeout(hideStrip, autoHide ? 7000 : 60000)
+}
+function hideStrip () {
+  clearTimeout(hideTimer)
+  if (state.mode === 'idle' && !state.asking && state.strip) { state.strip = null; broadcast() } else if (state.strip) hideTimer = setTimeout(hideStrip, 3000)
 }
 const line = (l) => { l.at = Date.now(); state.lines.push(l); if (state.lines.length > 200) state.lines.shift(); broadcast() }
 
@@ -575,7 +581,14 @@ ipcMain.handle('a', async (e, what, arg) => {
       if (!arg) { setMode('idle'); state.strip = null; broadcast(); return true }
       ask(arg); return true
     }
-    case 'mode': setMode(arg); if (arg === 'listening') strip('LISTENING', '…', false); return true
+    case 'mode': {
+      const was = state.mode
+      setMode(arg)
+      if (arg === 'listening') strip('LISTENING', '…', false)
+      // Finished reading the answer out: back to just the orb shortly after.
+      if (was === 'speaking' && arg === 'idle') { clearTimeout(hideTimer); hideTimer = setTimeout(hideStrip, 3500) }
+      return true
+    }
     case 'partial': strip('LISTENING', arg, false); return true
     case 'approve': if (approval) approval(!!arg); return true
     case 'pickVoice': { // a bubble in the voices showcase
