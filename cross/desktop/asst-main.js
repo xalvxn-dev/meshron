@@ -174,7 +174,45 @@ function context () {
   return { now: new Date().toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T') + ', ' + new Date().toLocaleDateString('en', { weekday: 'long' }), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, name: (account() || {}).u, language: app.getLocale(), platform: 'windows', assistantName: settings().name, pictures: true }
 }
 
+// ---- Scheduled tasks: "at 3 PM join this Zoom link in Edge", "lock my PC at 10" ----
+// Kept with the settings; checked every 15 s. At its time the task runs as if the person said it.
+const localIso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+const jobs = {
+  add (at, task, repeat) {
+    data.jobs = data.jobs || []
+    const j = { id: Date.now().toString(36), at: localIso(at), task, repeat }
+    data.jobs.push(j); save(); return j
+  },
+  list: () => (data.jobs || []).slice().sort((a, b) => new Date(a.at) - new Date(b.at)),
+  cancel (which) {
+    const before = (data.jobs || []).length
+    const w = which.toLowerCase().trim()
+    data.jobs = w === 'all' ? [] : (data.jobs || []).filter((j) => !j.task.toLowerCase().includes(w) && j.id !== w)
+    save(); return before - data.jobs.length
+  }
+}
+function nextRun (j) {
+  const t = new Date(j.at)
+  do { t.setDate(t.getDate() + 1) } while (j.repeat === 'weekdays' && (t.getDay() === 0 || t.getDay() === 6))
+  return localIso(t)
+}
+function jobsTick () {
+  const now = Date.now()
+  for (const j of jobs.list()) {
+    const at = new Date(j.at).getTime()
+    if (at > now) break
+    if (busy) return // runs on the next check
+    if (j.repeat === 'once') data.jobs = data.jobs.filter((x) => x !== j); else j.at = nextRun(j)
+    save()
+    // The PC was off or asleep at the time: say so rather than doing it hours late.
+    if (now - at > 30 * 60000) { line({ who: 'act', text: 'scheduled · missed (the PC was off): ' + j.task.slice(0, 70), ok: false }); continue }
+    line({ who: 'act', text: 'scheduled · ' + j.task.slice(0, 80), ok: true })
+    ask(j.task)
+    return
+  }
+}
 const toolCtx = {
+  jobs,
   approve,
   schedule (text, at) {
     data.reminders.push({ text, at }); save()
@@ -423,24 +461,30 @@ try { $r = New-Object System.Speech.Recognition.SpeechRecognitionEngine($ri) } c
 try { $r.SetInputToDefaultAudioDevice() } catch { [Console]::Out.WriteLine('ERR no microphone'); exit }
 $c = New-Object System.Speech.Recognition.Choices
 $c.Add([string[]]@(${wakePhrases()}))
-$r.LoadGrammar((New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($c)))))
+$g = New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($c))); $g.Name = 'wake'; $r.LoadGrammar($g)
+# Ordinary speech goes to a dictation grammar, so talking near the PC isn't forced into the wake phrase.
+try { $d = New-Object System.Speech.Recognition.DictationGrammar; $d.Name = 'other'; $r.LoadGrammar($d) } catch { }
 # Listen in a plain loop: PowerShell can't run event handlers on the engine's own thread
 # (they were silently dropped), so each phrase is read here, one at a time.
 [Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
 while ($true) {
   try { $res = $r.Recognize([TimeSpan]::FromSeconds(10)) } catch { Start-Sleep -Milliseconds 500; continue }
   # Report everything it hears with how sure it is; the app decides (and logs it for checking).
-  if ($res) { [Console]::Out.WriteLine('HEARD ' + [math]::Round($res.Confidence, 2) + ' ' + $res.Text); [Console]::Out.Flush() }
+  if ($res) { [Console]::Out.WriteLine('HEARD ' + [math]::Round($res.Confidence, 2) + ' ' + $res.Grammar.Name + ' ' + $res.Text); [Console]::Out.Flush() }
   [Console]::Out.WriteLine('TICK'); [Console]::Out.Flush()
 }`
   wake = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true })
   wake.stdout.on('data', (b) => {
     for (const l of String(b).split(/\r?\n/)) {
-      const m = /^HEARD ([\d.]+) (.*)$/.exec(l)
+      const m = /^HEARD ([\d.]+) (\S+) (.*)$/.exec(l)
       if (m) {
-        const conf = +m[1]
-        const woke = conf >= 0.3 && !busy && state.mode === 'idle'
-        wakeLog(m[2] + ' (' + Math.round(conf * 100) + '% sure) ' + (woke ? 'woke up' : conf < 0.3 ? 'too unsure' : 'busy, ignored'))
+        const conf = +m[1]; const said = m[3]
+        // Only the wake phrase wakes it, and only when it's sure: "hey / ok / hi" + name at 70%,
+        // the bare name (easily confused with other words) at 88%.
+        const need = /^(hey|ok|okay|hi) /.test(said) ? 0.7 : 0.88
+        const isWake = m[2] === 'wake'
+        const woke = isWake && conf >= need && !busy && state.mode === 'idle'
+        if (isWake) wakeLog(said + ' (' + Math.round(conf * 100) + '% sure) ' + (woke ? 'woke up' : conf < need ? 'not sure enough, ignored' : 'busy, ignored'))
         if (woke) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }
       }
       if (l === 'READY' || l === 'TICK') lastTick = Date.now()
@@ -526,7 +570,7 @@ ipcMain.handle('a', async (e, what, arg) => {
     }
     case 'stageClose': showcase.close(true); return true
     case 'reset': messages = []; state.lines = []; broadcast(); return true
-    case 'stt': return post('/v1/stt', { audio: arg.audio, mime: arg.mime, language: app.getLocale().slice(0, 2) })
+    case 'stt': return post('/v1/stt', { audio: arg.audio, mime: arg.mime, language: app.getLocale().slice(0, 2), hint: settings().name })
     case 'tts': return post('/v1/tts', { text: arg, voice: settings().studioVoice })
     case 'openPanel': openPanel(arg); return true
     case 'testHotkey': return registerHotkey()
@@ -575,6 +619,7 @@ ipcMain.handle('a', async (e, what, arg) => {
 })
 
 app.whenReady().then(() => {
+  setInterval(jobsTick, 15000)
   load()
   nativeTheme.themeSource = 'dark'
   makeTray()

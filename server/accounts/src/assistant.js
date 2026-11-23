@@ -76,11 +76,14 @@ const ANDROID_HANDS = [
 // Windows: the desktop app runs these.
 const WINDOWS_TOOLS = [
   fn('open_app', 'Open an installed app by name (Start menu apps and programs).', { name: S('App name') }, ['name']),
-  fn('close_app', 'Close an app (its windows) by name. The person approves first.', { name: S('App name or window title') }, ['name']),
+  fn('close_app', 'Close an app (its windows) by name, right away (apps with unsaved work ask to save on their own).', { name: S('App name or window title') }, ['name']),
   fn('switch_to', 'Bring an open app\'s window to the front.', { name: S('App name or window title') }, ['name']),
   fn('list_windows', 'List the open app windows.'),
   fn('show_desktop', 'Minimise everything and show the desktop.'),
-  fn('open_url', 'Open a web page.', { url: S('Full https URL') }, ['url']),
+  fn('open_url', 'Open a web page or meeting link (Zoom, Teams, Meet). Name a browser when the person asks for one.', { url: S('Full https URL'), browser: { type: 'string', enum: ['default', 'edge', 'chrome', 'firefox', 'brave', 'opera'], description: 'Which browser (default: the usual one)' } }, ['url']),
+  fn('schedule_task', 'Do something later, at a set time: join a meeting link, lock the PC, open apps and do things in them, anything you can do now. At that time you get the task again as if the person just said it, so write it fully, with links and app names, and WITHOUT the time.', { at: S('Local time YYYY-MM-DDTHH:MM'), task: S('What to do then, in words, e.g. "open https://zoom.us/j/123 in Edge and join the meeting" or "lock my PC"'), repeat: { type: 'string', enum: ['once', 'daily', 'weekdays'], description: 'Repeat (default once)' } }, ['at', 'task']),
+  fn('list_scheduled', 'List the tasks scheduled for later.'),
+  fn('cancel_scheduled', 'Cancel a scheduled task.', { which: S('Words from the task, or "all"') }, ['which']),
   fn('open_path', 'Open a file or folder (File Explorer for folders).', { path: S('Full path, or a known folder like Downloads, Documents, Desktop, Pictures') }, ['path']),
   fn('type_text', 'Type text into whatever has focus, like the person typing.', { text: S('What to type') }, ['text']),
   fn('press_keys', 'Press a key or shortcut, e.g. "enter", "ctrl+s", "alt+tab", "win+d".', { keys: S('The keys') }, ['keys']),
@@ -413,22 +416,41 @@ export function assistant ({ fail, limit, authed, clip }) {
     },
 
     /** Speech to text (Whisper on Groq), for the Windows app: a short recording in, its words out. */
-    async '/v1/stt' ({ username, authKey, audio, mime, language }, env) {
+    async '/v1/stt' ({ username, authKey, audio, mime, language, hint }, env) {
       const { u } = await authed(env, username, authKey)
       if (!(await limit(env, 'stt:' + u, 400, 86400))) throw fail('You\'ve used today\'s listening limit. It resets tomorrow.', 429)
       if (typeof audio !== 'string' || audio.length > 8_000_000) throw fail('That recording is too long')
       if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
       const bin = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0))
       const type = /^audio\/(webm|ogg|wav|mpeg|mp4)/.test(mime || '') ? mime : 'audio/webm'
-      const form = new FormData()
-      form.append('file', new Blob([bin], { type }), 'speech.' + (type.split('/')[1].split(';')[0] || 'webm'))
-      form.append('model', env.AI_STT_MODEL || 'whisper-large-v3-turbo')
-      form.append('response_format', 'json')
-      if (typeof language === 'string' && /^[a-z]{2}$/.test(language)) form.append('language', language)
-      const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/audio/transcriptions', { method: 'POST', headers: { authorization: 'Bearer ' + env.AI_KEY }, body: form })
-      if (!r.ok) { console.log('stt failed', r.status, (await r.text()).slice(0, 300)); throw fail('Listening isn\'t available right now', 502) }
+      // The full Whisper model hears best; the faster one stands in when it's busy or used up.
+      // The prompt tells Whisper what to expect (the assistant's name, apps, commands), so names
+      // and app words come out right.
+      const name = typeof hint === 'string' && /^[\p{L}\p{N} .'-]{1,24}$/u.test(hint.trim()) ? hint.trim() : 'Meshron'
+      const prompt = 'Hey ' + name + ', open Spotify. Close Chrome. Set a timer for 10 minutes. Remind me to call Mum at 6 PM. Join the Zoom meeting in Microsoft Edge. Lock my PC at 10 PM. Generate an image of a cat. WhatsApp, YouTube, Word, Excel, PowerPoint, Teams, Discord, Steam, File Explorer, Downloads.'
+      const models = env.AI_STT_MODEL ? [env.AI_STT_MODEL] : ['whisper-large-v3', 'whisper-large-v3-turbo']
+      let r = null
+      for (const model of models) {
+        const form = new FormData()
+        form.append('file', new Blob([bin], { type }), 'speech.' + (type.split('/')[1].split(';')[0] || 'webm'))
+        form.append('model', model)
+        form.append('response_format', 'json')
+        form.append('temperature', '0')
+        form.append('prompt', prompt)
+        if (typeof language === 'string' && /^[a-z]{2}$/.test(language)) form.append('language', language)
+        r = await fetch(env.AI_URL.replace(/\/$/, '') + '/audio/transcriptions', { method: 'POST', headers: { authorization: 'Bearer ' + env.AI_KEY }, body: form })
+        if (r.ok) break
+        console.log('stt failed', model, r.status, (await r.text()).slice(0, 300))
+        if (!(r.status === 429 || r.status >= 500 || r.status === 404)) break
+      }
+      if (!r || !r.ok) throw fail('Listening isn\'t available right now', 502)
       const o = await r.json()
-      return { text: String(o.text || '').trim() }
+      let text = String(o.text || '').trim()
+      // Whisper sometimes "hears" these in silence or noise.
+      if (/^(thank you\.?|thanks for watching\.?|you\.?|bye\.?|\.+|subtitles by .*)$/i.test(text)) text = ''
+      // The hint itself echoed back means nothing was really said.
+      if (text && prompt.includes(text)) text = ''
+      return { text }
     }
   }
 }

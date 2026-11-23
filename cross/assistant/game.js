@@ -110,6 +110,8 @@ function icon (id, cx, cy, s, col = C.cyan) {
     case 'mood': g.beginPath(); g.arc(0, 0, 0.42 * s, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0.05 * s, 0.22 * s, 0.2, Math.PI - 0.2); g.stroke(); g.fillRect(-0.18 * s, -0.16 * s, 0.07 * s, 0.12 * s); g.fillRect(0.11 * s, -0.16 * s, 0.07 * s, 0.12 * s); break
     case 'spell': g.font = '700 ' + Math.round(s * 0.42) + 'px ' + MONO; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ASL', 0, 0); box(-0.48, -0.32, 0.96, 0.64); break
     case 'mouse': line([[-0.25, -0.45], [-0.25, 0.35], [-0.05, 0.15], [0.1, 0.45], [0.2, 0.4], [0.05, 0.1], [0.3, 0.1], [-0.25, -0.45]]); break
+    case 'race': g.beginPath(); g.arc(0, 0, 0.4 * s, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0, 0.1 * s, 0, Math.PI * 2); g.stroke(); line([[-0.4, 0], [-0.1, 0]]); line([[0.1, 0], [0.4, 0]]); line([[0, 0.1], [0, 0.4]]); break
+    case 'fps': g.beginPath(); g.arc(0, 0, 0.3 * s, 0, Math.PI * 2); g.stroke(); line([[-0.45, 0], [-0.12, 0]]); line([[0.12, 0], [0.45, 0]]); line([[0, -0.45], [0, -0.12]]); line([[0, 0.12], [0, 0.45]]); g.beginPath(); g.arc(0, 0, 0.03 * s, 0, 7); g.fill(); break
     case 'pad': rr(-0.5 * s, -0.22 * s, s, 0.44 * s, 0.2 * s); g.stroke(); line([[-0.3, 0], [-0.14, 0]]); line([[-0.22, -0.08], [-0.22, 0.08]]); g.beginPath(); g.arc(0.2 * s, -0.04 * s, 0.04 * s, 0, 7); g.fill(); g.beginPath(); g.arc(0.3 * s, 0.06 * s, 0.04 * s, 0, 7); g.fill(); break
   }
   g.restore()
@@ -604,7 +606,29 @@ game({
 // Control modes (Windows only): they run over other apps from a small card in the corner.
 let inputSize = null
 async function screenPx () { if (!inputSize) inputSize = await A.gameScreen(); return inputSize }
-const VK = { W: 0x57, SPACE: 0x20, E: 0x45, ALT: 0x12, LEFT: 0x25, RIGHT: 0x27 }
+const VK = { W: 0x57, A: 0x41, S: 0x53, D: 0x44, SPACE: 0x20, E: 0x45, R: 0x52, C: 0x43, G: 0x47, Q: 0x51, SHIFT: 0x10, CTRL: 0x11, ESC: 0x1B, ALT: 0x12, LEFT: 0x25, RIGHT: 0x27 }
+/** Keys and buttons held down by a control mode (pressed once, released once). */
+const down = new Map()
+function hold (what, on) {
+  if (!!down.get(what) === on) return
+  down.set(what, on)
+  if (what === 'lmb' || what === 'rmb') A.gameInput({ type: 'button', b: what[0], down: on })
+  else A.gameInput({ type: 'key', vk: what, down: on })
+}
+function releaseHeld () { for (const k of [...down.keys()]) hold(k, false); A.gameRelease() }
+/** Hands by where they are on screen (the camera picture is mirrored like a mirror). */
+function sides () {
+  const hs = (R && R.hands) || []
+  if (hs.length < 2) return { left: hs[0] && hs[0].P[9].x < W / 2 ? hs[0] : null, right: hs[0] && hs[0].P[9].x >= W / 2 ? hs[0] : null, n: hs.length }
+  const [a, b] = hs[0].P[9].x < hs[1].P[9].x ? [hs[0], hs[1]] : [hs[1], hs[0]]
+  return { left: a, right: b, n: 2 }
+}
+/** Both thumbs up: the game's pause menu (Esc). */
+let escAt = 0
+function pauseKey () {
+  const hs = (R && R.hands) || []
+  if (hs.length === 2 && hs.every((x) => x.gesture === 'thumbs') && performance.now() - escAt > 1500) { escAt = performance.now(); tap(VK.ESC) }
+}
 const tap = (vk, ms = 60) => { A.gameInput({ type: 'key', vk, down: true }); setTimeout(() => A.gameInput({ type: 'key', vk, down: false }), ms) }
 const click = (b = 'l') => { A.gameInput({ type: 'button', b, down: true }); setTimeout(() => A.gameInput({ type: 'button', b, down: false }), 70) }
 if (!ANDROID) {
@@ -630,9 +654,9 @@ if (!ANDROID) {
     status () { return this.paused ? 'paused' : 'active' }
   })
   game({
-    id: 'pad', name: 'Game Pad', blurb: 'Play PC games with your body', face: true, compact: true,
+    id: 'pad', name: 'Block Games', blurb: 'Minecraft-style games with your body', face: true, compact: true,
     enter () { if (tracker) tracker.recenter(); this.walk = false; this.paused = false },
-    exit () { A.gameRelease() },
+    exit () { releaseHeld() },
     update (dt) {
       const h = primary(); const f = R && R.face
       if (holdFor('padpause', R && R.hands.length === 2 && R.hands.every((x) => x.gesture === 'palm')) > 1) { delete held.padpause; this.paused = !this.paused; A.gameRelease(); this.walk = false; chirp(this.paused ? 440 : 880) }
@@ -647,13 +671,91 @@ if (!ANDROID) {
       const want = h.gesture === 'palm'
       if (want !== this.walk) { this.walk = want; A.gameInput({ type: 'key', vk: VK.W, down: want }) }
       if (R.hands.some((x) => x.punch)) click('l')
-      if (became(h, 'pinch')) click('r')
+      // A still fist (one hand) keeps attacking: mining and breaking blocks.
+      hold('lmb', R.hands.length === 1 && h.gesture === 'fist' && !h.punch && holdFor('mine', true) > 0.4)
+      if (!(R.hands.length === 1 && h.gesture === 'fist')) delete held.mine
+      hold('rmb', !!h.pinch) // pinch and hold: use, place, eat
       if (became(h, 'two')) tap(VK.SPACE, 120)
       if (became(h, 'thumbs')) tap(VK.E)
+      hold(VK.SHIFT, h.gesture === 'three') // three fingers: sneak
       if (h.swipe) A.gameInput({ type: 'wheel', delta: h.swipe === 'left' ? 120 : -120 })
     },
-    legend: () => ['head: look', 'punch: hit', 'palm: walk', 'two fingers: jump', 'pinch: use', 'thumbs up: inventory', 'swipe: hotbar', 'both palms: pause', 'both fists: stop'],
+    legend: () => ['head: look', 'palm: walk', 'punch: hit', 'hold a fist: mine', 'pinch (hold): use / place', 'two fingers: jump', 'three fingers: sneak', 'thumbs up: inventory', 'swipe: hotbar', 'both palms: pause', 'both fists: stop'],
     status () { return this.paused ? 'paused' : this.walk ? 'walking' : 'ready' }
+  })
+}
+
+if (!ANDROID) {
+  // Racing: hold an imaginary steering wheel with both hands (Asphalt, Need for Speed, Beach Buggy…).
+  game({
+    id: 'race', name: 'Racing', blurb: 'Steer with an air wheel', face: false, compact: true, noBack: true,
+    enter () { this.steer = 0; this.pulse = 0 },
+    exit () { releaseHeld() },
+    update (dt) {
+      pauseKey()
+      const { left, right, n } = sides()
+      let steer = 0
+      if (n === 2) {
+        // The wheel's angle: how far one hand is above the other.
+        const a = Math.atan2(right.P[9].y - left.P[9].y, right.P[9].x - left.P[9].x)
+        steer = Math.max(-1, Math.min(1, a / 0.6))
+      } else if (n === 1) {
+        const hh = left || right
+        steer = Math.max(-1, Math.min(1, (hh.P[9].x / W - 0.5) / 0.25))
+      }
+      if (Math.abs(steer) < 0.12) steer = 0
+      this.steer = steer
+      // Gentle turns tap the key, sharp turns hold it: the further you turn, the longer it's held.
+      this.pulse = (this.pulse + dt * 8) % 1
+      const on = Math.abs(steer) > 0.85 || this.pulse < Math.abs(steer)
+      hold(VK.A, steer < 0 && on); hold(VK.D, steer > 0 && on)
+      const hs = (R && R.hands) || []
+      const palms = hs.length > 0 && hs.every((x) => x.gesture === 'palm' || x.gesture === 'four')
+      hold(VK.W, hs.length > 0 && !palms) // gripping the wheel: accelerate
+      hold(VK.S, palms) // open hands: brake / reverse
+      if (hs.some((x) => x.punch) || hs.some((x) => became(x, 'pinch', 'race' + hs.indexOf(x)))) tap(VK.SPACE, 120) // nitro
+      for (let i = 0; i < hs.length; i++) lastGesture['race' + i] = hs[i].gesture
+    },
+    legend () { return ['grip the wheel: go', 'tilt it: steer', 'open hands: brake', 'pinch or punch: nitro', 'one hand: steer by moving it', 'both thumbs up: pause menu', 'ctrl+alt+g: stop'] },
+    status () { return (this.steer < -0.1 ? '< ' : this.steer > 0.1 ? '> ' : '') + (down.get(VK.S) ? 'braking' : down.get(VK.W) ? 'driving' : 'show both hands') }
+  })
+  // Shooter: the right hand aims and fires, the left hand moves (Call of Duty, Fortnite…).
+  game({
+    id: 'fps', name: 'Shooter', blurb: 'Aim, fire and move by hand', face: false, compact: true, noBack: true,
+    enter () { this.home = null },
+    exit () { releaseHeld() },
+    update (dt) {
+      pauseKey()
+      const { left, right } = sides()
+      // Right hand: a joystick for aiming (the further from where it started, the faster the turn).
+      if (right) {
+        const p = right.P[9]
+        if (!this.home) this.home = { x: p.x, y: p.y }
+        const dx = (p.x - this.home.x) / W; const dy = (p.y - this.home.y) / H
+        const dz = 0.03
+        const mx = Math.abs(dx) > dz ? Math.sign(dx) * (Math.abs(dx) - dz) : 0
+        const my = Math.abs(dy) > dz ? Math.sign(dy) * (Math.abs(dy) - dz) : 0
+        if (mx || my) A.gameInput({ type: 'move', dx: mx * 2600 * dt * 4, dy: my * 2000 * dt * 4 })
+        hold('lmb', !!right.pinch) // pinch: fire (hold to keep firing)
+        if (became(right, 'fist', 'fpsR')) tap(VK.R) // fist: reload
+        if (right.swipe) A.gameInput({ type: 'wheel', delta: right.swipe === 'left' ? 120 : -120 }) // swipe: next weapon
+        lastGesture.fpsR = right.gesture
+      } else { this.home = null; hold('lmb', false) }
+      // Left hand: open palm walks forward, moving it sideways strafes; pinch aims down sights.
+      if (left) {
+        hold(VK.W, left.gesture === 'palm' || left.gesture === 'four')
+        const lx = left.P[9].x / W
+        hold(VK.A, lx < 0.12); hold(VK.D, lx > 0.36)
+        hold('rmb', !!left.pinch)
+        hold(VK.C, left.gesture === 'fist') // fist: crouch
+        if (became(left, 'two', 'fpsL')) tap(VK.SPACE, 120) // two fingers: jump
+        if (left.punch) tap(VK.G) // punch: grenade
+        lastGesture.fpsL = left.gesture
+      } else { for (const k of [VK.W, VK.A, VK.D, VK.C, 'rmb']) hold(k, false) }
+      if (!left && !right) releaseHeld()
+    },
+    legend () { return ['right hand: aim (move it)', 'right pinch: fire', 'right fist: reload', 'right swipe: weapon', 'left palm: walk', 'left hand sideways: strafe', 'left pinch: aim down sights', 'left two fingers: jump', 'left fist: crouch', 'left punch: grenade', 'both thumbs up: pause menu', 'ctrl+alt+g: stop'] },
+    status () { return down.get('lmb') ? 'firing' : down.get(VK.W) ? 'moving' : 'ready' }
   })
 }
 

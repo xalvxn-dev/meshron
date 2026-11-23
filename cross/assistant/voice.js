@@ -8,12 +8,12 @@
 
   /** Records one request. onLevel(0..1) while it listens. Resolves with the words, or '' if nothing was said. */
   async function listen (onLevel, waitMs = 6000) {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
     const ctx = new AudioContext()
     const an = ctx.createAnalyser(); an.fftSize = 1024
     ctx.createMediaStreamSource(stream).connect(an)
     const buf = new Float32Array(an.fftSize)
-    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 64000 })
     const chunks = []
     rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data) }
     let spoke = false; let quietSince = performance.now(); const start = performance.now()

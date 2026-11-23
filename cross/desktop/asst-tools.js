@@ -140,7 +140,6 @@ async function run (name, x, ctx) {
     case 'close_app': {
       const w = await findWindow(String(x.name || ''))
       if (!w) return ok("I can't see an open window called " + x.name)
-      if (!(await ctx.approve('Close ' + w.title + '?', 'Unsaved work in it may be lost if it doesn\'t ask to save.'))) return ok('The person didn\'t approve closing it')
       await ps('(Get-Process -Id ' + w.id + ').CloseMainWindow() | Out-Null')
       return ok('Asked ' + w.title + ' to close')
     }
@@ -158,6 +157,11 @@ async function run (name, x, ctx) {
     case 'open_url': {
       const u = String(x.url || '')
       if (!/^https?:\/\//.test(u)) return ok('Only web links can be opened')
+      const EXE = { edge: 'msedge', chrome: 'chrome', firefox: 'firefox', brave: 'brave', opera: 'opera' }
+      const exe = EXE[String(x.browser || '').toLowerCase()]
+      if (exe) {
+        try { await ps("Start-Process '" + exe + "' -ArgumentList '" + u.replace(/'/g, "''") + "'"); return ok('Opened ' + u + ' in ' + x.browser) } catch { /* not installed: the usual browser */ }
+      }
       await shell.openExternal(u); return ok('Opened ' + u)
     }
     case 'open_path': {
@@ -248,6 +252,23 @@ $r = $hit.Current.BoundingRectangle
       if (s < 1 || s > 86400) return ok('That length isn\'t valid')
       ctx.schedule('Timer' + (x.label ? ': ' + x.label : '') + ' is done', Date.now() + s * 1000)
       return ok('Timer started for ' + Math.floor(s / 60) + ' min ' + (s % 60) + ' s')
+    }
+    case 'schedule_task': {
+      const at = new Date(String(x.at || ''))
+      if (isNaN(at)) return ok('Give the time as YYYY-MM-DDTHH:MM')
+      if (at.getTime() < Date.now() - 60000) return ok('That time has already passed')
+      const task = String(x.task || '').trim().slice(0, 600)
+      if (!task) return ok('Say what to do')
+      const j = ctx.jobs.add(at, task, ['daily', 'weekdays'].includes(x.repeat) ? x.repeat : 'once')
+      return ok('Scheduled for ' + at.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) + (j.repeat !== 'once' ? ' (' + j.repeat + ')' : '') + ': ' + task)
+    }
+    case 'list_scheduled': {
+      const js = ctx.jobs.list()
+      return ok(js.length ? js.map((j) => '- ' + new Date(j.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) + (j.repeat !== 'once' ? ' (' + j.repeat + ')' : '') + ': ' + j.task).join('\n') : 'Nothing is scheduled')
+    }
+    case 'cancel_scheduled': {
+      const n = ctx.jobs.cancel(String(x.which || ''))
+      return ok(n ? 'Cancelled ' + n + ' scheduled task' + (n > 1 ? 's' : '') : 'No scheduled task matches that')
     }
     case 'add_reminder': {
       const at = new Date(String(x.at || '').slice(0, 16))

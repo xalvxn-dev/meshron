@@ -4,7 +4,7 @@ window.MeshronHelp = {
   start: [
     ['Talk to it', 'Press Ctrl+Alt+Space (or your own shortcut), click the orb, or turn on Always listening and say "Hey Meshron". Then just say what you want, the way you would to a person.'],
     ['Type instead', 'Type in the box at the bottom of this window and press Enter.'],
-    ['It asks first', 'Anything risky (deleting, sending, closing apps with unsaved work) shows an Approve / Cancel box before it happens.'],
+    ['It asks first', 'Anything risky (deleting files, sending messages) shows an Approve / Cancel box before it happens. Closing an app happens right away.'],
     ['The orb', 'Click it to talk. Drag it anywhere; drop it near an edge to dock it. Right-click opens this window.'],
     ['Stop everything', 'Ctrl+Alt+G stops game mode and hand control at once.']
   ],
@@ -12,7 +12,7 @@ window.MeshronHelp = {
     { title: 'Apps and windows', items: [
       ['open Spotify', 'Opens any installed app'],
       ['switch to Chrome', 'Brings an open window to the front'],
-      ['close Notepad', 'Closes an app (asks if there is unsaved work)'],
+      ['close Notepad', 'Closes an app right away (the app itself asks if there is unsaved work)'],
       ['show the desktop', 'Minimises everything'],
       ['lock my PC', 'Locks the screen'],
       ['make a desktop shortcut for Spotify', 'Shortcuts to apps, folders or websites']
@@ -31,6 +31,12 @@ window.MeshronHelp = {
       ['tidy my Downloads into folders by type', 'Moves files (asks first)'],
       ['delete the old installers in Downloads', 'Deletes go to the Recycle Bin, after you approve'],
       ['summarise this document', 'Reads Word, PDF and text files']
+    ] },
+    { title: 'Later, at a set time', items: [
+      ['at 3 PM open https://zoom.us/j/123456 in Edge and join the meeting', 'Joins a meeting at its time (use your own link)'],
+      ['lock my PC at 10 PM', 'Anything it can do now, it can do at a set time'],
+      ['every weekday at 9 AM open Outlook and Teams', 'Repeats daily or on weekdays'],
+      ['what have you scheduled?', 'Lists them. "Cancel the Zoom one" cancels one']
     ] },
     { title: 'Time, tasks and reminders', items: [
       ['set a timer for 10 minutes', 'Timers'],
@@ -69,7 +75,11 @@ window.MeshronHelp = {
       ['come here', 'Companions (pick one under Settings, Look): come here, sit, dance, take a nap, wake up, fly, jump, hide, show']
     ] },
     { title: 'Game mode and hand control', items: [
-      ['open game mode', 'Games you play with your hands and face, plus Hand Control (a mouse in the air) and Game Pad (play PC games with your body)']
+      ['open game mode', 'Games you play with your hands and face, plus modes that control your real PC games:'],
+      ['open game mode', 'Racing (Asphalt, Need for Speed, Beach Buggy): grip an air wheel and tilt it to steer, open hands to brake, pinch for nitro'],
+      ['open game mode', 'Shooter (Call of Duty, Fortnite): right hand aims, pinch fires, fist reloads; left palm walks, left pinch aims down sights'],
+      ['open game mode', 'Block Games (Minecraft): head looks, palm walks, punch hits, hold a fist to mine, pinch to place'],
+      ['open game mode', 'Hand Control: a mouse in the air for any app']
     ] },
     { title: 'Your other devices', items: [
       ['on my phone, turn on the flashlight', 'Turn on "Control from my other devices" here and on your phone (same account). Start with "on my phone" or "on my PC"']
