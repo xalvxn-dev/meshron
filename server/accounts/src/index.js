@@ -1,6 +1,6 @@
 import { sendMail } from './mail.js'
 import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT, RULES_PROMPT } from './moderation.js'
-import { assistant, fallbackModels } from './assistant.js'
+import { assistant, fallbackModels, modelProblem } from './assistant.js'
 import { PANEL_HTML } from './panel.js'
 import { d1Store, migrateStep } from './store.js'
 // Meshron accounts: usernames, email codes and the locked account copy for public profiles.
@@ -84,16 +84,18 @@ async function ai (env, task, messages, jsonMode, model) {
   // Each model has its own daily and per-minute allowance: when one is used up, the next one answers.
   const first = model || env.AI_MODEL || 'auto'
   const models = [first, ...fallbackModels(env).filter((m) => m !== first)]
+  // A model that is limited, down or retired is skipped for the next one.
   let r = null
+  let limited = false
   for (const m of models) {
-    r = await aiCall(env, task, messages, jsonMode, m)
-    if (r.ok || r.status !== 429) break
-    console.log('ai limited', m, (await r.text()).slice(0, 200))
+    try { r = await aiCall(env, task, messages, jsonMode, m) } catch (e) { console.log('ai unreachable', m, e.message); r = null; continue }
+    if (r.ok) break
+    const err = (await r.text().catch(() => '')).slice(0, 300)
+    console.log('ai failed', m, r.status, err)
+    if (r.status === 429) limited = true
+    if (!modelProblem(r.status, err)) break
   }
-  if (!r.ok) {
-    console.log('ai failed', r.status, (await r.text().catch(() => '')).slice(0, 300))
-    throw fail(r.status === 429 ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
-  }
+  if (!r || !r.ok) throw fail(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
   const o = await r.json()
   const text = String((o.choices && o.choices[0] && o.choices[0].message && o.choices[0].message.content) || '').trim()
   if (!jsonMode) return text
@@ -112,7 +114,8 @@ function aiCall (env, task, messages, jsonMode, model) {
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       // Reasoning models (gpt-oss): think briefly, so short replies come fast and fit the token cap.
       ...(/gpt-oss/i.test(model) ? { reasoning_effort: 'low' } : {})
-    })
+    }),
+    signal: AbortSignal.timeout(45000)
   })
 }
 

@@ -142,31 +142,65 @@ const VISION_MODEL ='meta-llama/llama-4-scout-17b-16e-instruct'
 const SEARCH_MODEL = 'groq/compound-mini'
 // Tried in order when the main model hits its rate limit (all support tool calls).
 export const fallbackModels = (env) => (env.AI_FALLBACK_MODELS || 'openai/gpt-oss-20b,llama-3.3-70b-versatile,meta-llama/llama-4-scout-17b-16e-instruct').split(',').map((m) => m.trim()).filter(Boolean)
+const visionFallbacks = (env) => (env.AI_VISION_FALLBACKS || 'meta-llama/llama-4-maverick-17b-128e-instruct').split(',').map((m) => m.trim()).filter(Boolean)
+/** True when another model may do better: limited, down, overloaded, timed out, or the model is retired or unknown.
+ *  A bad key (401/403) or a too-large request is the same for every model, so those stop. */
+export const modelProblem = (status, body) => status === 429 || status >= 500 || status === 404 || status === 408 ||
+  (status === 400 && /model|decommission|tool_use_failed|not supported/i.test(body || ''))
 
 export function assistant ({ fail, limit, authed, clip }) {
   async function groq (env, body) {
     if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
     // Each model has its own daily and per-minute allowance: when one is used up, the next one answers.
-    const special = [VISION_MODEL, SEARCH_MODEL, env.AI_VISION_MODEL, env.AI_SEARCH_MODEL].includes(body.model)
-    const models = special ? [body.model] : [body.model, ...fallbackModels(env).filter((m) => m !== body.model)]
+    // A model that is limited, down or retired is skipped for the next one.
+    const vision = [VISION_MODEL, env.AI_VISION_MODEL].includes(body.model)
+    const search = [SEARCH_MODEL, env.AI_SEARCH_MODEL].includes(body.model)
+    const models = search ? [body.model] : vision ? [body.model, ...visionFallbacks(env).filter((m) => m !== body.model)] : [body.model, ...fallbackModels(env).filter((m) => m !== body.model)]
     let limited = false
     for (const model of models) {
       const b = { ...body, model }
       if (!/gpt-oss/i.test(model)) delete b.reasoning_effort
-      const r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
-        method: 'POST',
-        headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
-        body: JSON.stringify(b)
-      })
+      let r
+      try {
+        r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
+          body: JSON.stringify(b),
+          signal: AbortSignal.timeout(45000)
+        })
+      } catch (e) { console.log('assistant ai unreachable', model, e.message); continue }
       if (r.ok) return r.json()
-      console.log('assistant ai failed', model, r.status, (await r.text()).slice(0, 300))
-      if (r.status !== 429) throw fail('The AI is busy. Try again in a moment.', 502)
-      limited = true
+      const err = (await r.text()).slice(0, 300)
+      console.log('assistant ai failed', model, r.status, err)
+      if (r.status === 429) limited = true
+      if (!modelProblem(r.status, err)) throw fail('The AI is busy. Try again in a moment.', 502)
     }
     throw fail(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
   }
 
   async function webSearch (env, query) {
+    // Serper (Google results) when its key is set: fast, and it uses none of the AI allowance.
+    if (env.SERPER_API_KEY) {
+      try {
+        const r = await fetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': env.SERPER_API_KEY, 'content-type': 'application/json' },
+          body: JSON.stringify({ q: clip(query, 400), num: 8 }),
+          signal: AbortSignal.timeout(10000)
+        })
+        if (r.ok) {
+          const o = await r.json()
+          const out = []
+          const ab = o.answerBox
+          if (ab) out.push('Answer: ' + [ab.title, ab.answer, ab.snippet].filter(Boolean).join(' - '))
+          const kg = o.knowledgeGraph
+          if (kg) out.push('About ' + (kg.title || '') + ': ' + [kg.type, kg.description, ...Object.entries(kg.attributes || {}).slice(0, 8).map(([k, v]) => k + ': ' + v)].filter(Boolean).join('; '))
+          for (const x of (o.organic || []).slice(0, 6)) out.push('- ' + x.title + (x.date ? ' (' + x.date + ')' : '') + ': ' + (x.snippet || '') + ' [' + x.link + ']')
+          for (const x of (o.topStories || o.news || []).slice(0, 3)) out.push('- News: ' + x.title + (x.date ? ' (' + x.date + ')' : '') + ' [' + (x.source || x.link) + ']')
+          if (out.length) return clip('Web results for "' + clip(query, 120) + '":\n' + out.join('\n'), 4000)
+        } else console.log('serper failed', r.status, (await r.text()).slice(0, 200))
+      } catch (e) { console.log('serper unreachable', e.message) }
+    }
     try {
       const o = await groq(env, { model: env.AI_SEARCH_MODEL || SEARCH_MODEL, messages: [{ role: 'user', content: 'Look this up on the web and answer with the key facts and numbers, briefly, with the date of the information: ' + clip(query, 400) }], max_tokens: 900 })
       return clip((o.choices && o.choices[0] && o.choices[0].message && o.choices[0].message.content) || 'No results', 4000)
