@@ -21,6 +21,9 @@
     .bubble.on { border-color: #B6F36A; box-shadow: 0 0 30px rgba(182, 243, 106, .5); }
     .bubble.kokoro { background: radial-gradient(circle at 35% 30%, rgba(110, 123, 255, .38), rgba(10, 18, 32, .92) 70%); border-color: rgba(110, 123, 255, .55); }
     .bubble b { display: block; font-size: 15px; } .bubble span { display: block; font-size: 10.5px; color: #9FB3C8; margin-top: 2px; padding: 0 8px; }
+    body.compact #core, body.compact #title, body.compact #caption, body.compact #x { display: none; }
+    body.compact #halo { inset: 3%; }
+    body.tour #core { width: 22%; height: 22%; }
     #x { position: absolute; right: 13%; top: 13%; width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(34, 211, 197, .35); background: rgba(4, 6, 12, .7); color: #E6F7FF; cursor: pointer; font-size: 14px; }
   </style>
 </head>
@@ -35,6 +38,7 @@
     <button id="x" title="Close">✕</button>
   </div>
   <script src="reactor.js"></script>
+  <script src="illustrate.js"></script>
   <script src="stage.js"></script>
 </body>
 </html>

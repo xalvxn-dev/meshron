@@ -52,7 +52,13 @@
     const grow = Math.min(1, t / 1.1) // values sweep in over the first second
     if (show) {
       const { kind, data } = show
-      if (kind === 'voices') {
+      if (kind === 'tour') {
+        window.Illustrate.tour(g, cx, cy, R, t, data.name)
+      } else if (kind === 'toast') {
+        // A small card beside the orb for an action (or the keyboard typing a search).
+        if (data.pic === 'search') window.Illustrate.keyboard(g, cx, cy + R * 0.32, R * 1.75, t, data.query)
+        else if (window.Illustrate.PICS[data.pic]) window.Illustrate.PICS[data.pic](g, cx, cy - R * 0.06, R * 0.9, t, data)
+      } else if (kind === 'voices') {
         // Faint orbit track; the bubbles are elements (clickable) placed in place().
         g.strokeStyle = 'rgba(34,211,197,.18)'; g.setLineDash([3, 7]); g.lineWidth = 1
         g.beginPath(); g.arc(cx, cy, R * 0.62, 0, Math.PI * 2); g.stroke(); g.setLineDash([])
@@ -131,20 +137,27 @@
   function leave () { if (leaving) return; leaving = true; world.classList.remove('in'); world.classList.add('out'); setTimeout(() => A.stageClose(), 560) }
   $('x').onclick = leave
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') leave() })
+  document.addEventListener('click', () => { if (show && show.kind === 'tour') leave() })
 
-  const TITLES = { voices: 'RECOMMENDED VOICES', storage: 'STORAGE', system: 'SYSTEM', battery: 'BATTERY' }
+  const TITLES = { voices: 'RECOMMENDED VOICES', storage: 'STORAGE', system: 'SYSTEM', battery: 'BATTERY', tour: 'WHAT I CAN DO' }
   A.on((ev, d) => {
     if (ev === 'show') {
       show = { kind: d.kind, data: d.data }
       world.style.setProperty('--fx', d.from.x + 'px'); world.style.setProperty('--fy', d.from.y + 'px')
       $('title').textContent = TITLES[d.kind] || ''
+      document.body.classList.toggle('compact', d.kind === 'toast')
+      document.body.classList.toggle('tour', d.kind === 'tour')
+      if (d.kind === 'tour') $('caption').textContent = 'Tap anywhere or press Esc to close'
       reactor.mode = d.kind === 'system' ? 'thinking' : 'idle'
       if (d.kind === 'voices') { makeBubbles(d.data.voices, d.data.current); $('caption').textContent = 'Tap a voice to hear it. It becomes my voice.' }
       if (d.kind === 'storage') $('caption').textContent = d.data.length ? '' : 'No drives found'
       if (d.kind === 'system') $('caption').textContent = 'Live · updates every second'
       t0 = performance.now()
       requestAnimationFrame(() => world.classList.add('in'))
-      restartClose(d.kind === 'voices' ? 30000 : d.kind === 'system' ? 15000 : 10000)
+      // A search card stays until the query is typed (plus a moment); the tour runs through every feature once.
+      restartClose(d.kind === 'toast' ? (d.data.pic === 'search' ? 1400 + String(d.data.query || '').length * 95 : 2600)
+        : d.kind === 'tour' ? 3200 * window.Illustrate.FEATURES.length + 800
+          : d.kind === 'voices' ? 30000 : d.kind === 'system' ? 15000 : 10000)
     }
     if (ev === 'update' && show && show.kind === 'system') show.data = d
     if (ev === 'leave') leave()

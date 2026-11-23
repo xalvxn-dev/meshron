@@ -130,6 +130,7 @@ const toolCtx = {
     try { await new Promise((r) => setTimeout(r, 120)); return await fn() } finally { for (const w of ws) w.setContentProtection(!!settings().hidden) }
   },
   showcase: (kind) => stageShow(kind),
+  point: (rect, note) => showcase.point(rect, note, !!settings().hidden),
   async pickFile () {
     const r = await dialog.showOpenDialog(panel || undefined, { properties: ['openFile'], filters: [{ name: 'Documents and pictures', extensions: ['txt', 'md', 'csv', 'json', 'log', 'png', 'jpg', 'jpeg', 'webp'] }] })
     return r.canceled ? null : r.filePaths[0]
@@ -156,9 +157,34 @@ async function stageShow (kind) {
     hideOrb: () => { if (orb && !orb.isDestroyed()) orb.hide() },
     showOrb: () => { if (orb && !orb.isDestroyed() && settings().orb) orb.showInactive() },
     current: () => settings().studioVoice,
+    name: () => settings().name || 'Meshron',
     hidden: () => !!settings().hidden
   })
   return shown ? showcase.describe(kind, shown) : 'I can\'t show that.'
+}
+
+/** A small picture beside the orb for what a tool just did (volume, timer, alarm, app…). */
+function illustrate (name, x, out) {
+  if (!out || /^(Failed|The person didn't|I can't|Couldn't|No |Unknown|That )/.test(out.text || '')) return
+  const pic = {
+    set_volume: ['volume', { level: +x.level || 0 }],
+    set_timer: ['timer', { seconds: +x.seconds || 0, text: x.label || '' }],
+    add_reminder: [/alarm|wake/i.test(String(x.text || '')) ? 'alarm' : 'reminder', { text: String(x.text || ''), when: out.text.replace(/^Reminder set for /, '') }],
+    media: ['media', { action: String(x.action || '') }],
+    lock_pc: ['lock', {}],
+    open_app: ['app', { name: String(x.name || '') }],
+    switch_to: ['app', { name: String(x.name || '') }],
+    move_files: ['files', { text: out.text }],
+    make_folder: ['files', { text: out.text }],
+    delete_files: ['files', { text: out.text }]
+  }[name]
+  if (pic) toastNow(pic[0], pic[1])
+}
+function toastNow (pic, d) {
+  try {
+    const visible = orb && !orb.isDestroyed() && orb.isVisible()
+    showcase.toast(pic, d, visible ? Object.assign(orb.getBounds(), { right: (data.orb || {}).right !== false }) : null, !!settings().hidden)
+  } catch {}
 }
 
 /** Commands that work at once, even offline. */
@@ -166,20 +192,22 @@ async function local (t) {
   const s = t.toLowerCase().trim().replace(/[.!?]+$/, '')
   let m
   // Showcases: the orb takes centre stage for these.
+  if (/what (?:can|could|else can) (?:you|u) do|^what can (?:you|u)|(?:your|ur) (?:features|abilities|skills)|^(?:help|show me what you can do|give me a tour)$/.test(s)) return stageShow('tour')
   if (/\b(recommend|suggest|show|change|pick|choose)\b.*\bvoices?\b|^voices$/.test(s)) return stageShow('voices')
   if (/\b(storage|disk space|drive space|how much space|free space|my drives?)\b/.test(s)) return stageShow('storage')
   if (/\b(cpu|gpu|processor|graphics card|ram|memory usage|system usage|performance|how'?s my (pc|computer|laptop))\b/.test(s)) return stageShow('system')
   if (/^(?:show |what'?s |how'?s )?(?:my |the )?battery(?: level| status)?$/.test(s)) return stageShow('battery')
-  if ((m = /^(?:please )?(?:open|launch|start)(?: the)? (.+?)(?: app)?$/.exec(s))) return (await tools.run('open_app', { name: m[1] }, toolCtx)).text
+  const run = async (n, x) => { const o = await tools.run(n, x, toolCtx); illustrate(n, x, o); return o.text }
+  if ((m = /^(?:please )?(?:open|launch|start)(?: the)? (.+?)(?: app)?$/.exec(s))) return run('open_app', { name: m[1] })
   if (/^(?:show (?:the )?desktop|go home|minimi[sz]e (?:everything|all))$/.test(s)) return (await tools.run('show_desktop', {}, toolCtx)).text
-  if (/^lock(?: the| my)? (?:pc|computer|screen)$/.test(s)) return (await tools.run('lock_pc', {}, toolCtx)).text
-  if ((m = /^(?:set )?(?:the )?volume (?:to )?(\d{1,3})(?: ?%| percent)?$/.exec(s))) return (await tools.run('set_volume', { level: +m[1] }, toolCtx)).text
-  if (/^(?:mute|unmute)$/.test(s)) return (await tools.run('media', { action: 'mute' }, toolCtx)).text
-  if (/^(?:pause|play|resume)(?: (?:the )?(?:music|video|song))?$/.test(s)) return (await tools.run('media', { action: 'play_pause' }, toolCtx)).text
-  if (/^(?:next|skip)(?: (?:song|track))?$/.test(s)) return (await tools.run('media', { action: 'next' }, toolCtx)).text
+  if (/^lock(?: the| my)? (?:pc|computer|screen)$/.test(s)) return run('lock_pc', {})
+  if ((m = /^(?:set )?(?:the )?volume (?:to )?(\d{1,3})(?: ?%| percent)?$/.exec(s))) return run('set_volume', { level: +m[1] })
+  if (/^(?:mute|unmute)$/.test(s)) return run('media', { action: 'mute' })
+  if (/^(?:pause|play|resume)(?: (?:the )?(?:music|video|song))?$/.test(s)) return run('media', { action: 'play_pause' })
+  if (/^(?:next|skip)(?: (?:song|track))?$/.test(s)) return run('media', { action: 'next' })
   if ((m = /^(?:set |start )?(?:a )?timer (?:for )?(\d+) ?(seconds?|secs?|minutes?|mins?|hours?)$/.exec(s))) {
     const n = +m[1]; const sec = m[2].startsWith('h') ? n * 3600 : m[2].startsWith('m') ? n * 60 : n
-    return (await tools.run('set_timer', { seconds: sec }, toolCtx)).text
+    return run('set_timer', { seconds: sec })
   }
   return null
 }
@@ -200,13 +228,17 @@ async function ask (text, image) {
     for (let round = 0; round < 16; round++) {
       const r = await post('/v1/assistant', { messages, context: context(), image: img || undefined })
       img = null
+      // It searched the web: a keyboard types the query beside the orb.
+      if (Array.isArray(r.searched) && r.searched[0]) toastNow('search', { query: String(r.searched[0]).slice(0, 60) })
       if (r.text != null) { messages.push({ role: 'assistant', content: r.text }); reply(r.text); break }
       messages.push(r.message)
       for (const d of r.done || []) { messages.push(d); line({ who: 'act', text: 'web search', ok: true }) }
+
       let photo = null
       for (const c of r.calls || []) {
         let out
         try { out = await tools.run(c.name, c.args || {}, toolCtx) } catch (e) { out = { text: 'Failed: ' + e.message } }
+        illustrate(c.name, c.args || {}, out)
         line({ who: 'act', text: c.name.replace(/_/g, ' ') + ' · ' + out.text.split('\n')[0].slice(0, 80), ok: !/^(Failed|The person didn't|I can't|Couldn't)/.test(out.text) })
         messages.push({ role: 'tool', tool_call_id: c.id, content: out.text })
         if (out.image) photo = out

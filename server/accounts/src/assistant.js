@@ -95,7 +95,8 @@ const WINDOWS_TOOLS = [
   fn('battery_status', 'Battery level and charging (laptops).'),
   fn('lock_pc', 'Lock the PC.'),
   fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question']),
-  fn('showcase', 'Show something visually: the orb moves to the centre of the screen and displays it around itself. Use when the person asks to see or pick voices, their storage / disk space, CPU, GPU or memory use, or the battery.', { kind: S('voices, storage, system or battery') }, ['kind'])
+  fn('showcase', 'Show something visually: the orb moves to the centre of the screen and displays it around itself. Use when the person asks to see or pick voices, their storage / disk space, CPU, GPU or memory use, the battery, or what you can do (tour).', { kind: S('voices, storage, system, battery or tour') }, ['kind']),
+  fn('point_at', 'While teaching or explaining something on the PC, point at it on screen: circles it with an arrow and a short note. Give target (the button or menu name as shown) or x and y (0-1 fractions of the screen, from what read_screen showed). Point at each step as you explain it.', { target: S('Name of the button, menu, tab or field'), x: N('0-1 from the left'), y: N('0-1 from the top'), note: S('A few words, e.g. "Click here first"') }, ['note'])
 ]
 
 // Run here.
@@ -176,7 +177,7 @@ export function assistant ({ fail, limit, authed, clip }) {
       const windows = ctx.platform === 'windows'
       const tools = windows ? [...WINDOWS_TOOLS, ...SERVER_TOOLS] : [...DEVICE_TOOLS, ...ANDROID_HANDS, ...SERVER_TOOLS]
       const how = windows
-        ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened.'
+        ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened. When teaching how to do something on the PC, show it: call point_at on each button or menu as you explain that step (one point_at per step), instead of only describing where it is.'
         : '\nYou run on an Android phone.' + (ctx.canAct ? ' To work inside an app like a person (scrolling a feed, sending a message in WhatsApp, changing a setting): open_app, then ui_read, then ui_tap / ui_type / ui_scroll, and ui_read again to check. Send buttons are often an icon labelled "Send". Ask before sending anything the person didn\'t dictate word for word.' : ' Acting inside other apps is off; if asked, tell the person to turn on "Act on screen" in settings.')
       // The person may have named their assistant (it answers to that name and calls itself by it).
       const named = typeof ctx.assistantName === 'string' && /^[\p{L}\p{N} .'-]{1,24}$/u.test(ctx.assistantName.trim()) ? ctx.assistantName.trim() : 'Meshron Assistant'
@@ -189,6 +190,7 @@ export function assistant ({ fail, limit, authed, clip }) {
         if (last && last.role === 'user') last.content = [{ type: 'text', text: last.content || 'What is this?' }, { type: 'image_url', image_url: { url: img } }]
       }
       const model = img ? (env.AI_VISION_MODEL || VISION_MODEL) : (env.AI_MODEL || 'openai/gpt-oss-120b')
+      const searched = []
       for (let round = 0; round < 4; round++) {
         const o = await groq(env, {
           model,
@@ -202,7 +204,7 @@ export function assistant ({ fail, limit, authed, clip }) {
         const m = o.choices && o.choices[0] && o.choices[0].message
         if (!m) throw fail('The AI answered oddly. Try again.', 502)
         const calls = Array.isArray(m.tool_calls) ? m.tool_calls : []
-        if (!calls.length) return { text: String(m.content || '').trim() || 'Done.' }
+        if (!calls.length) return { text: String(m.content || '').trim() || 'Done.', searched }
         const asked = { role: 'assistant', content: m.content || null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.function.name, arguments: c.function.arguments || '{}' } })) }
         const device = calls.filter((c) => c.function && c.function.name !== 'web_search')
         if (device.length) {
@@ -211,11 +213,13 @@ export function assistant ({ fail, limit, authed, clip }) {
           for (const c of calls) if (c.function.name === 'web_search') {
             let q = ''
             try { q = JSON.parse(c.function.arguments || '{}').query || '' } catch {}
+            searched.push(String(q).slice(0, 80))
             done.push({ role: 'tool', tool_call_id: c.id, content: await webSearch(env, q) })
           }
           return {
             message: asked,
             done,
+            searched,
             calls: device.map((c) => { let args = {}; try { args = JSON.parse(c.function.arguments || '{}') } catch {} return { id: c.id, name: c.function.name, args } })
           }
         }
@@ -223,6 +227,7 @@ export function assistant ({ fail, limit, authed, clip }) {
         for (const c of calls) {
           let q = ''
           try { q = JSON.parse(c.function.arguments || '{}').query || '' } catch {}
+          searched.push(String(q).slice(0, 80))
           msgs.push({ role: 'tool', tool_call_id: c.id, content: await webSearch(env, q) })
         }
       }

@@ -74,7 +74,7 @@ const VOICES = [
 
 let stage = null
 let ticker = null
-const KINDS = ['voices', 'storage', 'system', 'battery']
+const KINDS = ['voices', 'storage', 'system', 'battery', 'tour']
 
 /**
  * Shows one kind. from: the orb's centre on screen (it flies in from there). hooks: { hideOrb,
@@ -87,7 +87,7 @@ async function show (kind, from, hooks) {
   const wa = d.workArea
   const size = Math.min(760, wa.width - 40, wa.height - 40)
   const x = Math.round(wa.x + (wa.width - size) / 2); const y = Math.round(wa.y + (wa.height - size) / 2)
-  const data = kind === 'storage' ? await storage() : kind === 'system' ? await system() : kind === 'battery' ? await battery() : { voices: VOICES, current: hooks.current() }
+  const data = kind === 'storage' ? await storage() : kind === 'system' ? await system() : kind === 'battery' ? await battery() : kind === 'tour' ? { name: hooks.name ? hooks.name() : 'Meshron' } : { voices: VOICES, current: hooks.current() }
   stage = new BrowserWindow({
     x, y, width: size, height: size, frame: false, transparent: true, resizable: false, movable: false,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
@@ -125,7 +125,60 @@ function describe (kind, data) {
   if (kind === 'storage') return data.length ? data.map((d) => d.id + ' has ' + gb(d.free) + ' GB free of ' + gb(d.size) + ' GB').join('. ') + '.' : 'I couldn\'t read your drives.'
   if (kind === 'system') return 'Processor at ' + data.cpu + '%, graphics at ' + data.gpu.load + '%, and ' + Math.round(100 * data.ramUsed / data.ramTotal) + '% of memory in use.'
   if (kind === 'battery') return data.none ? 'This PC runs on mains power, no battery.' : 'Battery at ' + data.pct + '%, ' + (data.charging ? 'charging.' : 'on battery.')
+  if (kind === 'tour') return 'Here is what I can do. Watch the tour, or just ask me.'
   return 'Here are the voices I\'d recommend. Tap one to hear it.'
 }
 
-module.exports = { show, close, describe, storage, system, battery, KINDS }
+// ---- A small card beside the orb for an action (volume, timer, alarm, search…) ----
+let card = null
+const plainWin = (o) => new BrowserWindow(Object.assign({
+  frame: false, transparent: true, resizable: false, movable: false, focusable: false,
+  alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
+  webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false }
+}, o))
+
+/** pic: volume, timer, alarm, reminder, media, lock, app, files or search. orb: { x, y, width, height, right }. */
+function toast (pic, data, orb, hidden) {
+  if (card && !card.isDestroyed()) card.destroy()
+  const size = pic === 'search' ? 380 : 260
+  const d = screen.getDisplayNearestPoint(orb ? { x: orb.x, y: orb.y } : screen.getCursorScreenPoint())
+  const wa = d.workArea
+  let x, y
+  if (orb) { x = orb.right ? orb.x - size + 20 : orb.x + orb.width - 20; y = orb.y + orb.height / 2 - size / 2 } else { x = wa.x + wa.width - size - 40; y = wa.y + wa.height - size - 40 }
+  x = Math.max(wa.x, Math.min(wa.x + wa.width - size, Math.round(x))); y = Math.max(wa.y, Math.min(wa.y + wa.height - size, Math.round(y)))
+  const w = card = plainWin({ x, y, width: size, height: size })
+  w.setAlwaysOnTop(true, 'screen-saver'); w.setIgnoreMouseEvents(true); w.setContentProtection(!!hidden)
+  w.loadFile(path.join(__dirname, 'asst-bundle', 'stage.html'))
+  w.webContents.once('did-finish-load', () => {
+    if (w.isDestroyed()) return
+    w.webContents.send('a-event', 'show', { kind: 'toast', data: Object.assign({ pic }, data), from: { x: orb && orb.right ? size / 2 : -size / 2, y: 0 } })
+    w.showInactive()
+  })
+  w.on('closed', () => { if (card === w) card = null })
+  setTimeout(() => { if (!w.isDestroyed()) w.destroy() }, pic === 'search' ? 2600 + String(data.query || '').length * 95 : 3400)
+}
+
+// ---- Pointing at something on screen (teaching) ----
+let pointer = null
+/** Circles a spot with an arrow and a note. rect: { x, y, width, height } in physical screen pixels. */
+function point (rect, note, hidden) {
+  if (pointer && !pointer.isDestroyed()) pointer.destroy()
+  const phys = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+  const dip = screen.screenToDipPoint ? screen.screenToDipPoint(phys) : phys
+  const d = screen.getDisplayNearestPoint(dip)
+  const b = d.bounds; const k = d.scaleFactor || 1
+  const w = pointer = plainWin({ x: b.x, y: b.y, width: b.width, height: b.height })
+  w.setAlwaysOnTop(true, 'screen-saver'); w.setIgnoreMouseEvents(true); w.setContentProtection(!!hidden)
+  w.loadFile(path.join(__dirname, 'asst-bundle', 'pointer.html'))
+  w.webContents.once('did-finish-load', () => {
+    if (w.isDestroyed()) return
+    const cw = rect.width / k; const ch = rect.height / k
+    w.webContents.send('a-event', 'point', { x: dip.x - b.x - cw / 2, y: dip.y - b.y - ch / 2, width: cw, height: ch, note: note || '' })
+    w.showInactive()
+  })
+  w.on('closed', () => { if (pointer === w) pointer = null })
+  setTimeout(() => { if (!w.isDestroyed()) w.destroy() }, 8000)
+}
+
+module.exports = { show, close, describe, toast, point, storage, system, battery, KINDS }
+

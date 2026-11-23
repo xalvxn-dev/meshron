@@ -291,6 +291,38 @@ $r = $hit.Current.BoundingRectangle
       return ok('Document "' + path.basename(f) + '":\n' + text.slice(0, 12000))
     }
     case 'showcase': return ok(await ctx.showcase(String(x.kind || '')))
+    case 'point_at': {
+      // Teaching: circle a control by its name (UI Automation, window in front first), or a spot
+      // given as fractions of the screen (from what read_screen showed).
+      const note = String(x.note || '').slice(0, 120)
+      const target = String(x.target || '').trim()
+      if (!target && x.x != null && x.y != null) {
+        const d = screen.getPrimaryDisplay(); const k = d.scaleFactor || 1
+        const fx = Math.max(0, Math.min(1, +x.x)); const fy = Math.max(0, Math.min(1, +x.y))
+        const w = 90 * k; const h = 60 * k
+        ctx.point({ x: (d.bounds.x + fx * d.bounds.width) * k - w / 2, y: (d.bounds.y + fy * d.bounds.height) * k - h / 2, width: w, height: h }, note)
+        return ok('Pointing at that spot' + (note ? ': ' + note : ''))
+      }
+      if (!target) return ok('Point at what?')
+      const out = await ps(`
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$fg = Add-Type -Name FG3 -Namespace MA3 -PassThru -MemberDefinition '[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
+$want = ${q(target.toLowerCase())}
+$roots = @([System.Windows.Automation.AutomationElement]::FromHandle($fg::GetForegroundWindow()), [System.Windows.Automation.AutomationElement]::RootElement)
+foreach ($root in $roots) {
+  $scope = if ($root -eq [System.Windows.Automation.AutomationElement]::RootElement) { [System.Windows.Automation.TreeScope]::Children } else { [System.Windows.Automation.TreeScope]::Descendants }
+  $all = $root.FindAll($scope, [System.Windows.Automation.Condition]::TrueCondition)
+  $hit = $null; $part = $null
+  foreach ($e in $all) { $n = $e.Current.Name; if (-not $n) { continue }; $r = $e.Current.BoundingRectangle; if ($r.IsEmpty -or $r.Width -lt 2) { continue }; $l = $n.ToLower(); if ($l -eq $want) { $hit = $e; break }; if (-not $part -and $l.Contains($want)) { $part = $e } }
+  if (-not $hit) { $hit = $part }
+  if ($hit) { $r = $hit.Current.BoundingRectangle; 'OK|' + [int]$r.X + '|' + [int]$r.Y + '|' + [int]$r.Width + '|' + [int]$r.Height + '|' + $hit.Current.Name; exit }
+}
+'NOTFOUND'`, 30000)
+      if (!out.startsWith('OK|')) return ok('I can\'t find "' + target + '" on screen. Try read_screen and point by position.')
+      const [, rx, ry, rw, rh, name] = out.trim().split('|')
+      ctx.point({ x: +rx, y: +ry, width: +rw, height: +rh }, note || name)
+      return ok('Pointing at ' + name + ' on screen')
+    }
     default: return ok('Unknown tool ' + name)
   }
 }
