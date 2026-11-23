@@ -163,3 +163,8 @@ body::before { content: ""; position: fixed; inset: 0; pointer-events: none; bac
 .devchip span { font-size: 10px; color: var(--text3); }
 .devchip.on { border-color: var(--accent); background: rgba(34, 211, 197, .12); }
 .devchip.off { opacity: .55; }
+
+/* Pictures the AI made */
+.pic { align-self: flex-start; max-width: 86%; }
+.pic img { display: block; width: 100%; max-width: 340px; border-radius: 14px; cursor: zoom-in; border: 1px solid rgba(255,255,255,.08); }
+.pic .cap { font-size: 12px; opacity: .7; margin-top: 4px; }

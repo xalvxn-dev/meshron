@@ -103,6 +103,7 @@
       l.who === 'you' ? h('div', { class: 'you' }, l.text, time(l))
         : l.who === 'me' ? h('div', { class: 'me' }, h('div', { class: 'who' }, (settings.name || 'Meshron').toUpperCase(), time(l)), md(l.text))
           : l.who === 'act' ? h('div', { class: 'act ' + (l.ok ? 'ok' : 'no') }, h('span', { class: 'ai' }, icon(actIcon(l.text))), h('span', {}, l.text.replace(/^([a-z ]+?) · /, (m, n) => n.charAt(0).toUpperCase() + n.slice(1) + ' · ')))
+            : l.who === 'pic' ? h('div', { class: 'pic' }, h('img', { src: l.src, alt: l.text || 'Picture', title: 'Open', onClick: () => A.openPic(l.file) }), l.text ? h('div', { class: 'cap' }, l.text) : null)
             : h('div', { class: 'oops' }, icon(0xE7BA), ' ', l.text))
     if (st.mode === 'thinking') kids.push(h('div', { class: 'typing' }, h('i'), h('i'), h('i')))
     convo.replaceChildren(...kids)

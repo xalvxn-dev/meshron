@@ -166,7 +166,7 @@ function approve (title, detail) {
 }
 
 function context () {
-  return { now: new Date().toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T') + ', ' + new Date().toLocaleDateString('en', { weekday: 'long' }), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, name: (account() || {}).u, language: app.getLocale(), platform: 'windows', assistantName: settings().name }
+  return { now: new Date().toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T') + ', ' + new Date().toLocaleDateString('en', { weekday: 'long' }), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, name: (account() || {}).u, language: app.getLocale(), platform: 'windows', assistantName: settings().name, pictures: true }
 }
 
 const toolCtx = {
@@ -317,6 +317,7 @@ async function ask (text, image) {
       img = null
       // It searched the web: a keyboard types the query beside the orb.
       if (Array.isArray(r.searched) && r.searched[0]) toastNow('search', { query: String(r.searched[0]).slice(0, 60) })
+      if (Array.isArray(r.images)) for (const p of r.images) showPicture(p)
       if (r.text != null) { messages.push({ role: 'assistant', content: r.text }); reply(r.text); break }
       messages.push(r.message)
       for (const d of r.done || []) { messages.push(d); line({ who: 'act', text: 'web search', ok: true }) }
@@ -338,6 +339,18 @@ async function ask (text, image) {
     line({ who: 'oops', text: e.message }); strip('SYSTEM', e.message, true); setMode('idle')
     if (remoteCtx) { remoteCtx.answered = true; rc.send(remoteCtx.from, { kind: 'reply', id: remoteCtx.id, text: 'Problem: ' + e.message, done: true }).catch(() => {}) }
   } finally { busy = false; if (state.mode === 'thinking') setMode('idle') }
+}
+// A picture the AI made: saved to Pictures\Meshron, shown in the panel (or opened, if the panel is closed).
+function showPicture (p) {
+  try {
+    const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(p && p.image || '')
+    if (!m) return
+    const dir = path.join(app.getPath('pictures'), 'Meshron'); fs.mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, 'meshron-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.' + (m[1] === 'jpeg' ? 'jpg' : m[1]))
+    fs.writeFileSync(file, Buffer.from(m[2], 'base64'))
+    line({ who: 'pic', text: String(p.caption || '').slice(0, 120), src: require('url').pathToFileURL(file).href, file })
+    if (!panel || panel.isDestroyed() || !panel.isVisible()) shell.openPath(file)
+  } catch (e) { line({ who: 'oops', text: 'Could not save the picture: ' + e.message }) }
 }
 function reply (text) {
   if (remoteCtx) { remoteCtx.answered = true; rc.send(remoteCtx.from, { kind: 'reply', id: remoteCtx.id, text, done: true }).catch(() => {}) }
@@ -538,6 +551,12 @@ ipcMain.handle('a', async (e, what, arg) => {
       const b = orbBounds()
       orb.setBounds(b)
       orb.webContents.send('a-event', 'side', right ? 'right' : 'left')
+      return true
+    }
+    case 'openPic': { // only pictures this app saved
+      const dir = path.join(app.getPath('pictures'), 'Meshron')
+      const f = path.resolve(String(arg || ''))
+      if (f.startsWith(dir + path.sep) && fs.existsSync(f)) shell.openPath(f)
       return true
     }
     case 'orbHome': { // back to the default spot (island orbs: the top centre)

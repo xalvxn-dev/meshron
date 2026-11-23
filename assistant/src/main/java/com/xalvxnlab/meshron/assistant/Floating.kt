@@ -154,6 +154,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         }
         // Commands from the person's other devices (when allowed), one at a time.
         Remote.onCommand = { m -> scope.launch { runRemote(m) } }
+        brain.onPicture = { uri -> Pictures.open(this, uri) }
         Remote.approver = { t, d -> approve(t, d) }
         Remote.start(this)
         Speaker.listeners += speakingHook

@@ -8,6 +8,8 @@
 // Same accounts and daily AI limit as Meshron AI. Nothing is stored: each request carries the
 // conversation so far.
 
+import { chat, makeImage } from './models.js'
+
 const SYSTEM = `You are Meshron Assistant, a proactive personal assistant on the user's Android phone, in the spirit of a calm, capable AI butler. You act, not just answer.
 How you work:
 - Use tools to do things on the phone. Never claim you did something until the tool result says so. If a tool fails, say so plainly and offer another way.
@@ -112,6 +114,9 @@ const WINDOWS_TOOLS = [
 
 // Run here.
 const SERVER_TOOLS = [fn('web_search', 'Search the web for current information.', { query: S('What to look up') }, ['query'])]
+// Made here with Gemini; the picture goes back to the app, which shows it and saves it.
+const IMAGE_TOOL = fn('generate_image', 'Make a picture (illustration, drawing, logo, poster, wallpaper, diagram-like art, photo-style image) and show it to the person. Use it when they ask for an image, or when a picture would clearly help (showing what something looks like while teaching). Write a detailed prompt: subject, style, colours, composition. Do not use it for the likeness of real people or anything harmful.', { prompt: S('Detailed description of the picture'), caption: S('One short line to show under it') }, ['prompt'])
+const SERVER_NAMES = new Set(['web_search', 'generate_image'])
 
 // ElevenLabs' ready-made voices (ids from their voice library).
 const ELEVEN = {
@@ -140,42 +145,14 @@ const ELEVEN_TO_ORPHEUS = { george: 'troy', daniel: 'daniel', brian: 'austin', a
 
 const VISION_MODEL ='meta-llama/llama-4-scout-17b-16e-instruct'
 const SEARCH_MODEL = 'groq/compound-mini'
-// Tried in order when the main model hits its rate limit (all support tool calls).
-export const fallbackModels = (env) => (env.AI_FALLBACK_MODELS || 'openai/gpt-oss-20b,llama-3.3-70b-versatile,meta-llama/llama-4-scout-17b-16e-instruct').split(',').map((m) => m.trim()).filter(Boolean)
-const visionFallbacks = (env) => (env.AI_VISION_FALLBACKS || 'meta-llama/llama-4-maverick-17b-128e-instruct').split(',').map((m) => m.trim()).filter(Boolean)
-/** True when another model may do better: limited, down, overloaded, timed out, or the model is retired or unknown.
- *  A bad key (401/403) or a too-large request is the same for every model, so those stop. */
-export const modelProblem = (status, body) => status === 429 || status >= 500 || status === 404 || status === 408 ||
-  (status === 400 && /model|decommission|tool_use_failed|not supported/i.test(body || ''))
 
 export function assistant ({ fail, limit, authed, clip }) {
+  /** A chat completion from the strongest model available now (models.js); search uses its own model. */
   async function groq (env, body) {
-    if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
-    // Each model has its own daily and per-minute allowance: when one is used up, the next one answers.
-    // A model that is limited, down or retired is skipped for the next one.
-    const vision = [VISION_MODEL, env.AI_VISION_MODEL].includes(body.model)
     const search = [SEARCH_MODEL, env.AI_SEARCH_MODEL].includes(body.model)
-    const models = search ? [body.model] : vision ? [body.model, ...visionFallbacks(env).filter((m) => m !== body.model)] : [body.model, ...fallbackModels(env).filter((m) => m !== body.model)]
-    let limited = false
-    for (const model of models) {
-      const b = { ...body, model }
-      if (!/gpt-oss/i.test(model)) delete b.reasoning_effort
-      let r
-      try {
-        r = await fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
-          method: 'POST',
-          headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
-          body: JSON.stringify(b),
-          signal: AbortSignal.timeout(45000)
-        })
-      } catch (e) { console.log('assistant ai unreachable', model, e.message); continue }
-      if (r.ok) return r.json()
-      const err = (await r.text()).slice(0, 300)
-      console.log('assistant ai failed', model, r.status, err)
-      if (r.status === 429) limited = true
-      if (!modelProblem(r.status, err)) throw fail('The AI is busy. Try again in a moment.', 502)
-    }
-    throw fail(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
+    const vision = [VISION_MODEL, env.AI_VISION_MODEL].includes(body.model)
+    const b = { ...body }; delete b.model
+    try { return await chat(env, b, search ? { only: "groq:" + body.model } : { vision }) } catch (e) { throw fail(e.message, e.status || 502) }
   }
 
   async function webSearch (env, query) {
@@ -297,7 +274,8 @@ export function assistant ({ fail, limit, authed, clip }) {
       if (!(await limit(env, 'ai:' + u, 300, 86400))) throw fail('You\'ve used today\'s AI limit. It resets tomorrow.', 429)
       const ctx = context && typeof context === 'object' ? context : {}
       const windows = ctx.platform === 'windows'
-      const tools = windows ? [...WINDOWS_TOOLS, ...SERVER_TOOLS] : [...DEVICE_TOOLS, ...ANDROID_HANDS, ...SERVER_TOOLS]
+      const serverTools = env.GEMINI_API_KEY && ctx.pictures ? [...SERVER_TOOLS, IMAGE_TOOL] : SERVER_TOOLS
+      const tools = windows ? [...WINDOWS_TOOLS, ...serverTools] : [...DEVICE_TOOLS, ...ANDROID_HANDS, ...serverTools]
       const how = windows
         ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened. To teach or explain anything (maths, science, a concept, a plan), use the board: write it step by step with math, steps, arrows, shapes and graphs while you explain, and keep the spoken reply short (it is on the board). When teaching how to do something on the PC, show it with show_how (all the steps at once: point, circle, highlight, click, drag and drop, type), read_screen first if you need to see what is there; point_at is for a single thing. For memory or what is slowing the PC, use memory_usage. To draw something, use draw_in_paint.'
         : '\nYou run on an Android phone. To teach or explain anything (maths, science, a concept), use the board: write it step by step while you explain, and keep the spoken reply short.' + (ctx.canAct ? ' To work inside an app like a person (scrolling a feed, sending a message in WhatsApp, changing a setting): open_app, then ui_read, then ui_tap / ui_type / ui_scroll, and ui_read again to check. Send buttons are often an icon labelled "Send". Ask before sending anything the person didn\'t dictate word for word.' : ' Acting inside other apps is off; if asked, tell the person to turn on "Act on screen" in settings.')
@@ -313,6 +291,20 @@ export function assistant ({ fail, limit, authed, clip }) {
       }
       const model = img ? (env.AI_VISION_MODEL || VISION_MODEL) : (env.AI_MODEL || 'openai/gpt-oss-120b')
       const searched = []
+      const images = []
+      // Tools that run here: web search and making pictures.
+      const runHere = async (c) => {
+        let args = {}
+        try { args = JSON.parse(c.function.arguments || '{}') } catch {}
+        if (c.function.name === 'generate_image') {
+          if (images.length >= 2) return 'Only two pictures per answer.'
+          if (!(await limit(env, 'img:' + u, 25, 86400))) return 'The person has reached the daily picture limit; more tomorrow.'
+          try { const pic = await makeImage(env, clip(args.prompt, 1500)); images.push({ image: pic.image, caption: clip(args.caption, 120) || '' }); return 'The picture was made and is now shown to the person (and saved). Do not describe it at length.' } catch (e) { return 'Could not make the picture: ' + e.message }
+        }
+        const q = args.query || ''
+        searched.push(String(q).slice(0, 80))
+        return await webSearch(env, q)
+      }
       for (let round = 0; round < 4; round++) {
         const o = await groq(env, {
           model,
@@ -326,32 +318,23 @@ export function assistant ({ fail, limit, authed, clip }) {
         const m = o.choices && o.choices[0] && o.choices[0].message
         if (!m) throw fail('The AI answered oddly. Try again.', 502)
         const calls = Array.isArray(m.tool_calls) ? m.tool_calls : []
-        if (!calls.length) return { text: String(m.content || '').trim() || 'Done.', searched }
+        if (!calls.length) return { text: String(m.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim() || 'Done.', searched, ...(images.length ? { images } : {}) }
         const asked = { role: 'assistant', content: m.content || null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.function.name, arguments: c.function.arguments || '{}' } })) }
-        const device = calls.filter((c) => c.function && c.function.name !== 'web_search')
+        const device = calls.filter((c) => c.function && !SERVER_NAMES.has(c.function.name))
         if (device.length) {
           // The phone runs these. Searches asked for at the same time run first, here.
           const done = []
-          for (const c of calls) if (c.function.name === 'web_search') {
-            let q = ''
-            try { q = JSON.parse(c.function.arguments || '{}').query || '' } catch {}
-            searched.push(String(q).slice(0, 80))
-            done.push({ role: 'tool', tool_call_id: c.id, content: await webSearch(env, q) })
-          }
+          for (const c of calls) if (SERVER_NAMES.has(c.function.name)) done.push({ role: 'tool', tool_call_id: c.id, content: await runHere(c) })
           return {
             message: asked,
             done,
             searched,
+            ...(images.length ? { images } : {}),
             calls: device.map((c) => { let args = {}; try { args = JSON.parse(c.function.arguments || '{}') } catch {} return { id: c.id, name: c.function.name, args } })
           }
         }
         msgs.push(asked)
-        for (const c of calls) {
-          let q = ''
-          try { q = JSON.parse(c.function.arguments || '{}').query || '' } catch {}
-          searched.push(String(q).slice(0, 80))
-          msgs.push({ role: 'tool', tool_call_id: c.id, content: await webSearch(env, q) })
-        }
+        for (const c of calls) msgs.push({ role: 'tool', tool_call_id: c.id, content: await runHere(c) })
       }
       return { text: 'That took too many steps. Try asking it a simpler way.' }
     },

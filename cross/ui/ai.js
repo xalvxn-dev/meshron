@@ -74,13 +74,17 @@
     const list = h('div', { class: 'ai-list', style: { display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '60vh', overflowY: 'auto', padding: '4px 2px' } })
     const input = h('textarea', { class: 'input', rows: 2, placeholder: 'Message Meshron AI', style: { resize: 'none' } })
     const send = h('button', { class: 'btn primary', style: { marginTop: '8px', width: '100%' } }, 'Send')
-    function bubble (mine, text) {
+    function bubble (mine, text, image) {
       if (mine) return h('div', { style: { alignSelf: 'flex-end', maxWidth: '80%', background: 'linear-gradient(135deg,#4F7BFF,#19D3C5)', color: '#fff', padding: '10px 14px', borderRadius: '18px 18px 6px 18px', whiteSpace: 'pre-wrap' } }, text)
       return h('div', { style: { display: 'flex', gap: '8px', alignItems: 'flex-start', maxWidth: '90%' } }, aiAvatar(26),
-        h('div', { class: 'selectable', style: { background: 'var(--s1, #1b1f2a)', padding: '10px 14px', borderRadius: '6px 18px 18px 18px', whiteSpace: 'pre-wrap', lineHeight: 1.45 } }, clean(text)))
+        h('div', { class: 'selectable', style: { background: 'var(--s1, #1b1f2a)', padding: '10px 14px', borderRadius: '6px 18px 18px 18px', whiteSpace: 'pre-wrap', lineHeight: 1.45 } },
+          image ? h('img', { src: image, alt: 'Picture made by Meshron AI', style: { display: 'block', width: '100%', maxWidth: '360px', borderRadius: '12px', marginBottom: text ? '8px' : 0 } }) : null,
+          image ? h('a', { href: image, download: 'meshron-ai.png', class: 'dim', style: { display: 'inline-block', fontSize: '13px', marginBottom: '6px' } }, 'Save picture') : null,
+          image ? h('br') : null,
+          clean(text)))
     }
     function render () {
-      list.replaceChildren(...(history.length ? history.map((t) => bubble(t.mine, t.text)) : [h('p', { class: 'dim', style: { textAlign: 'center' } }, 'Ask anything. What you type goes to the AI service, so don\'t share secrets.')]))
+      list.replaceChildren(...(history.length ? history.map((t) => bubble(t.mine, t.text, t.image)) : [h('p', { class: 'dim', style: { textAlign: 'center' } }, 'Ask anything. What you type goes to the AI service, so don\'t share secrets.')]))
       list.scrollTop = list.scrollHeight
     }
     async function go () {
@@ -88,8 +92,8 @@
       input.value = ''
       const before = history.slice(-12).map((x) => ({ role: x.mine ? 'user' : 'assistant', content: x.text }))
       history.push({ mine: true, text: t }); render()
-      const typing = h('div', { class: 'dim' }, 'Meshron AI is thinking…'); list.appendChild(typing)
-      try { const r = await ACC().authed('/v1/ai', { task: 'helper', text: t, history: before }); history.push({ mine: false, text: r.text }) } catch (e) { history.push({ mine: false, text: e.message || 'The AI is busy. Try again.' }) }
+      const typing = h('div', { class: 'dim' }, /(draw|paint|sketch|image|picture|logo|poster|wallpaper)/i.test(t) ? 'Meshron AI is making it…' : 'Meshron AI is thinking…'); list.appendChild(typing)
+      try { const r = await ACC().authed('/v1/ai', { task: 'helper', text: t, history: before, pictures: true }); history.push({ mine: false, text: r.text, image: r.image }) } catch (e) { history.push({ mine: false, text: e.message || 'The AI is busy. Try again.' }) }
       render()
     }
     send.onclick = go

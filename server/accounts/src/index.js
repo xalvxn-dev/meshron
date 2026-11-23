@@ -1,6 +1,7 @@
 import { sendMail } from './mail.js'
 import { moderation, REVIEW_PROMPT, OVERSEE_PROMPT, RULES_PROMPT } from './moderation.js'
-import { assistant, fallbackModels, modelProblem } from './assistant.js'
+import { assistant } from './assistant.js'
+import { chat, wantsImage, makeImage } from './models.js'
 import { PANEL_HTML } from './panel.js'
 import { d1Store, migrateStep } from './store.js'
 // Meshron accounts: usernames, email codes and the locked account copy for public profiles.
@@ -80,43 +81,18 @@ const AI_TASKS = {
 }
 
 async function ai (env, task, messages, jsonMode, model) {
-  if (!env.AI_URL || !env.AI_KEY) throw fail('AI is not set up on this server yet', 503)
-  // Each model has its own daily and per-minute allowance: when one is used up, the next one answers.
-  const first = model || env.AI_MODEL || 'auto'
-  const models = [first, ...fallbackModels(env).filter((m) => m !== first)]
-  // A model that is limited, down or retired is skipped for the next one.
-  let r = null
-  let limited = false
-  for (const m of models) {
-    try { r = await aiCall(env, task, messages, jsonMode, m) } catch (e) { console.log('ai unreachable', m, e.message); r = null; continue }
-    if (r.ok) break
-    const err = (await r.text().catch(() => '')).slice(0, 300)
-    console.log('ai failed', m, r.status, err)
-    if (r.status === 429) limited = true
-    if (!modelProblem(r.status, err)) break
+  // The strongest model available right now answers (see models.js); a set model (moderation) goes first.
+  const body = {
+    messages: [{ role: 'system', content: AI_TASKS[task] }, ...messages],
+    max_tokens: task === 'helper' || task === 'ask' ? 2000 : task === 'translate' || task === 'autotranslate' ? 1200 : 600, // room for a short think
+    temperature: task === 'moderate' || task === 'rules' || task === 'review' || task === 'translate' || task === 'autotranslate' ? 0 : 0.7,
+    ...(jsonMode ? { response_format: { type: 'json_object' } } : {})
   }
-  if (!r || !r.ok) throw fail(limited ? 'The AI has reached its limit for now. Try again later.' : 'The AI is busy. Try again in a moment.', 502)
-  const o = await r.json()
-  const text = String((o.choices && o.choices[0] && o.choices[0].message && o.choices[0].message.content) || '').trim()
+  let o
+  try { o = await chat(env, body, model ? { first: model } : {}) } catch (e) { throw fail(e.message, e.status || 502) }
+  const text = String((o.choices[0].message && o.choices[0].message.content) || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim()
   if (!jsonMode) return text
   try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')) } catch { throw fail('The AI answered oddly. Try again.', 502) }
-}
-
-function aiCall (env, task, messages, jsonMode, model) {
-  return fetch(env.AI_URL.replace(/\/$/, '') + '/chat/completions', {
-    method: 'POST',
-    headers: { authorization: 'Bearer ' + env.AI_KEY, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'system', content: AI_TASKS[task] }, ...messages],
-      max_tokens: task === 'helper' || task === 'ask' ? 2000 : task === 'translate' || task === 'autotranslate' ? 1200 : 600, // room for a short think
-      temperature: task === 'moderate' || task === 'rules' || task === 'review' || task === 'translate' || task === 'autotranslate' ? 0 : 0.7,
-      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
-      // Reasoning models (gpt-oss): think briefly, so short replies come fast and fit the token cap.
-      ...(/gpt-oss/i.test(model) ? { reasoning_effort: 'low' } : {})
-    }),
-    signal: AbortSignal.timeout(45000)
-  })
 }
 
 const clip = (s, n) => String(s || '').slice(0, n)
@@ -161,7 +137,7 @@ const routes = {
   },
 
   /** AI tasks for signed-in accounts. */
-  async '/v1/ai' ({ username, authKey, task, text, lang, history }, env) {
+  async '/v1/ai' ({ username, authKey, task, text, lang, history, pictures }, env) {
     const { u } = await authed(env, username, authKey)
     if (!AI_TASKS[task] || task === 'review' || task === 'oversee' || task === 'ask' || task === 'rules') throw fail('Unknown AI task')
     if (!(await limit(env, 'ai:' + u, 200, 86400))) throw fail('You\'ve used today\'s AI limit. It resets tomorrow.', 429)
@@ -171,6 +147,14 @@ const routes = {
           .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
           .map((m) => ({ role: m.role, content: clip(m.content, 2000) }))
         msgs.push({ role: 'user', content: clip(text, 2000) })
+        // "Draw me…", "make a logo…": a picture from Gemini, with a line about it.
+        if (pictures && env.GEMINI_API_KEY && wantsImage(text)) {
+          if (!(await limit(env, 'img:' + u, 25, 86400))) return { text: 'You\'ve made today\'s pictures. More tomorrow.' }
+          try {
+            const pic = await makeImage(env, clip(text, 1500))
+            return { text: pic.text || 'Here you go.', image: pic.image }
+          } catch (e) { return { text: e.message } }
+        }
         return { text: await ai(env, task, msgs, false) }
       }
       case 'caption': {
@@ -385,7 +369,7 @@ function same (a, b) {
  * appeals) stay in KV so they hold across instances. If KV is out of writes, the call still
  * goes through instead of failing.
  */
-const MEM_LIMITS = /^(ip|ai|ask|chk|chkwarn|stt|rc):/
+const MEM_LIMITS = /^(ip|ai|ask|chk|chkwarn|stt|rc|img):/
 const memHits = new Map()
 async function limit (env, key, max, seconds) {
   if (MEM_LIMITS.test(key)) {

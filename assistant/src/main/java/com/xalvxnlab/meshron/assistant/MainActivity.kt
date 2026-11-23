@@ -74,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -365,6 +366,14 @@ class MainActivity : ComponentActivity(), Host {
                 Text("  " + (if (l.ok) "✓ " else "! ") + l.result, color = Hud.dim, fontFamily = FontFamily.Monospace, fontSize = 12.sp, maxLines = 2)
             }
             is Line.Oops -> Text("⚠ " + l.text, color = Hud.red, fontSize = 14.sp)
+            is Line.Pic -> Column(Modifier.fillMaxWidth().padding(end = 48.dp)) {
+                l.thumb?.let { b ->
+                    androidx.compose.foundation.Image(b.asImageBitmap(), l.caption.ifEmpty { "Picture" },
+                        modifier = Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).clickable { Pictures.open(this@MainActivity, l.uri) },
+                        contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+                } ?: Text("▸ picture saved to Pictures/Meshron", color = Hud.green, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.clickable { Pictures.open(this@MainActivity, l.uri) })
+                if (l.caption.isNotEmpty()) Text(l.caption, color = Hud.dim, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            }
         }
     }
 

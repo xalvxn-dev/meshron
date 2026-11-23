@@ -21,6 +21,8 @@ sealed class Line {
     /** A tool the assistant ran: "flashlight · on" and how it went. */
     data class Act(val label: String, val result: String, val ok: Boolean) : Line()
     data class Oops(val text: String) : Line()
+    /** A picture the AI made (saved to the gallery). */
+    data class Pic(val uri: android.net.Uri, val thumb: Bitmap?, val caption: String) : Line()
 }
 
 /**
@@ -33,6 +35,8 @@ class Brain(private val api: Api, private val host: Host) {
     private val device = Device(host)
     private var messages = JSONArray()
     var onReply: ((String) -> Unit)? = null
+    /** Set by the floating orb: there is no chat on screen, so a new picture opens full screen. */
+    var onPicture: ((android.net.Uri) -> Unit)? = null
     /** True while running a command another device sent (it never goes on to a third device). */
     var remoteRun = false
     /** An answer from another device to a command sent from here. */
@@ -74,6 +78,15 @@ class Brain(private val api: Api, private val host: Host) {
         repeat(16) {
             val r = api.step(messages, context(), image)
             image = null
+            r.optJSONArray("images")?.let { a ->
+                for (i in 0 until a.length()) {
+                    val p = a.optJSONObject(i) ?: continue
+                    val saved = runCatching { Pictures.save(host.ctx, p.optString("image")) }.getOrNull()
+                    if (saved == null) { lines += Line.Oops("Couldn't save the picture"); continue }
+                    lines += Line.Pic(saved.first, saved.second, p.optString("caption"))
+                    onPicture?.invoke(saved.first)
+                }
+            }
             if (r.has("text")) {
                 val reply = r.getString("text")
                 messages.put(JSONObject().put("role", "assistant").put("content", reply))
@@ -117,6 +130,7 @@ class Brain(private val api: Api, private val host: Host) {
     }
 
     private fun context() = JSONObject()
+        .put("pictures", true)
         .put("now", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm, EEEE")))
         .put("timezone", ZoneId.systemDefault().id)
         .put("battery", batteryPercent(host.ctx))
