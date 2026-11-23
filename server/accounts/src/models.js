@@ -53,7 +53,8 @@ export function score (name) {
   }
   const size = Math.max(...[...id.matchAll(/(\d+(?:\.\d+)?)b\b/g)].map((m) => +m[1]), 0)
   const famous = /gpt-oss|kimi|qwen|llama-4|deepseek|llama-3\.3|mistral|claude|gpt-5|gpt-4/i.test(id) ? 4 : 0
-  return Math.min(36, 8 + Math.log2(Math.max(size, 1)) * 3.6) + famous - (/instant|mini|small|tiny/.test(id) ? 4 : 0)
+  // Groq answers in a second or two: a strong Groq model goes ahead of Gemini, which can take much longer.
+  return Math.min(36, 8 + Math.log2(Math.max(size, 1)) * 3.6) + famous + 10 - (/instant|mini|small|tiny/.test(id) ? 4 : 0)
 }
 const vision = (n) => /^gemini:/.test(n) || /llama-4|vision|maverick|scout|-vl\b|pixtral|qwen.*vl/i.test(n)
 
@@ -130,7 +131,7 @@ export async function chat (env, body, opts = {}) {
     delete b.reasoning_effort; delete b.reasoning_format
     if (/gpt-oss/i.test(model)) b.reasoning_effort = 'low' // think briefly: fast, and fits the token cap
     else if (/qwen3/i.test(model)) b.reasoning_effort = 'none'
-    else if (provider === 'gemini' && /2\.5-flash/.test(model)) b.reasoning_effort = 'low'
+    else if (provider === 'gemini') b.reasoning_effort = 'low' // newer Gemini models think long by default: keep it short
     let r
     try {
       r = await fetch(ep.url, { method: 'POST', headers: { authorization: 'Bearer ' + ep.key, 'content-type': 'application/json' }, body: JSON.stringify(b), signal: AbortSignal.timeout(45000) })
