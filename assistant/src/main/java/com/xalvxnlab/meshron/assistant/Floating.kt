@@ -67,6 +67,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.min
@@ -91,9 +92,9 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         fun start(c: Context) {
             val orb = Memory.floating(c) && Settings.canDrawOverlays(c)
             val ears = Memory.always(c) && Device.granted(c, Manifest.permission.RECORD_AUDIO)
-            if (orb || ears) runCatching { androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, FloatingService::class.java)) }
+            if (orb || ears || Remote.accept(c)) runCatching { androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, FloatingService::class.java)) }
         }
-        fun wanted(c: Context) = (Memory.floating(c) && Settings.canDrawOverlays(c)) || (Memory.always(c) && Device.granted(c, Manifest.permission.RECORD_AUDIO))
+        fun wanted(c: Context) = (Memory.floating(c) && Settings.canDrawOverlays(c)) || (Memory.always(c) && Device.granted(c, Manifest.permission.RECORD_AUDIO)) || Remote.accept(c)
         fun stop(c: Context) { c.stopService(Intent(c, FloatingService::class.java)) }
         /** Restarts it so a new listening mode takes effect. */
         fun restart(c: Context) { if (running) { stop(c); Handler(Looper.getMainLooper()).postDelayed({ start(c) }, 400) } }
@@ -144,7 +145,14 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         running = true; instance = this
         startShake()
         brain = Brain(Api(this), this)
-        brain.onReply = { reply -> show(Memory.name(this).uppercase(), plain(reply), autoHide = !Memory.speak(this)); if (Memory.speak(this)) Speaker.say(this, reply) }
+        brain.onReply = { reply ->
+            remoteCmd?.let { Remote.answer(this, it, plain(reply)); remoteAnswered = true }
+            show(Memory.name(this).uppercase(), plain(reply), autoHide = !Memory.speak(this)); if (Memory.speak(this)) Speaker.say(this, reply)
+        }
+        // Commands from the person's other devices (when allowed), one at a time.
+        Remote.onCommand = { m -> scope.launch { runRemote(m) } }
+        Remote.approver = { t, d -> approve(t, d) }
+        Remote.start(this)
         Speaker.listeners += speakingHook
 
         wm = getSystemService(WindowManager::class.java)
@@ -204,7 +212,7 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val hide = PendingIntent.getService(this, 1, Intent(this, FloatingService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(this, "floating").setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(if (always) "Listening for \"Hey " + Memory.name(this) + "\"" else Memory.name(this) + " is ready")
+            .setContentTitle(if (always) "Listening for \"Hey " + Memory.name(this) + "\"" else if (Remote.accept(this) && !Memory.floating(this)) Memory.name(this) + ": ready for your other devices" else Memory.name(this) + " is ready")
             .setContentText(if (always) "Say \"Hey " + Memory.name(this) + "\" then your request." else "Tap the floating orb to talk.")
             .setOngoing(true).setContentIntent(open).addAction(0, "Hide", hide).build()
         val type = if (android.os.Build.VERSION.SDK_INT >= 34)
@@ -328,7 +336,22 @@ class FloatingService : Service(), LifecycleOwner, SavedStateRegistryOwner, Host
     private fun stopShake() { shaker?.let { getSystemService(android.hardware.SensorManager::class.java).unregisterListener(it) }; shaker = null }
 
     // ---- Host (the tools ask the orb, not a screen) ----
+    private var remoteCmd: org.json.JSONObject? = null
+    private var remoteAnswered = false
+    private val remoteLock = kotlinx.coroutines.sync.Mutex()
+    private suspend fun runRemote(m: org.json.JSONObject) = remoteLock.withLock {
+        while (busy) delay(300)
+        remoteCmd = m; remoteAnswered = false; brain.remoteRun = true
+        show("FROM " + m.optString("fromName", "OTHER DEVICE").uppercase(), m.optString("text"), autoHide = false)
+        try { brain.ask(m.optString("text")) } finally {
+            if (!remoteAnswered) Remote.answer(this, m, brain.lines.lastOrNull()?.let { (it as? Line.Oops)?.text ?: (it as? Line.Act)?.let { a -> a.label + ": " + a.result } } ?: "Done.")
+            brain.remoteRun = false; remoteCmd = null
+        }
+    }
+
     override suspend fun approve(title: String, detail: String): Boolean {
+        // Running another device's command: that device approves (nobody may be at this phone).
+        remoteCmd?.let { return Remote.askApproval(this, it, title, detail) }
         val d = CompletableDeferred<Boolean>()
         asking = Triple(title, detail, d)
         if (Memory.speak(this)) Speaker.say(this, title)

@@ -201,5 +201,23 @@ function demo (plan, hidden) {
   return steps.map((s) => ({ at: s.at, len: s.len }))
 }
 
-module.exports = { show, close, describe, toast, point, demo, storage, system, battery, KINDS }
+// ---- The board: the whole screen as a hologram whiteboard (stays until cleared) ----
+let boardWin = null
+/** Writes and draws on the board: { items, title?, fresh?, dim? }. */
+function board (spec, hidden) {
+  const send = () => boardWin.webContents.send('a-event', 'board', spec)
+  if (boardWin && !boardWin.isDestroyed()) { send(); boardWin.showInactive(); return }
+  const d = screen.getPrimaryDisplay(); const b = d.workArea
+  boardWin = new BrowserWindow({ x: b.x, y: b.y, width: b.width, height: b.height, frame: false, transparent: true, resizable: false, movable: false, focusable: false,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
+  boardWin.setAlwaysOnTop(true, 'floating'); boardWin.setIgnoreMouseEvents(true, { forward: true }); boardWin.setContentProtection(!!hidden)
+  boardWin.loadFile(path.join(__dirname, 'asst-bundle', 'board.html'))
+  boardWin.webContents.once('did-finish-load', () => { if (boardWin && !boardWin.isDestroyed()) { send(); boardWin.showInactive() } })
+  boardWin.on('closed', () => { boardWin = null })
+}
+function boardClose () { if (boardWin && !boardWin.isDestroyed()) boardWin.destroy(); boardWin = null }
+function boardMouse (on) { if (boardWin && !boardWin.isDestroyed()) boardWin.setIgnoreMouseEvents(!on, { forward: true }) }
+
+module.exports = { board, boardClose, boardMouse, show, close, describe, toast, point, demo, storage, system, battery, KINDS }
 

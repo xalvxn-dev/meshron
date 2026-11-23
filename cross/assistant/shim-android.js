@@ -24,6 +24,8 @@
     gameCompact: async () => true,
     gameInput: async () => true,
     gameRelease: async () => true,
-    gameScreen: async () => ({ w: innerWidth, h: innerHeight })
+    gameScreen: async () => ({ w: innerWidth, h: innerHeight }),
+    boardClose: async () => { if (N.boardClose) N.boardClose(); return true },
+    boardMouse: async () => true
   }
 })()

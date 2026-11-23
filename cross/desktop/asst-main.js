@@ -34,7 +34,7 @@ const orbShown = () => settings().orb && !isPal()
 function applyCompanion () {
   if (isPal() && settings().orb) { pal.open(!!settings().hidden); if (orb && !orb.isDestroyed()) orb.hide() } else { pal.close(); if (orb && !orb.isDestroyed() && settings().orb) orb.showInactive() }
 }
-const DEFAULTS = { skin: 'reactor', theme: 'midnight', hidden: false, name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
+const DEFAULTS = { remote: false, remoteTarget: '', skin: 'reactor', theme: 'midnight', hidden: false, name: 'Meshron', studio: true, studioVoice: 'george', speak: true, always: false, hotkey: 'Ctrl+Alt+Space', orb: true, startup: true }
 const settings = () => Object.assign({}, DEFAULTS, data.settings)
 function account () {
   try { return data.account ? JSON.parse(safeStorage.decryptString(Buffer.from(data.account, 'base64'))) : null } catch { return null }
@@ -48,6 +48,35 @@ async function post (p, body) {
   const o = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(r.status === 401 ? 'Wrong username or password' : (o.error || 'Something went wrong (' + r.status + ')'))
   return o
+}
+
+// ---- The person's other devices (remote control, same account) ----
+let remoteCtx = null // set while running a command sent from another device
+const remoteQueue = []
+const rc = require('./asst-remote')({
+  post, data, save, settings,
+  signedIn: () => !!account(),
+  changed: (list) => { for (const w of [panel]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'devices', list) },
+  runCommand: (m) => {
+    new Notification({ title: 'Meshron Assistant', body: 'From ' + (m.fromName || 'your other device') + ': ' + m.text, icon }).show()
+    remoteQueue.push(m); runRemoteQueue()
+  },
+  showReply: (m, p) => {
+    const who = (p && p.name) || m.fromName || 'Other device'
+    line({ who: 'me', text: '[' + who + '] ' + m.text })
+    strip(who.toUpperCase(), m.text, !settings().speak)
+    if (settings().speak) say(m.text)
+  },
+  approveFor: (m) => approve((m.fromName || 'Other device') + ': ' + m.title, m.detail)
+})
+async function runRemoteQueue () {
+  if (remoteCtx || !remoteQueue.length) return
+  while (busy) await new Promise((r) => setTimeout(r, 300))
+  const m = remoteQueue.shift(); remoteCtx = m
+  try { await ask(m.text) } finally {
+    if (remoteCtx && !remoteCtx.answered) rc.send(m.from, { kind: 'reply', id: m.id, text: 'Done.', done: true }).catch(() => {})
+    remoteCtx = null; runRemoteQueue()
+  }
 }
 
 // ---- Windows ----
@@ -126,6 +155,8 @@ let busy = false
 let approval = null
 
 function approve (title, detail) {
+  // Running a command from another device: that device approves (nobody may be at this PC).
+  if (remoteCtx) return rc.askApproval(remoteCtx, title, detail)
   return new Promise((resolve) => {
     approval = resolve
     state.asking = { title, detail }; broadcast()
@@ -154,6 +185,7 @@ const toolCtx = {
   },
   showcase: (kind) => stageShow(kind),
   hidden: () => !!settings().hidden,
+  board: (spec) => { showcase.board(spec, !!settings().hidden); return 'On the board' },
   game: () => { game.open(!!settings().hidden); return 'Opened game mode' },
   companion: (action) => companion(action),
   point: (rect, note) => showcase.point(rect, note, !!settings().hidden),
@@ -227,6 +259,7 @@ function companion (action) {
 async function local (t) {
   const s = t.toLowerCase().trim().replace(/[.!?]+$/, '')
   let m
+  if (/^(?:clear|wipe|close|erase)(?: the| your)? (?:board|screen drawing|drawings?)$|^clear the screen$/.test(s)) { showcase.boardClose(); return 'Board cleared.' }
   // The companion (when one is chosen) moves around on request.
   if (isPal()) {
     const act = /\b(come here|come to me|come over)\b/.test(s) ? 'come' : /\b(sit (down|on)|perch|get on (my|the) window)\b/.test(s) ? 'sit' : /\b(go to sleep|take a nap|nap time)\b/.test(s) ? 'sleep' : /\bwake up\b/.test(s) ? 'wake'
@@ -265,6 +298,15 @@ async function ask (text, image) {
   if (/\b(thank(s| you)|love (you|u)|you'?re (the best|amazing|awesome)|good job|well done)\b/i.test(text)) mood('love', 2600)
   setMode('thinking'); strip('YOU', text, false)
   try {
+    // For another of the person's devices ("on my phone, …" or the device picked in the panel)?
+    const rt = remoteCtx ? null : rc.route(text)
+    if (rt && rt.local) text = rt.local
+    else if (rt && rt.missing) { reply('I can\'t see your ' + rt.missing + '. Sign in to Meshron Assistant there with the same account and turn on "Control from my other devices".'); return }
+    else if (rt && rt.device) {
+      line({ who: 'act', text: 'sent to ' + rt.device.name + ' · ' + rt.text.slice(0, 60), ok: true })
+      try { await rc.command(rt.device, rt.text); strip(rt.device.name.toUpperCase(), 'Sent. Waiting for ' + rt.device.name + '…', true) } catch (e) { reply(e.message) }
+      setMode('idle'); return
+    }
     const l = await local(text)
     if (l) { reply(l); return }
     if (!account()) { reply('Sign in first: open Meshron Assistant from the tray.'); return }
@@ -294,9 +336,11 @@ async function ask (text, image) {
     if (messages.length > 40) messages = messages.slice(-24)
   } catch (e) {
     line({ who: 'oops', text: e.message }); strip('SYSTEM', e.message, true); setMode('idle')
+    if (remoteCtx) { remoteCtx.answered = true; rc.send(remoteCtx.from, { kind: 'reply', id: remoteCtx.id, text: 'Problem: ' + e.message, done: true }).catch(() => {}) }
   } finally { busy = false; if (state.mode === 'thinking') setMode('idle') }
 }
 function reply (text) {
+  if (remoteCtx) { remoteCtx.answered = true; rc.send(remoteCtx.from, { kind: 'reply', id: remoteCtx.id, text, done: true }).catch(() => {}) }
   line({ who: 'me', text })
   strip('MESHRON', text, !settings().speak)
   setMode('idle')
@@ -422,6 +466,7 @@ function setSettings (patch) {
   if ('hidden' in patch) for (const w of [panel, orb]) if (w && !w.isDestroyed()) w.setContentProtection(!!settings().hidden)
   if ('orb' in patch && orb) { if (orbShown()) orb.showInactive(); else orb.hide() }
   if ('orb' in patch || 'skin' in patch) applyCompanion()
+  if ('remote' in patch) { rc.register(); rc.kick() }
   if ('hidden' in patch && pal.window()) pal.window().setContentProtection(!!settings().hidden)
   if ('skin' in patch && orb && !orb.isDestroyed()) { const b = orbBounds(); orb.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height }); orb.webContents.send('a-event', 'side', b.island || !b.right ? 'left' : 'right') }
   for (const w of [panel, orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'settings', settings())
@@ -470,6 +515,10 @@ ipcMain.handle('a', async (e, what, arg) => {
     // The orb: let clicks through its empty area; drag it and let it settle on a side.
     case 'orbMouse': if (orb) orb.setIgnoreMouseEvents(!arg, { forward: true }); return true
     case 'palMouse': pal.mouse(!!arg); return true
+    case 'devices': return rc.register()
+    case 'deviceId': return rc.id()
+    case 'boardMouse': showcase.boardMouse(!!arg); return true
+    case 'boardClose': showcase.boardClose(); return true
     case 'orbMove': {
       if (!orb || FACES.includes(settings().skin)) return true
       const [x, y] = orb.getPosition()
@@ -500,6 +549,7 @@ app.whenReady().then(() => {
   makeTray()
   openOrb()
   applyCompanion()
+  rc.start()
   registerHotkey()
   startWake()
   applyStartup()

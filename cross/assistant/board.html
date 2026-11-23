@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Meshron board</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #x { position: absolute; right: 18px; top: 18px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(34, 211, 197, .6); background: rgba(4, 8, 16, .85); color: #E6F7FF; font: 600 16px "Segoe UI", Roboto, sans-serif; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <button id="x" title="Clear the board">✕</button>
+  <script src="shim-android.js"></script>
+  <script src="board.js"></script>
+</body>
+</html>

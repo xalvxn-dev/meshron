@@ -26,6 +26,10 @@ contextBridge.exposeInMainWorld('Assistant', {
   orbMove: (dx, dy) => call('orbMove', { dx, dy }),
   orbDrop: (right) => call('orbDrop', { right }),
   palMouse: (on) => call('palMouse', on),
+  boardMouse: (on) => call('boardMouse', on),
+  devices: () => call('devices'),
+  deviceId: () => call('deviceId'),
+  boardClose: () => call('boardClose'),
   // Game mode.
   openGame: () => call('openGame'),
   gameModels: () => call('gameModels'),

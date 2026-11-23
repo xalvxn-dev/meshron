@@ -33,17 +33,31 @@ class Brain(private val api: Api, private val host: Host) {
     private val device = Device(host)
     private var messages = JSONArray()
     var onReply: ((String) -> Unit)? = null
+    /** True while running a command another device sent (it never goes on to a third device). */
+    var remoteRun = false
+    /** An answer from another device to a command sent from here. */
+    fun remoteAnswer(who: String, text: String) { lines += Line.Me("[$who] $text"); onReply?.invoke(text) }
 
     fun reset() { messages = JSONArray(); lines.clear() }
 
     /** [shown] is what the transcript shows when it differs from what's sent (a whole document, say). */
     suspend fun ask(text: String, image: Bitmap? = null, shown: String? = null) {
-        val t = text.trim()
+        var t = text.trim()
         if (t.isEmpty() && image == null) return
         lines += Line.You(shown ?: if (image != null) "📷 $t" else t)
         if (Regex("\\b(thank(s| you)|love (you|u)|you'?re (the best|amazing|awesome)|good job|well done)\\b", RegexOption.IGNORE_CASE).containsMatchIn(t)) Look.feel("love", 2600)
         thinking.value = true
         try {
+            // For another of the person's devices ("on my PC, …" or the device picked in settings)?
+            if (!remoteRun && shown == null && image == null) when (val r = Remote.route(host.ctx, t)) {
+                is Remote.Route.To -> {
+                    try { Remote.command(host.ctx, this, r.dev, r.text); lines += Line.Act("sent to " + r.dev.name, r.text.take(70), true) } catch (e: Exception) { say(e.message ?: "I couldn't reach " + r.dev.name) }
+                    return
+                }
+                is Remote.Route.Missing -> { say("I can't see your " + r.what + ". Sign in to Meshron Assistant there with the same account and turn on \"Control from my other devices\"."); return }
+                is Remote.Route.Here -> t = r.text
+                null -> {}
+            }
             if (shown == null && image == null) local(t)?.let { say(it); return }
             if (!online()) { say("I'm offline right now. I can still open apps, use the flashlight, set alarms and timers, open the camera, check the battery and lock the phone."); return }
             messages.put(JSONObject().put("role", "user").put("content", t.ifEmpty { "What is this?" }))

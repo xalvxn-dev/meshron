@@ -23,6 +23,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -128,6 +129,8 @@ class MainActivity : ComponentActivity(), Host {
         super.onResume()
         overlayAllowed.value = Settings.canDrawOverlays(this)
         if (api.signedIn && !FloatingService.running && FloatingService.wanted(this)) FloatingService.start(this)
+        // Answers and approval questions for commands sent from this screen to the person's other devices.
+        if (api.signedIn) { Remote.approver = { t, d -> approve(t, d) }; Remote.start(this) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -447,6 +450,24 @@ class MainActivity : ComponentActivity(), Host {
             }
             SetRow("Quick Settings tile", "Pull down the shade, tap the pencil, and drag \"Meshron\" into your tiles.") { Text("", color = Hud.dim) }
             SetRow("Home-screen widget", "Long-press your home screen, tap Widgets, and add \"Meshron Assistant\".") { Text("", color = Hud.dim) }
+
+            Section("Your other devices")
+            var remoteOn by remember { mutableStateOf(Remote.accept(this@MainActivity)) }
+            var devs by remember { mutableStateOf(Remote.devices) }
+            var target by remember { mutableStateOf(Remote.target(this@MainActivity)) }
+            LaunchedEffect(Unit) { runCatching { devs = Remote.register(this@MainActivity) } }
+            SetRow("Control from my other devices", "Your PC (signed in to the same account) can give this phone commands, like \"on my phone, set an alarm for 7\". Anything risky asks on the device that sent it.") {
+                Switch(remoteOn, { on -> remoteOn = on; Remote.setAccept(this@MainActivity, on); scope.launch { runCatching { devs = Remote.register(this@MainActivity) } }; if (on) FloatingService.start(this@MainActivity) else FloatingService.restart(this@MainActivity) }, colors = hudSwitch())
+            }
+            val others = devs.filter { !it.me }
+            Text(if (others.isEmpty()) "No other devices yet. Sign in to Meshron Assistant on your PC with the same account." else "Talk to: (or just say \"on my PC, …\")", color = Hud.dim, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+            if (others.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (listOf(Remote.Dev("", "This phone", "android", true, true, true)) + others).forEach { d ->
+                    val on = (target.isEmpty() && d.id.isEmpty()) || target == d.id
+                    Text(d.name + if (d.id.isEmpty()) "" else if (!d.online) " · offline" else if (!d.accept) " · not allowed" else "", color = if (on) Color(0xFF02060C) else Hud.text, fontSize = 13.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Hud.cyan else Hud.panel).border(1.dp, Hud.line, RoundedCornerShape(50)).clickable { target = d.id; Remote.setTarget(this@MainActivity, d.id) }.padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+            }
 
             Section("Game mode")
             SetRow("Game mode", "Games played with your hands and face: Hand School, Block Drop, Block Builder, Orb Pop, Face Dash, Air Keys, Mood Mirror and sign-language letters. Your camera picture stays hidden unless you turn it on.") {

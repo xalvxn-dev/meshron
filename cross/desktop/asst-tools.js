@@ -294,6 +294,12 @@ $r = $hit.Current.BoundingRectangle
     }
     case 'showcase': return ok(await ctx.showcase(String(x.kind || '')))
     case 'game_mode': return ok(ctx.game())
+    case 'board': {
+      const items = Array.isArray(x.items) ? x.items : []
+      if (!items.length && !x.clear) return ok('Nothing to draw')
+      if (x.clear && !items.length) { require('./asst-show').boardClose(); return ok('Board cleared') }
+      return ok(ctx.board({ items, title: x.title, fresh: x.fresh !== false && !x.add, dim: x.dim }) + ' (' + items.length + ' item' + (items.length === 1 ? '' : 's') + ')')
+    }
     case 'create_shortcut': return ok(await P(ctx).createShortcut(x))
     case 'memory_usage': return ok(await ctx.showcase('memory'))
     case 'draw_in_paint': return ok(await P(ctx).drawInPaint(x))

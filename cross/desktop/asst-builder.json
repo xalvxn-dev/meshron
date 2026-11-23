@@ -18,7 +18,7 @@
     "asst-tools.js",
     "asst-show.js",
     "asst-game.js",
-    "asst-pal.js", "asst-power.js",
+    "asst-pal.js", "asst-power.js", "asst-remote.js",
     "asst-preload.js",
     "asst-bundle/**/*",
     "package.json",

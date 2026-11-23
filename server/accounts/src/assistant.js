@@ -25,6 +25,9 @@ const N = (description) => ({ type: 'number', description })
 const B = (description) => ({ type: 'boolean', description })
 
 // Run on the phone.
+// The board (Windows and Android): the screen as a whiteboard for teaching.
+const BOARD_TOOL = fn('board', 'Your board: the whole screen as a hologram whiteboard over everything. Use it to TEACH and EXPLAIN visually (maths, science, diagrams, plans, anything), writing step by step as you explain; it stays until cleared. Coordinates 0-100 across (x) and down (y); keep a margin (5-95). Items appear in order like live writing. Types: text {text,x,y,size,color,w,bold}; math {text,x,y,size} with frac{a}{b}, sqrt{x}, x^2, x^{n+1}, a_1, \\pi \\theta, * / <= >= != +- ->; steps {lines:[...],x,y,size} a numbered list (lines may use math); line {points:[[x,y],...],dashed,label}; arrow {from:[x,y],to:[x,y],label}; circle {x,y,r,fill}; rect {x,y,w,h}; highlight {x,y,w,h} (marker behind text); tick/cross/dot {x,y,label}; bracket {x,y,h,label}; graph {x,y,w,h,fn or fns:[...],xmin,xmax,ymin,ymax,points:[{x,y,label}]} with fn like "x^2-2" or "sin(x)". Sizes are % of screen height (text 3-5, titles 6). Colors: cyan, lime, amber, pink, blue, red, white, yellow. pause (seconds) after an item waits. fresh false adds to what is there.', { title: S('Heading at the top'), items: { type: 'array', items: { type: 'object' } }, fresh: B('Start a clean board (default true)'), clear: B('Just clear it') }, [])
+
 const DEVICE_TOOLS = [
   fn('open_app', 'Open an installed app by name.', { name: S('App name, e.g. "WhatsApp", "Camera", "Settings"') }, ['name']),
   fn('open_url', 'Open a web page or link in the browser.', { url: S('Full https URL') }, ['url']),
@@ -49,6 +52,7 @@ const DEVICE_TOOLS = [
 ]
 // Android, through the accessibility service and the gallery / a folder the person chose.
 const ANDROID_HANDS = [
+  BOARD_TOOL,
   fn('ui_read', 'Read what is on the screen right now, as a numbered list of buttons, fields, text and lists, plus the app in front. Do this before tapping or typing, and again after, to check.'),
   fn('ui_tap', 'Tap something on screen by its number from ui_read, or by its words.', { target: S('A number from ui_read, or the words on it'), long: B('Long-press instead') }, ['target']),
   fn('ui_type', 'Type text into a text box (the focused one, or one named by its number or words).', { text: S('What to type'), target: S('Optional: which box') }, ['text']),
@@ -96,6 +100,7 @@ const WINDOWS_TOOLS = [
   fn('lock_pc', 'Lock the PC.'),
   fn('read_document', 'Let the person pick a document or photo to read or explain.', { question: S('What to do with it') }, ['question']),
   fn('showcase', 'Show something visually: the orb moves to the centre of the screen and displays it around itself. Use when the person asks to see or pick voices, their storage / disk space, CPU, GPU or memory use, the battery, or what you can do (tour).', { kind: S('voices, storage, system, battery or tour') }, ['kind']),
+  BOARD_TOOL,
   fn('create_shortcut', 'Make a desktop (or Start menu) shortcut to an app, file, folder or website.', { target: S('App name, full path, or https URL'), name: S('Optional shortcut name'), where: S('desktop (default) or start menu') }, ['target']),
   fn('memory_usage', 'Show what is using the PC\'s memory (RAM) and CPU: the biggest apps, with a visual.'),
   fn('draw_in_paint', 'Open Paint and draw with the mouse. Shapes are in a 0-1 square (0,0 top left): lines (lists of points), circles and boxes. Build pictures from many simple shapes.', { shapes: { type: 'array', items: { type: 'object', properties: { line: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '[[x,y],...]' }, circle: { type: 'object', properties: { x: N('centre x'), y: N('centre y'), r: N('radius') } }, rect: { type: 'object', properties: { x: N('left'), y: N('top'), w: N('width'), h: N('height') } } } } } }, ['shapes']),
@@ -171,7 +176,71 @@ export function assistant ({ fail, limit, authed, clip }) {
     return out
   }
 
+  // ---- Remote control between the person's own devices (same account) ----
+  // Each device registers itself; a device that allows it can be sent commands from the person's
+  // other devices. Everything goes through one small mailbox per device (commands, answers,
+  // approval questions and decisions), read and emptied by that device every few seconds.
+  const devId = (v) => { const s = String(v || ''); if (!/^[A-Za-z0-9_-]{8,64}$/.test(s)) throw fail('Bad device'); return s }
+  const devicesOf = async (env, u) => { try { return JSON.parse((await env.ACCOUNTS.get('rd:' + u)) || '{}') } catch { return {} } }
+  const ONLINE = 90 // seconds since it last checked in
+  const listOut = (all, me) => Object.entries(all).map(([id, d]) => ({ id, name: d.name, platform: d.platform, accept: !!d.accept, online: Date.now() / 1000 - (d.seen || 0) < ONLINE, me: id === me })).sort((a, b) => (b.online - a.online) || String(a.name).localeCompare(b.name))
+  async function post (env, u, to, msg) {
+    const key = 'rm:' + u + ':' + to
+    let box = []; try { box = JSON.parse((await env.ACCOUNTS.get(key)) || '[]') } catch {}
+    box.push(Object.assign({ at: Date.now() }, msg)); box = box.slice(-30)
+    await env.ACCOUNTS.put(key, JSON.stringify(box), { expirationTtl: 900 })
+  }
+  const remote = {
+    /** Registers (or updates) this device and returns the person's devices. */
+    async '/v1/remote/devices' ({ username, authKey, device, accept }, env) {
+      const { u } = await authed(env, username, authKey)
+      const id = devId(device && device.id)
+      const all = await devicesOf(env, u)
+      const now = Math.floor(Date.now() / 1000)
+      const prev = all[id] || {}
+      const next = { name: clip(String((device && device.name) || prev.name || 'Device'), 40), platform: String((device && device.platform) || prev.platform || '').slice(0, 12), accept: accept == null ? !!prev.accept : !!accept, seen: now }
+      if (JSON.stringify(Object.assign({}, prev, { seen: 0 })) !== JSON.stringify(Object.assign({}, next, { seen: 0 })) || now - (prev.seen || 0) > 60) {
+        all[id] = next
+        const ids = Object.keys(all); if (ids.length > 12) for (const k of ids.sort((a, b) => (all[a].seen || 0) - (all[b].seen || 0)).slice(0, ids.length - 12)) delete all[k]
+        await env.ACCOUNTS.put('rd:' + u, JSON.stringify(all))
+      }
+      return { devices: listOut(all, id) }
+    },
+    /** Sends something to one of the person's devices: a command (only to a device that allows it), or an answer / approval. */
+    async '/v1/remote/send' ({ username, authKey, from, to, msg }, env) {
+      const { u } = await authed(env, username, authKey)
+      const src = devId(from); const dst = devId(to)
+      if (!(await limit(env, 'rc:' + u, 600, 86400))) throw fail('Too many remote commands today', 429)
+      const all = await devicesOf(env, u)
+      if (!all[dst] || !all[src]) throw fail('That device is not signed in to your account', 404)
+      const m = msg && typeof msg === 'object' ? msg : {}
+      const kind = ['cmd', 'reply', 'ask', 'decide'].includes(m.kind) ? m.kind : 'cmd'
+      if (kind === 'cmd') {
+        if (!all[dst].accept) throw fail(all[dst].name + ' does not allow remote control. Turn it on there: Settings > Control from my other devices.', 403)
+        if (Date.now() / 1000 - (all[dst].seen || 0) > ONLINE) throw fail(all[dst].name + ' is offline (it needs to be on, with Meshron Assistant running).', 409)
+      }
+      const out = { kind, id: clip(String(m.id || ''), 40), from: src, fromName: all[src].name, text: clip(String(m.text || ''), 4000), title: clip(String(m.title || ''), 200), detail: clip(String(m.detail || ''), 400), aid: clip(String(m.aid || ''), 40), ok: !!m.ok, done: !!m.done }
+      await post(env, u, dst, out)
+      return { ok: true }
+    },
+    /** This device's mailbox (emptied as it's read). Also counts as checking in. */
+    async '/v1/remote/inbox' ({ username, authKey, device }, env) {
+      const { u } = await authed(env, username, authKey)
+      const id = devId(device)
+      const all = await devicesOf(env, u)
+      const now = Math.floor(Date.now() / 1000)
+      if (all[id] && now - (all[id].seen || 0) > 60) { all[id].seen = now; await env.ACCOUNTS.put('rd:' + u, JSON.stringify(all)) }
+      const key = 'rm:' + u + ':' + id
+      const raw = await env.ACCOUNTS.get(key)
+      if (!raw) return { messages: [] }
+      await env.ACCOUNTS.delete(key)
+      let box = []; try { box = JSON.parse(raw) } catch {}
+      return { messages: box.filter((m) => Date.now() - (m.at || 0) < 10 * 60 * 1000) }
+    }
+  }
+
   return {
+    ...remote,
     /**
      * One step of the conversation. Returns { text } when the assistant answers, or
      * { message, calls: [{ id, name, args }] } when the phone has tools to run.
@@ -183,8 +252,8 @@ export function assistant ({ fail, limit, authed, clip }) {
       const windows = ctx.platform === 'windows'
       const tools = windows ? [...WINDOWS_TOOLS, ...SERVER_TOOLS] : [...DEVICE_TOOLS, ...ANDROID_HANDS, ...SERVER_TOOLS]
       const how = windows
-        ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened. When teaching how to do something on the PC, show it with show_how (all the steps at once: point, circle, highlight, click, drag and drop, type), read_screen first if you need to see what is there; point_at is for a single thing. For memory or what is slowing the PC, use memory_usage. To draw something, use draw_in_paint.'
-        : '\nYou run on an Android phone.' + (ctx.canAct ? ' To work inside an app like a person (scrolling a feed, sending a message in WhatsApp, changing a setting): open_app, then ui_read, then ui_tap / ui_type / ui_scroll, and ui_read again to check. Send buttons are often an icon labelled "Send". Ask before sending anything the person didn\'t dictate word for word.' : ' Acting inside other apps is off; if asked, tell the person to turn on "Act on screen" in settings.')
+        ? '\nYou run on the person\'s Windows PC. To work inside an app: open_app or switch_to, then click / type_text / press_keys; use read_screen to see what happened. To teach or explain anything (maths, science, a concept, a plan), use the board: write it step by step with math, steps, arrows, shapes and graphs while you explain, and keep the spoken reply short (it is on the board). When teaching how to do something on the PC, show it with show_how (all the steps at once: point, circle, highlight, click, drag and drop, type), read_screen first if you need to see what is there; point_at is for a single thing. For memory or what is slowing the PC, use memory_usage. To draw something, use draw_in_paint.'
+        : '\nYou run on an Android phone. To teach or explain anything (maths, science, a concept), use the board: write it step by step while you explain, and keep the spoken reply short.' + (ctx.canAct ? ' To work inside an app like a person (scrolling a feed, sending a message in WhatsApp, changing a setting): open_app, then ui_read, then ui_tap / ui_type / ui_scroll, and ui_read again to check. Send buttons are often an icon labelled "Send". Ask before sending anything the person didn\'t dictate word for word.' : ' Acting inside other apps is off; if asked, tell the person to turn on "Act on screen" in settings.')
       // The person may have named their assistant (it answers to that name and calls itself by it).
       const named = typeof ctx.assistantName === 'string' && /^[\p{L}\p{N} .'-]{1,24}$/u.test(ctx.assistantName.trim()) ? ctx.assistantName.trim() : 'Meshron Assistant'
       const sys = SYSTEM.replace('You are Meshron Assistant,', 'You are ' + named + ' (Meshron Assistant),').replace('on the user\'s Android phone', windows ? 'on the user\'s Windows PC' : 'on the user\'s Android phone') + how + '\nContext: ' + clip(JSON.stringify({ now: ctx.now, timezone: ctx.timezone, battery: ctx.battery, name: ctx.name, language: ctx.language, screenAvailable: !!ctx.screen }), 800)

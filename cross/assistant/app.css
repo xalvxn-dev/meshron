@@ -154,3 +154,12 @@ body::before { content: ""; position: fixed; inset: 0; pointer-events: none; bac
 .theme { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 99px; border: 1px solid var(--stroke); background: rgba(0, 0, 0, .18); cursor: pointer; }
 .theme i { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, var(--a), var(--b)); }
 .theme.on { border-color: var(--accent); }
+
+/* Which device you're talking to. */
+.devbar { flex: none; display: flex; gap: 6px; align-items: center; padding: 0 16px; flex-wrap: wrap; }
+.devbar:empty { display: none; }
+.devlabel { font-size: 11px; color: var(--text3); margin-right: 2px; }
+.devchip { display: inline-flex; gap: 6px; align-items: baseline; border: 1px solid var(--stroke2); background: var(--layer); border-radius: 99px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+.devchip span { font-size: 10px; color: var(--text3); }
+.devchip.on { border-color: var(--accent); background: rgba(34, 211, 197, .12); }
+.devchip.off { opacity: .55; }

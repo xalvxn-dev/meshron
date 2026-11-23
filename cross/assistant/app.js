@@ -53,7 +53,18 @@
   }
 
   // ---- Home ----
-  let hero, status, convo, input, micBtn, heroReactor
+  let hero, status, convo, input, micBtn, heroReactor, devBar
+  /** Which device you're talking to: this PC, or one of your other devices (same account). */
+  async function drawDevices (list) {
+    if (!devBar) return
+    const me = await A.deviceId()
+    const others = (list || []).filter((d) => !d.me)
+    if (!others.length) { devBar.replaceChildren(); return }
+    const target = settings.remoteTarget || ''
+    const chip = (id, label, sub, on, ok) => h('button', { class: 'devchip' + (on ? ' on' : '') + (ok ? '' : ' off'), title: sub, onClick: async () => { settings = await A.setSettings({ remoteTarget: id }); drawDevices(list) } }, label, h('span', {}, sub))
+    devBar.replaceChildren(h('span', { class: 'devlabel' }, 'Talking to'), chip('', 'This PC', 'here', !target || target === me, true),
+      ...others.map((d) => chip(d.id, d.name, !d.online ? 'offline' : d.accept ? (d.platform === 'android' ? 'phone' : 'PC') : 'not allowed', target === d.id, d.online && d.accept)))
+  }
   function home () {
     const c = h('canvas', { title: 'Click to talk', onClick: () => A.listen() })
     heroReactor = window.Reactor(c)
@@ -63,7 +74,9 @@
     input = h('input', { placeholder: 'Ask or tell me to do something…', onKeydown: (e) => { if (e.key === 'Enter' && input.value.trim()) { A.ask(input.value.trim()); input.value = '' } } })
     micBtn = h('button', { class: 'mic', title: 'Talk (' + (settings.hotkey || 'no shortcut') + ')', onClick: () => (input.value.trim() ? (A.ask(input.value.trim()), (input.value = '')) : A.listen()) }, icon(0xE720))
     input.addEventListener('input', () => micBtn.replaceChildren(icon(input.value.trim() ? 0xE724 : 0xE720)))
-    root.replaceChildren(hero, convo, h('div', { class: 'composer' }, h('div', { class: 'box' }, input), micBtn),
+    devBar = h('div', { class: 'devbar' })
+    A.devices().then(drawDevices)
+    root.replaceChildren(hero, convo, devBar, h('div', { class: 'composer' }, h('div', { class: 'box' }, input), micBtn),
       h('div', { class: 'hint' }, 'Press ' + (settings.hotkey || 'the orb') + (settings.always ? ' or say "Hey ' + (settings.name || 'Meshron') + '"' : '') + ' to talk from anywhere'))
     renderHome()
     input.focus()
@@ -219,6 +232,7 @@
         h('div', { class: 'themes' }, THEMES.map(([id, name, a, b2]) => h('button', { class: 'theme' + ((settings.theme || 'midnight') === id ? ' on' : ''), style: '--a:' + a + ';--b:' + b2,
           onClick: async (e) => { const el = e.currentTarget; settings = await A.setSettings({ theme: id }); applyLook(settings); for (const x of document.querySelectorAll('.theme')) x.classList.toggle('on', x === el) } }, h('i', {}), name)))),
       h('div', { class: 'group' }, 'On screen'),
+      card(0xE703, 'Control from my other devices', 'Your phone or other PCs signed in to the same account can give this PC commands ("on my PC, open Spotify"). Anything risky asks on the device that sent it.', toggle('remote')),
       card(0xE8F4, 'Hide from screenshots', 'The chat, the orb and showcases won\'t appear in screenshots, recordings or screen sharing.', toggle('hidden')),
       card(0xE7F4, 'Floating orb', 'Stays over every app. Click to talk, drag to move, right-click to open this window.', toggle('orb')),
       card(0xE7E8, 'Start with Windows', 'Quietly in the tray, ready for your shortcut.', toggle('startup')),
@@ -259,6 +273,7 @@
     }
     if (ev === 'page') { page = data; draw() }
     if (ev === 'settings') { settings = data; applyLook(data) }
+    if (ev === 'devices') drawDevices(data)
     if (ev === 'heard') { const el = document.getElementById('heard'); if (el) el.textContent = data }
   })
   ;(async () => { settings = await A.settings(); applyLook(settings); st = await A.state(); document.querySelector('.appname').textContent = settings.name || 'Meshron Assistant'; draw(); renderApproval() })()
