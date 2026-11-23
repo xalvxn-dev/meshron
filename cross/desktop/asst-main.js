@@ -501,9 +501,9 @@ while ($true) {
       const m = /^HEARD ([\d.]+) (\S+) (.*)$/.exec(l)
       if (m) {
         const conf = +m[1]; const said = m[3]
-        // Only the wake phrase wakes it, and only when it's sure: "hey / ok / hi" + name at 70%,
-        // the bare name (easily confused with other words) at 88%.
-        const need = /^(hey|ok|okay|hi) /.test(said) ? 0.7 : 0.88
+        // Only the wake phrase wakes it, and only when it is sure enough: "hey / ok / hi" + name at 55%,
+        // the bare name (easily confused with other words) at 80%. Other speech never matches it.
+        const need = /^(hey|ok|okay|hi) /.test(said) ? 0.55 : 0.8
         const isWake = m[2] === 'wake'
         const woke = isWake && conf >= need && !busy && state.mode === 'idle'
         if (isWake) wakeLog(said + ' (' + Math.round(conf * 100) + '% sure) ' + (woke ? 'woke up' : conf < need ? 'not sure enough, ignored' : 'busy, ignored'))
