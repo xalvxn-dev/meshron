@@ -83,6 +83,7 @@ async function runRemoteQueue () {
 let panel = null; let orb = null; let tray = null
 const ORB_W = 380; const ORB_H = 150; const ORB_SIZE = 64
 
+game.attach({ panel: () => panel, openPanel: () => openPanel() })
 function openPanel (page) {
   if (panel && !panel.isDestroyed()) { if (panel.isMinimized()) panel.restore(); panel.show(); panel.focus(); if (page) panel.webContents.send('a-event', 'page', page); return }
   panel = new BrowserWindow({

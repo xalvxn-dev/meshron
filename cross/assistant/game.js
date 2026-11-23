@@ -17,6 +17,11 @@ import { createTracker } from './track.mjs'
 
 const A = window.Assistant
 const ANDROID = A.platform === 'android'
+const HASH = location.hash.slice(1)
+const ORB = /^orb=/.test(HASH) ? HASH.slice(4).split(',') : null
+const IN_PANEL = HASH === 'panel'
+// The game orb floats over other apps: its window is see-through except for the orb itself.
+if (ORB && !ORB[1]) { document.documentElement.style.background = 'transparent'; document.body.style.background = 'transparent' }
 const $ = (id) => document.getElementById(id)
 const cv = $('c'); const g = cv.getContext('2d'); const video = $('v')
 const C = { cyan: '#22D3C5', blue: '#6E7BFF', lime: '#B6F36A', amber: '#FFB020', red: '#FF5A6A', pink: '#FF6BD6', text: '#E6F7FF', dim: '#7FA3B8', faint: 'rgba(34,211,197,.35)' }
@@ -41,7 +46,7 @@ function size () {
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr) }
   g.setTransform(dpr, 0, 0, dpr, 0, 0)
 }
-function rr (x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath() }
+function rr (x, y, w, h, r) { r = Math.max(0, Math.min(r, w / 2, h / 2)); g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath() }
 function text (s, x, y, o = {}) {
   g.font = (o.weight || 400) + ' ' + Math.round((o.size || 16) * (o.raw ? 1 : S)) + 'px ' + (o.mono ? MONO : FONT)
   g.letterSpacing = o.mono ? (o.spacing == null ? 3 : o.spacing) + 'px' : '0px'
@@ -314,19 +319,25 @@ game({
 const BCOL = [C.cyan, C.lime, C.amber, C.pink, C.blue, '#FFFFFF']
 const emptyBuild = () => Array.from({ length: 10 }, () => Array.from({ length: 10 }, () => []))
 game({
-  id: 'build', name: 'Block Builder', blurb: 'Pinch to place, two fingers to remove', face: false, controls: 'point: aim   pinch: place   two fingers: remove   swipe: colour',
-  enter () { this.n = 10; this.h = store.get('build', null) || emptyBuild(); this.col = 0; this.sel = null },
+  id: 'build', name: 'Block Builder', blurb: 'Build, then turn the plot around', face: false, controls: 'point: aim   pinch: place   two fingers: remove   swipe: turn the plot   thumbs up: colour',
+  enter () { this.n = 10; this.h = store.get('build', null) || emptyBuild(); this.col = 0; this.sel = null; this.rot = store.get('buildRot', 0) },
+  // The plot turns in quarter turns: cells are drawn in "view" order and stored in "world" order.
+  w2v (i, j) { const m = this.n - 1; return [[i, j], [m - j, i], [m - i, m - j], [j, m - i]][this.rot] },
+  v2w (vi, vj) { const m = this.n - 1; const [i, j] = [[vi, vj], [vj, m - vi], [m - vi, m - vj], [m - vj, vi]][this.rot]; return { i, j } },
+  turn (d) { this.rot = (this.rot + d + 4) % 4; store.set('buildRot', this.rot); chirp(d > 0 ? 760 : 620, 0.06) },
+  keys (e) { if (e.key === 'q' || e.key === 'Q') this.turn(-1); if (e.key === 'e' || e.key === 'E') this.turn(1) },
   geo () { const t = Math.min(W / 26, H / 17); return { t, ox: W / 2, oy: H * 0.34 } },
   iso (i, j, k) { const { t, ox, oy } = this.geo(); return { x: ox + (i - j) * t, y: oy + (i + j) * t * 0.5 - k * t * 0.9 } },
   pick (pt) {
     const { t, ox, oy } = this.geo()
     const a = (pt.x - ox) / t; const b = (pt.y - oy) / (t * 0.5)
-    const i = Math.floor((a + b) / 2); const j = Math.floor((b - a) / 2)
-    return i >= 0 && j >= 0 && i < this.n && j < this.n ? { i, j } : null
+    const vi = Math.floor((a + b) / 2); const vj = Math.floor((b - a) / 2)
+    return vi >= 0 && vj >= 0 && vi < this.n && vj < this.n ? this.v2w(vi, vj) : null
   },
   update () {
     const h = primary()
-    if (h && h.swipe) { this.col = (this.col + (h.swipe === 'right' ? 1 : BCOL.length - 1)) % BCOL.length; chirp(900, 0.04) }
+    if (h && h.swipe) this.turn(h.swipe === 'right' ? 1 : -1)
+    if (became(h, 'thumbs')) { this.col = (this.col + 1) % BCOL.length; chirp(900, 0.04) }
     this.sel = cursor ? this.pick(cursor) : null
     if (!this.sel || ui.some((u) => u.hover)) return
     const stack = this.h[this.sel.i][this.sel.j]
@@ -336,13 +347,15 @@ game({
   draw () {
     topBar('block builder')
     const face = (pts, fill, stroke) => { g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1; g.stroke() }
+    const selV = this.sel ? this.w2v(this.sel.i, this.sel.j) : null
     for (let i = 0; i < this.n; i++) for (let j = 0; j < this.n; j++) {
-      const on = this.sel && this.sel.i === i && this.sel.j === j
+      const on = selV && selV[0] === i && selV[1] === j
       face([this.iso(i, j, 0), this.iso(i + 1, j, 0), this.iso(i + 1, j + 1, 0), this.iso(i, j + 1, 0)], on ? 'rgba(182,243,106,.18)' : 'rgba(34,211,197,.03)', on ? C.lime : 'rgba(34,211,197,.18)')
     }
     for (let s = 0; s < this.n * 2; s++) for (let i = 0; i < this.n; i++) {
       const j = s - i; if (j < 0 || j >= this.n) continue
-      this.h[i][j].forEach((ci, k) => {
+      const w = this.v2w(i, j)
+      this.h[w.i][w.j].forEach((ci, k) => {
         const col = BCOL[ci]
         g.shadowColor = col; g.shadowBlur = 6
         face([this.iso(i, j + 1, k + 1), this.iso(i + 1, j + 1, k + 1), this.iso(i + 1, j + 1, k), this.iso(i, j + 1, k)], hexA(col, 0.18), col)
@@ -352,7 +365,7 @@ game({
       })
     }
     if (this.sel) {
-      const k = this.h[this.sel.i][this.sel.j].length; const { i, j } = this.sel
+      const k = this.h[this.sel.i][this.sel.j].length; const [i, j] = selV
       g.setLineDash([4, 4]); face([this.iso(i, j, k + 1), this.iso(i + 1, j, k + 1), this.iso(i + 1, j + 1, k + 1), this.iso(i, j + 1, k + 1)], 'rgba(0,0,0,0)', BCOL[this.col]); g.setLineDash([])
     }
     BCOL.forEach((col, k) => {
@@ -360,7 +373,10 @@ game({
       button('c' + k, x - 22, y - 22, 44, 44, () => { g.strokeStyle = col; g.lineWidth = k === this.col ? 3 : 1.5; g.shadowColor = col; g.shadowBlur = k === this.col ? 16 : 0; g.strokeRect(x - 16, y - 16, 32, 32); g.fillStyle = hexA(col, 0.3); g.fillRect(x - 16, y - 16, 32, 32); g.shadowBlur = 0 }, () => { this.col = k })
     })
     hbutton('clear', W - 130, 110 + BCOL.length * 56, 110, 40, 'clear', () => { this.h = emptyBuild(); store.set('build', this.h) }, C.red)
-    for (const [i, l] of ['pinch or click: place', 'two fingers: remove', 'swipe: next colour'].entries()) text(l, 30, H - 80 + i * 22, { mono: true, size: 11, color: C.dim, spacing: 2, raw: true })
+    hbutton('turnl', 30, H / 2 - 24, 56, 48, '⟲', () => this.turn(-1))
+    hbutton('turnr', 96, H / 2 - 24, 56, 48, '⟳', () => this.turn(1))
+    text('turn  (q / e)', 91, H / 2 + 44, { align: 'center', mono: true, size: 10, color: C.dim, raw: true, spacing: 2 })
+    for (const [i, l] of ['pinch or click: place', 'two fingers: remove', 'swipe: turn the plot', 'thumbs up: next colour'].entries()) text(l, 30, H - 102 + i * 22, { mono: true, size: 11, color: C.dim, spacing: 2, raw: true })
   }
 })
 
@@ -650,6 +666,7 @@ if (!ANDROID) {
       if (h.pinch && !this.down) { this.down = true; A.gameInput({ type: 'button', b: 'l', down: true }) } else if (!h.pinch && this.down) { this.down = false; A.gameInput({ type: 'button', b: 'l', down: false }) }
       if (h.swipe === 'left' || h.swipe === 'right') { A.gameInput({ type: 'key', vk: VK.ALT, down: true }); tap(h.swipe === 'left' ? VK.LEFT : VK.RIGHT); setTimeout(() => A.gameInput({ type: 'key', vk: VK.ALT, down: false }), 120) }
     },
+    guide: [['point', 'Point: move the mouse'], ['pinch', 'Pinch: click'], ['pinchhold', 'Pinch and hold: drag'], ['two', 'Two fingers up, move: scroll'], ['swipe', 'Swipe: back / forward'], ['holdpalm', 'Hold an open palm: pause'], ['holdfist', 'Hold a fist: stop']],
     legend: () => ['point: move', 'pinch: click', 'pinch + hold: drag', 'two fingers: scroll', 'swipe: back / fwd', 'hold palm: pause', 'hold fist: stop'],
     status () { return this.paused ? 'paused' : 'active' }
   })
@@ -680,6 +697,7 @@ if (!ANDROID) {
       hold(VK.SHIFT, h.gesture === 'three') // three fingers: sneak
       if (h.swipe) A.gameInput({ type: 'wheel', delta: h.swipe === 'left' ? 120 : -120 })
     },
+    guide: [['head', 'Turn your head: look around'], ['palm', 'Open palm: walk'], ['punch', 'Punch: hit'], ['holdfist', 'Hold a fist: mine'], ['pinchhold', 'Pinch and hold: use, place, eat'], ['two', 'Two fingers: jump'], ['three', 'Three fingers: sneak'], ['thumbs', 'Thumbs up: inventory'], ['swipe', 'Swipe: hotbar'], ['bothpalms', 'Both palms: pause'], ['bothfists', 'Both fists: stop']],
     legend: () => ['head: look', 'palm: walk', 'punch: hit', 'hold a fist: mine', 'pinch (hold): use / place', 'two fingers: jump', 'three fingers: sneak', 'thumbs up: inventory', 'swipe: hotbar', 'both palms: pause', 'both fists: stop'],
     status () { return this.paused ? 'paused' : this.walk ? 'walking' : 'ready' }
   })
@@ -716,6 +734,7 @@ if (!ANDROID) {
       if (hs.some((x) => x.punch) || hs.some((x) => became(x, 'pinch', 'race' + hs.indexOf(x)))) tap(VK.SPACE, 120) // nitro
       for (let i = 0; i < hs.length; i++) lastGesture['race' + i] = hs[i].gesture
     },
+    guide: [['wheel', 'Hold both hands like a wheel: drive'], ['tilt', 'Tilt the wheel: steer'], ['bothpalms', 'Open both hands: brake'], ['pinch', 'Pinch (or punch): nitro'], ['boththumbs', 'Both thumbs up: pause menu']],
     legend () { return ['grip the wheel: go', 'tilt it: steer', 'open hands: brake', 'pinch or punch: nitro', 'one hand: steer by moving it', 'both thumbs up: pause menu', 'ctrl+alt+g: stop'] },
     status () { return (this.steer < -0.1 ? '< ' : this.steer > 0.1 ? '> ' : '') + (down.get(VK.S) ? 'braking' : down.get(VK.W) ? 'driving' : 'show both hands') }
   })
@@ -754,6 +773,7 @@ if (!ANDROID) {
       } else { for (const k of [VK.W, VK.A, VK.D, VK.C, 'rmb']) hold(k, false) }
       if (!left && !right) releaseHeld()
     },
+    guide: [['rpoint', 'Right hand, move it: aim'], ['rpinch', 'Right pinch: fire'], ['rfist', 'Right fist: reload'], ['rswipe', 'Right swipe: weapon'], ['lpalm', 'Left open palm: walk'], ['lside', 'Left hand to a side: strafe'], ['lpinch', 'Left pinch: aim down sights'], ['ltwo', 'Left two fingers: jump'], ['lfist', 'Left fist: crouch'], ['punch', 'Left punch: grenade'], ['boththumbs', 'Both thumbs up: pause menu']],
     legend () { return ['right hand: aim (move it)', 'right pinch: fire', 'right fist: reload', 'right swipe: weapon', 'left palm: walk', 'left hand sideways: strafe', 'left pinch: aim down sights', 'left two fingers: jump', 'left fist: crouch', 'left punch: grenade', 'both thumbs up: pause menu', 'ctrl+alt+g: stop'] },
     status () { return down.get('lmb') ? 'firing' : down.get(VK.W) ? 'moving' : 'ready' }
   })
@@ -781,24 +801,18 @@ function menu () {
   // The camera picture stays off unless the person turns it on.
   const by = Math.min(H - 56, y0 + rows * (th + gap) + 6)
   hbutton('cam', W / 2 - 170, by, 340, 40, showCamera ? 'camera picture: on' : 'camera picture: off', () => { showCamera = !showCamera; store.set('showCamera', showCamera) }, showCamera ? C.amber : C.cyan)
-  hbutton('close', W - 140, 18, 120, 40, 'close', () => A.gameClose(), C.red)
+  hbutton('close', W - (IN_PANEL ? 300 : 140), 18, 140, 40, IN_PANEL ? '< assistant' : 'close', () => A.gameClose(), C.red)
   text(R ? 'tracking: ' + (R.hands.length ? R.hands.length + ' hand' + (R.hands.length > 1 ? 's' : '') : 'no hands') : 'starting', 24, H - 20, { mono: true, size: 10, color: C.dim, raw: true, spacing: 2 })
 }
 
 async function go (gm) {
+  if (ORB && !gm) { if (scene && scene.exit) scene.exit(); A.gameOrbStop(); return }
+  if (!ORB && gm && (gm.compact || gm.dock) && !ANDROID) { A.gameOrb(gm.id, gm.dock); return }
   if (scene && scene.exit) scene.exit()
-  if (scene && (scene.compact || scene.dock)) { await A.gameCompact(false); document.body.classList.remove('small') }
   scene = gm
   for (const k of Object.keys(held)) delete held[k]
   if (tracker) tracker.useFace(!gm || !!gm.face)
   if (gm) {
-    if (gm.compact) {
-      // Explain first: this mode works over your other apps, so the window becomes a small card in the corner.
-      intro = { name: gm.name, until: performance.now() + 3200 }
-      await new Promise((r) => setTimeout(r, 3200)); intro = null
-      if (scene !== gm) return
-      document.body.classList.add('small'); await A.gameCompact(true)
-    } else if (gm.dock) await A.gameCompact(gm.dock)
     await gm.enter()
   }
 }
@@ -811,23 +825,22 @@ function loop (now) {
   const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now
   const t = now / 1000
   size()
-  background(t)
+  const orbCard = ORB && scene && scene.compact
+  if (orbCard) g.clearRect(0, 0, W, H); else background(t)
   if (tracker) { const r = tracker.frame(W, H); if (r) R = r }
   const h = primary()
   usingPointer = false
-  if (h) {
+  if (ORB && pointer) { cursor = { x: pointer.x, y: pointer.y }; pinchEdge = pointerClick; pinching = false; usingPointer = true } else if (ORB) { cursor = null; pinchEdge = false } else if (h) {
     cursor = cursor ? { x: cursor.x + (h.tip.x - cursor.x) * 0.45, y: cursor.y + (h.tip.y - cursor.y) * 0.45 } : { x: h.tip.x, y: h.tip.y }
     pinchEdge = h.pinch && !pinching; pinching = h.pinch
   } else if (pointer) { cursor = { x: pointer.x, y: pointer.y }; pinchEdge = pointerClick; pinching = false; usingPointer = true } else { cursor = null; pinchEdge = false; pinching = false }
   ui = []
-  const small = scene && scene.compact
+  const small = !!orbCard
   if (intro) introCard()
-  else if (small) compactCard()
-  else if (scene) { scene.update(dt); scene.draw() } else menu()
+  else if (small) gameOrb()
+  else if (scene) { scene.update(dt); scene.draw() } else if (!ORB) menu()
   backGesture(h)
-  drawHands()
-  if (!small) { pickLoop(); drawCursor() }
-  overlay(t)
+  if (!small) { drawHands(); pickLoop(); drawCursor(); overlay(t) }
   pointerClick = false
   lastGesture.p = h ? h.gesture : null
   requestAnimationFrame(loop)
@@ -854,6 +867,107 @@ function introCard () {
   text('Ctrl+Alt+G or a click on the card brings you back here.', W / 2, H / 2 + 50, { align: 'center', mono: true, size: 12, color: C.dim, raw: true, spacing: 1 })
   text('starting in ' + left, W / 2, H / 2 + 92, { align: 'center', mono: true, size: 13, color: C.lime, raw: true })
 }
+// ---- The game orb: a small orb over your games; click it for the moves, with pictures ----
+let orbOpen = false
+function setOrbOpen (on) { orbOpen = on; A.gameOrbExpand(on) }
+function gameOrb () {
+  scene.update(1 / 60)
+  if (W < 60 || H < 60) return // not laid out yet
+  const hands = (R && R.hands && R.hands.length) || 0
+  const st = scene.status ? scene.status() : ''
+  const paused = /paused/.test(st)
+  const ring = paused ? C.amber : hands ? C.lime : C.dim
+  if (!orbOpen) {
+    const cx = W / 2; const cy = H / 2; const r = Math.min(W, H) / 2 - 10
+    g.save()
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = 'rgba(5, 9, 16, .92)'; g.fill()
+    g.shadowColor = ring; g.shadowBlur = 16; g.lineWidth = 3; g.strokeStyle = ring; g.stroke(); g.shadowBlur = 0
+    const t = performance.now() / 1000
+    g.beginPath(); g.arc(cx, cy, r - 7, t, t + 1.2); g.strokeStyle = hexA(C.cyan, 0.6); g.lineWidth = 2; g.stroke()
+    icon(scene.id, cx, cy - 6, r * 0.75, C.cyan)
+    text(paused ? 'paused' : hands ? hands + ' hand' + (hands > 1 ? 's' : '') : 'show hands', cx, cy + r * 0.62, { align: 'center', mono: true, size: 9, color: ring, raw: true, spacing: 1 })
+    g.restore()
+    return
+  }
+  if (W < 300) return // the window is still growing
+  // The guide: what each move does, with a picture of the hand.
+  g.save()
+  rr(4, 4, W - 8, H - 8, 18); g.fillStyle = 'rgba(6, 11, 19, .96)'; g.fill(); g.strokeStyle = hexA(C.cyan, 0.4); g.lineWidth = 1.5; g.stroke()
+  text(scene.name, 22, 36, { mono: true, size: 15, weight: 700, color: C.cyan, glow: C.cyan, raw: true })
+  text(st, W - 22, 36, { align: 'right', mono: true, size: 11, color: ring, raw: true })
+  text('How to play: do the move, the game does the rest', 22, 58, { size: 12, color: C.dim, raw: true })
+  const items = scene.guide || []
+  const rowH = Math.min(62, (H - 150) / Math.max(1, items.length))
+  items.forEach(([kind, label], i) => {
+    const y = 74 + i * rowH
+    rr(18, y, 56, rowH - 6, 10); g.fillStyle = 'rgba(34, 211, 197, .07)'; g.fill()
+    gesturePic(kind, 46, y + (rowH - 6) / 2, Math.max(16, Math.min(50, rowH - 8)))
+    text(label, 86, y + (rowH - 6) / 2 + 5, { size: 13.5, color: C.text, raw: true, max: W - 110 })
+  })
+  const by = H - 62
+  orbButton('hide', 18, by, 120, 42, 'hide guide', () => setOrbOpen(false), C.cyan)
+  orbButton('menu', 148, by, 140, 42, 'all games', () => A.gameOrbMenu(), C.blue)
+  orbButton('stop', 298, by, W - 316, 42, 'stop', () => { if (scene.exit) scene.exit(); A.gameOrbStop() }, C.red)
+  g.restore()
+}
+function orbButton (id, x, y, w, h, label, onPick, col) {
+  const hv = cursor && cursor.x >= x && cursor.x <= x + w && cursor.y >= y && cursor.y <= y + h
+  rr(x, y, w, h, 12); g.fillStyle = hexA(col, hv ? 0.22 : 0.1); g.fill(); g.strokeStyle = hexA(col, 0.7); g.lineWidth = 1.2; g.stroke()
+  text(label, x + w / 2, y + h / 2 + 5, { align: 'center', mono: true, size: 12, color: '#fff', raw: true })
+  if (hv && pointerClick) onPick()
+}
+/** A small drawing of the move: a hand (which fingers are up), with arrows for motion. */
+function gesturePic (kind, x, y, s) {
+  const col = C.cyan
+  const side = kind[0] === 'l' || kind[0] === 'r' ? kind[0] : null
+  const k = side && kind.length > 1 ? kind.slice(1) : kind
+  g.save(); g.strokeStyle = col; g.fillStyle = col; g.lineCap = 'round'; g.lineJoin = 'round'
+  const arrow = (x1, y1, x2, y2) => { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); const a = Math.atan2(y2 - y1, x2 - x1); g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - Math.cos(a - 0.5) * 6, y2 - Math.sin(a - 0.5) * 6); g.moveTo(x2, y2); g.lineTo(x2 - Math.cos(a + 0.5) * 6, y2 - Math.sin(a + 0.5) * 6); g.stroke() }
+  const two = (k1) => { hand(x - s * 0.2, y, s * 0.62, k1); hand(x + s * 0.2, y, s * 0.62, k1, true) }
+  switch (k) {
+    case 'point': hand(x, y, s, 'point'); break
+    case 'pinch': hand(x, y, s, 'pinch'); break
+    case 'pinchhold': hand(x - 4, y, s, 'pinch'); g.lineWidth = 1.5; arrow(x + s * 0.18, y + s * 0.2, x + s * 0.42, y + s * 0.05); break
+    case 'two': hand(x, y, s, 'two'); break
+    case 'three': hand(x, y, s, 'three'); break
+    case 'palm': hand(x, y, s, 'palm'); break
+    case 'fist': hand(x, y, s, 'fist'); break
+    case 'thumbs': hand(x, y, s, 'thumbs'); break
+    case 'holdpalm': case 'holdfist': hand(x, y, s * 0.85, k === 'holdpalm' ? 'palm' : 'fist'); g.lineWidth = 2; g.strokeStyle = C.amber; g.beginPath(); g.arc(x, y, s * 0.46, -Math.PI / 2, Math.PI * 0.9); g.stroke(); break
+    case 'swipe': hand(x, y + 2, s * 0.85, 'palm'); g.lineWidth = 1.6; arrow(x - s * 0.1, y - s * 0.42, x - s * 0.46, y - s * 0.42); arrow(x + s * 0.1, y - s * 0.42, x + s * 0.46, y - s * 0.42); break
+    case 'punch': hand(x + 4, y, s * 0.8, 'fist'); g.lineWidth = 1.4; for (const d of [-0.18, 0, 0.18]) { g.beginPath(); g.moveTo(x - s * 0.46, y + d * s); g.lineTo(x - s * 0.3, y + d * s); g.stroke() } break
+    case 'head': g.lineWidth = 2; g.beginPath(); g.arc(x, y - 2, s * 0.24, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(x - s * 0.14, y + s * 0.3); g.quadraticCurveTo(x, y + s * 0.16, x + s * 0.14, y + s * 0.3); g.stroke(); g.lineWidth = 1.5; arrow(x - s * 0.3, y - s * 0.3, x - s * 0.44, y - s * 0.08); arrow(x + s * 0.3, y - s * 0.3, x + s * 0.44, y - s * 0.08); break
+    case 'wheel': case 'tilt': g.lineWidth = 2; g.save(); g.translate(x, y); if (k === 'tilt') g.rotate(-0.35); g.beginPath(); g.arc(0, 0, s * 0.36, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-s * 0.36, 0); g.lineTo(s * 0.36, 0); g.stroke(); hand(-s * 0.36, 0, s * 0.42, 'fist'); hand(s * 0.36, 0, s * 0.42, 'fist', true); g.restore(); if (k === 'tilt') { g.lineWidth = 1.5; arrow(x + s * 0.2, y - s * 0.44, x - s * 0.2, y - s * 0.5) } break
+    case 'bothpalms': two('palm'); break
+    case 'bothfists': two('fist'); break
+    case 'boththumbs': two('thumbs'); break
+    case 'side': hand(x, y, s * 0.85, 'palm'); g.lineWidth = 1.5; arrow(x - s * 0.15, y + s * 0.42, x - s * 0.46, y + s * 0.42); arrow(x + s * 0.15, y + s * 0.42, x + s * 0.46, y + s * 0.42); break
+    default: hand(x, y, s, 'palm')
+  }
+  if (side) text(side === 'l' ? 'L' : 'R', x + s * 0.4, y + s * 0.42, { align: 'center', mono: true, size: 9, weight: 700, color: C.amber, raw: true })
+  g.restore()
+}
+/** A simple line drawing of a hand: palm, four fingers and a thumb (up or folded), or a pinch. */
+function hand (x, y, s, pose, mirror) {
+  const up = { point: [0, 1, 0, 0, 0], pinch: [0, 0, 1, 1, 1], two: [0, 1, 1, 0, 0], three: [0, 1, 1, 1, 0], palm: [1, 1, 1, 1, 1], fist: [0, 0, 0, 0, 0], thumbs: [1, 0, 0, 0, 0] }[pose] || [1, 1, 1, 1, 1]
+  g.save(); g.translate(x, y); g.scale((mirror ? -1 : 1) * s / 100, s / 100)
+  g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round'
+  if (pose === 'thumbs') { // a fist on its side with the thumb up
+    rr(-26, -4, 52, 40, 14); g.stroke(); g.beginPath(); g.moveTo(-14, -4); g.lineTo(-14, -40); g.stroke()
+    for (const yy of [6, 16, 26]) { g.beginPath(); g.moveTo(26, yy); g.lineTo(34, yy); g.stroke() }
+    g.restore(); return
+  }
+  rr(-24, -6, 48, 46, 14); g.stroke()
+  const fx = [-17, -6, 6, 17]; const len = [30, 36, 33, 26]
+  for (let i = 0; i < 4; i++) {
+    g.beginPath(); g.moveTo(fx[i], -6)
+    if (up[i + 1]) g.lineTo(fx[i], -6 - len[i]); else g.lineTo(fx[i], -14)
+    g.stroke()
+  }
+  g.beginPath(); g.moveTo(-24, 18)
+  if (pose === 'pinch') { g.lineTo(-34, -6); g.stroke(); g.beginPath(); g.moveTo(-17, -6); g.lineTo(-30, -22); g.stroke(); g.lineWidth = 3; g.beginPath(); g.arc(-33, -16, 7, 0, Math.PI * 2); g.stroke() } else if (up[0]) { g.lineTo(-44, -2); g.stroke() } else { g.lineTo(-12, 8); g.stroke() }
+  g.restore()
+}
 function compactCard () {
   scene.update(1 / 60)
   text(scene.name, 12, 26, { mono: true, size: 12, weight: 700, color: C.cyan, raw: true })
@@ -864,7 +978,19 @@ function compactCard () {
 }
 cv.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY } })
 cv.addEventListener('pointerleave', () => { pointer = null })
-cv.addEventListener('pointerdown', (e) => { pointer = { x: e.clientX, y: e.clientY }; if (scene && scene.compact) go(null); else pointerClick = true })
+let orbDrag = null
+cv.addEventListener('pointerdown', (e) => {
+  pointer = { x: e.clientX, y: e.clientY }
+  if (ORB && scene && scene.compact && !orbOpen) { orbDrag = { x: e.screenX, y: e.screenY, moved: false }; cv.setPointerCapture(e.pointerId); return }
+  pointerClick = true
+})
+cv.addEventListener('pointermove', (e) => {
+  if (!orbDrag) return
+  const dx = e.screenX - orbDrag.x; const dy = e.screenY - orbDrag.y
+  if (!orbDrag.moved && dx * dx + dy * dy < 25) return
+  orbDrag.moved = true; orbDrag.x = e.screenX; orbDrag.y = e.screenY; A.gameOrbMove(dx, dy)
+})
+cv.addEventListener('pointerup', () => { const d = orbDrag; orbDrag = null; if (d && !d.moved) setOrbOpen(true) })
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (scene) go(null); else A.gameClose() } else if (scene && scene.keys) scene.keys(e) })
 A.on((ev, d) => {
   if (ev === 'game-stop') go(null)
@@ -899,6 +1025,7 @@ async function start () {
   const [hand, face] = await Promise.all([A.gameModel('hand'), A.gameModel('face')])
   tracker = await createTracker(video, { hand, face })
   tracker.useFace(false)
+  if (ORB) { const gm = GAMES.find((x) => x.id === ORB[0]); if (gm) { scene = gm; tracker.useFace(!!gm.face); await gm.enter() } }
 }
 requestAnimationFrame(loop)
 start()

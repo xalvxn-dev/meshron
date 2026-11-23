@@ -111,50 +111,79 @@ function releaseAll () {
   held.keys.clear(); held.btns.clear()
 }
 
-// ---- The window ----
-let win = null
-let small = false
-/** Opens game mode (or brings it forward). hidden: leave it out of screenshots. */
+// ---- Where game mode shows ----
+// It is part of Meshron Assistant, not a window of its own: the menu and the games open inside
+// the Assistant's window (which grows to fit and goes back to the chat when you leave), and the
+// modes that control other apps run from a small game orb that floats over them. Click the orb
+// for a guide to its hand gestures, with pictures.
+let host = null // { panel(): the Assistant's window or null, openPanel(): opens it }
+let inPanel = false; let saved = null
+let orbWin = null; let orbOpen = false; let orbDock = null
+const bundle = (f) => path.join(__dirname, 'asst-bundle', f)
+function attach (h) { host = h }
+function stopKey () {
+  // Emergency stop for the control modes: Ctrl+Alt+G (also works while another app is in front).
+  if (!globalShortcut.isRegistered('Ctrl+Alt+G')) globalShortcut.register('Ctrl+Alt+G', () => { releaseAll(); closeOrb(); const p = panelGame(); if (p) p.webContents.send('a-event', 'game-stop') })
+}
+const panelGame = () => { const p = host && host.panel(); return inPanel && p && !p.isDestroyed() ? p : null }
+/** Opens game mode in the Assistant's window (or brings it forward). hidden: leave it out of screenshots. */
 function open (hidden) {
-  if (win && !win.isDestroyed()) { win.show(); win.focus(); return }
+  host.openPanel()
+  const p = host.panel(); if (!p || p.isDestroyed()) return
+  if (!inPanel) {
+    saved = p.getBounds(); inPanel = true
+    const wa = screen.getDisplayMatching(saved).workArea
+    const w = Math.min(1280, wa.width - 80); const h = Math.min(800, wa.height - 60)
+    p.setMinimumSize(Math.min(900, w), Math.min(600, h))
+    p.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + Math.round((wa.height - h) / 2), width: w, height: h })
+    p.loadFile(bundle('game.html'), { hash: 'panel' })
+    p.once('closed', () => { inPanel = false; releaseAll() })
+  }
+  p.setContentProtection(!!hidden)
+  p.show(); p.focus()
+  stopKey()
+}
+/** Back from the games to the chat, in the same window and at its old size. */
+function leave (minimize) {
+  const p = host && host.panel()
+  if (!inPanel) return
+  inPanel = false; releaseAll()
+  if (!p || p.isDestroyed()) return
+  p.setMinimumSize(380, 520)
+  p.loadFile(bundle('index.html'))
+  if (saved) p.setBounds(saved)
+  if (minimize) p.minimize()
+}
+// ---- The game orb (control modes) ----
+const ORB = 128; const GUIDE = { w: 460, h: 640 }
+function orbBounds (open) {
   const wa = screen.getPrimaryDisplay().workArea
-  win = new BrowserWindow({
-    width: Math.min(1280, wa.width - 80), height: Math.min(800, wa.height - 60), minWidth: 900, minHeight: 600, center: true,
-    backgroundColor: '#05070D', title: 'Meshron Game Mode', autoHideMenuBar: true, show: false,
+  if (orbDock === 'keyboard') { const w = Math.min(1000, wa.width - 40); const h = 340; return { x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + wa.height - h - 10, width: w, height: h } }
+  // Keep the corner it sits in: the guide opens up and to the left of the orb.
+  const cur = orbWin && !orbWin.isDestroyed() ? orbWin.getBounds() : { x: wa.x + wa.width - ORB - 24, y: wa.y + wa.height - ORB - 24, width: ORB, height: ORB }
+  const right = cur.x + cur.width; const bottom = cur.y + cur.height
+  const w = open ? GUIDE.w : ORB; const h = open ? GUIDE.h : ORB
+  const x = Math.max(wa.x, Math.min(wa.x + wa.width - w, right - w)); const y = Math.max(wa.y, Math.min(wa.y + wa.height - h, bottom - h))
+  return { x, y, width: w, height: h }
+}
+function startOrb (id, dock, hidden) {
+  closeOrb()
+  orbDock = dock || null; orbOpen = false
+  orbWin = new BrowserWindow({
+    ...orbBounds(false), frame: false, transparent: true, resizable: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, hasShadow: false, show: false,
+    backgroundColor: '#00000000', title: 'Meshron game orb',
     webPreferences: { preload: path.join(__dirname, 'asst-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false }
   })
-  win.setContentProtection(!!hidden)
-  win.loadFile(path.join(__dirname, 'asst-bundle', 'game.html'))
-  win.once('ready-to-show', () => win.show())
-  // Emergency stop for the control modes: Ctrl+Alt+G (also works while another app is in front).
-  globalShortcut.register('Ctrl+Alt+G', () => { releaseAll(); if (win && !win.isDestroyed()) win.webContents.send('a-event', 'game-stop') })
-  win.on('closed', () => { releaseAll(); globalShortcut.unregister('Ctrl+Alt+G'); win = null; small = false })
+  orbWin.setAlwaysOnTop(true, 'screen-saver')
+  orbWin.setContentProtection(!!hidden)
+  orbWin.loadFile(bundle('game.html'), { hash: 'orb=' + id + (dock ? ',' + dock : '') })
+  orbWin.once('ready-to-show', () => orbWin && orbWin.showInactive())
+  orbWin.on('closed', () => { orbWin = null; releaseAll() })
+  stopKey()
 }
-/**
- * Control modes run over other apps: the window shrinks to a small camera card in a corner that
- * stays on top (and never takes focus from the game), then grows back.
- */
-function compact (on) {
-  if (!win || win.isDestroyed()) return false
-  small = !!on
-  const wa = screen.getPrimaryDisplay().workArea
-  if (on === 'keyboard') {
-    // A keyboard docked at the bottom, over other apps, never taking their focus.
-    const w = Math.min(1000, wa.width - 40); const h = 340
-    win.setAlwaysOnTop(true, 'screen-saver'); win.setFocusable(false)
-    win.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + wa.height - h - 10, width: w, height: h })
-  } else if (on) {
-    // The display the window is on; the card goes fully inside its work area, bottom-right.
-    const wa2 = screen.getDisplayMatching(win.getBounds()).workArea
-    win.setAlwaysOnTop(true, 'screen-saver'); win.setFocusable(false)
-    win.setBounds({ x: wa2.x + wa2.width - 400, y: wa2.y + wa2.height - 330, width: 380, height: 310 })
-  } else {
-    win.setAlwaysOnTop(false); win.setFocusable(true)
-    win.setBounds({ x: wa.x + Math.round((wa.width - 1280) / 2), y: wa.y + Math.round((wa.height - 800) / 2), width: Math.min(1280, wa.width - 80), height: Math.min(800, wa.height - 60) })
-    win.focus()
-  }
-  return true
-}
+function closeOrb () { if (orbWin && !orbWin.isDestroyed()) orbWin.close(); orbWin = null }
+function orbExpand (on) { orbOpen = !!on; if (orbWin && !orbWin.isDestroyed() && orbDock !== 'keyboard') orbWin.setBounds(orbBounds(orbOpen)); return true }
+function orbMove (d) { if (!orbWin || orbWin.isDestroyed()) return true; const [x, y] = orbWin.getPosition(); orbWin.setPosition(Math.round(x + (d.dx || 0)), Math.round(y + (d.dy || 0))); return true }
 const screenSize = () => { const d = screen.getPrimaryDisplay(); return { w: d.size.width * d.scaleFactor, h: d.size.height * d.scaleFactor } }
 
 /** IPC for the game window. Returns undefined for anything that isn't game mode's. */
@@ -165,11 +194,21 @@ async function handle (what, arg, send) {
     case 'gameModel': return new Uint8Array(fs.readFileSync(modelPath(arg === 'face' ? 'face' : 'hand')))
     case 'gameInput': return input(arg || {})
     case 'gameRelease': releaseAll(); return true
-    case 'gameCompact': return compact(arg)
+    case 'gameOrb': { // a control mode: the game orb takes over, the window goes back to the chat
+      const p = host && host.panel(); const hidden = p && !p.isDestroyed() ? p.isContentProtected && p.isContentProtected() : false
+      startOrb(String(arg && arg.id || ''), arg && arg.dock, hidden)
+      leave(true); return true
+    }
+    case 'gameOrbExpand': return orbExpand(arg)
+    case 'gameOrbMove': return orbMove(arg || {})
+    case 'gameOrbStop': closeOrb(); return true
+    case 'gameOrbMenu': closeOrb(); open(false); return true
     case 'gameScreen': return screenSize()
-    case 'gameClose': if (win && !win.isDestroyed()) win.close(); return true
+    case 'gameClose': leave(false); return true
   }
   return undefined
 }
 
-module.exports = { input, open, handle, releaseAll, isOpen: () => !!(win && !win.isDestroyed()), window: () => win }
+/** Where game mode's events go: the game orb, or the Assistant's window while it shows the games. */
+const target = () => (orbWin && !orbWin.isDestroyed() ? orbWin : panelGame())
+module.exports = { attach, input, open, handle, releaseAll, isOpen: () => !!(inPanel || orbWin), window: target }

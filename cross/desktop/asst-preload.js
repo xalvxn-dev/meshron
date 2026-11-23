@@ -39,7 +39,11 @@ contextBridge.exposeInMainWorld('Assistant', {
   gameModel: (k) => call('gameModel', k),
   gameInput: (cmd) => call('gameInput', cmd),
   gameRelease: () => call('gameRelease'),
-  gameCompact: (on) => call('gameCompact', on),
+  gameOrb: (id, dock) => call('gameOrb', { id, dock }),
+  gameOrbExpand: (on) => call('gameOrbExpand', on),
+  gameOrbMove: (dx, dy) => call('gameOrbMove', { dx, dy }),
+  gameOrbStop: () => call('gameOrbStop'),
+  gameOrbMenu: () => call('gameOrbMenu'),
   gameScreen: () => call('gameScreen'),
   gameClose: () => call('gameClose'),
   gameMood: (m) => call('gameMood', m)
