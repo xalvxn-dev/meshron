@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('Assistant', {
   openPanel: (page) => call('openPanel', page),
   testHotkey: () => call('testHotkey'),
   orbMouse: (on) => call('orbMouse', on),
+  cancel: () => call('cancel'),
   orbRects: (rs) => call('orbRects', rs),
   orbMove: (dx, dy) => call('orbMove', { dx, dy }),
   orbDrop: (right, cx, cy, rx, ry) => call('orbDrop', { right, cx, cy, rx, ry }),

@@ -43,8 +43,10 @@ function setAccount (a) { data.account = a ? safeStorage.encryptString(JSON.stri
 
 async function post (p, body) {
   const a = account()
+  // A stalled request must never leave it stuck: hearing gives up after 25 s, speech 30 s, answers 75 s.
+  const ms = p === '/v1/stt' ? 25000 : p === '/v1/tts' ? 30000 : 75000
   let r
-  try { r = await fetch(BASE + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({}, body, a ? { username: a.u, authKey: a.a } : {})) }) } catch { throw new Error('No connection. Check the internet and try again.') }
+  try { r = await fetch(BASE + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({}, body, a ? { username: a.u, authKey: a.a } : {})), signal: AbortSignal.timeout(ms) }) } catch (e) { throw new Error(e && e.name === 'TimeoutError' ? 'That took too long. Try again.' : 'No connection. Check the internet and try again.') }
   const o = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(r.status === 401 ? 'Wrong username or password' : (o.error || 'Something went wrong (' + r.status + ')'))
   return o
@@ -161,7 +163,25 @@ const state = { mode: 'idle', strip: null, tag: '', asking: null, lines: [], sig
 function broadcast () {
   for (const w of [panel, orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'state', state)
 }
-function setMode (m) { state.mode = m; broadcast() }
+let modeSince = Date.now()
+function setMode (m) { if (state.mode !== m) modeSince = Date.now(); state.mode = m; broadcast() }
+let turn = 0
+/** Back to a calm, ready orb: stops talking, drops the request in flight, listens for its name again. */
+function unstick (why) {
+  turn++
+  hush()
+  busy = false
+  if (state.mode !== 'idle') setMode('idle')
+  state.asking = null
+  if (approval) { try { approval(false) } catch {} }
+  if (why) wakeLog('reset (' + why + ')')
+  refreshWake('reset')
+}
+// A watchdog: nothing should stay listening, thinking or talking for this long.
+setInterval(() => {
+  const long = { listening: 40000, thinking: 100000, speaking: 180000 }[state.mode]
+  if (long && Date.now() - modeSince > long) { unstick('stuck ' + state.mode); strip('MESHRON', 'Sorry, that got stuck. Try again.', true) }
+}, 5000)
 let hideTimer = null
 function strip (tag, text, autoHide) {
   state.tag = tag; state.strip = text; broadcast()
@@ -359,6 +379,7 @@ async function ask (text, image) {
   if (!text && !image) return
   if (busy) return
   busy = true
+  const myTurn = ++turn
   line({ who: 'you', text: image ? '📷 ' + text : text })
   if (/\b(thank(s| you)|love (you|u)|you'?re (the best|amazing|awesome)|good job|well done)\b/i.test(text)) mood('love', 2600)
   setMode('thinking'); strip('YOU', text, false)
@@ -379,6 +400,7 @@ async function ask (text, image) {
     let img = image || null
     for (let round = 0; round < 16; round++) {
       const r = await post('/v1/assistant', { messages, context: context(), image: img || undefined })
+      if (myTurn !== turn) return // cancelled while it was thinking
       img = null
       // It searched the web: a keyboard types the query beside the orb.
       if (Array.isArray(r.searched) && r.searched[0]) toastNow('search', { query: String(r.searched[0]).slice(0, 60) })
@@ -403,7 +425,7 @@ async function ask (text, image) {
   } catch (e) {
     line({ who: 'oops', text: e.message }); strip('SYSTEM', e.message, true); setMode('idle')
     if (remoteCtx) { remoteCtx.answered = true; rc.send(remoteCtx.from, { kind: 'reply', id: remoteCtx.id, text: 'Problem: ' + e.message, done: true }).catch(() => {}) }
-  } finally { busy = false; if (state.mode === 'thinking') setMode('idle') }
+  } finally { if (myTurn === turn) { busy = false; if (state.mode === 'thinking') setMode('idle') } }
 }
 // A picture the AI made: saved to Pictures\Meshron, shown in the panel (or opened, if the panel is closed).
 function showPicture (p) {
@@ -514,7 +536,7 @@ while ($true) {
         const conf = +m[1]; const said = m[3]
         // Only the wake phrase wakes it, and only when it is sure enough: "hey / ok / hi" + name at 55%,
         // the bare name (easily confused with other words) at 80%. Other speech never matches it.
-        const need = /^(hey|ok|okay|hi) /.test(said) ? 0.55 : 0.8
+        const need = 0.4 // any wake phrase with the name, from 40% sure (asked for: it was ignoring real calls)
         const isWake = m[2] === 'wake'
         // While it talks: "stop" cuts it off; its name interrupts and listens.
         if (state.mode === 'speaking' && ((m[2] === 'stop' && conf >= 0.5) || (isWake && conf >= need))) {
@@ -616,7 +638,8 @@ ipcMain.handle('a', async (e, what, arg) => {
       return true
     }
     case 'stageClose': showcase.close(true); return true
-    case 'reset': messages = []; state.lines = []; broadcast(); return true
+    case 'reset': unstick('refresh'); messages = []; state.lines = []; broadcast(); return true
+    case 'cancel': unstick('cancelled'); strip('MESHRON', 'Stopped.', true); return true
     case 'stt': return post('/v1/stt', { audio: arg.audio, mime: arg.mime, language: app.getLocale().slice(0, 2), hint: settings().name })
     case 'tts': return post('/v1/tts', { text: arg, voice: settings().studioVoice })
     case 'openPanel': openPanel(arg); return true

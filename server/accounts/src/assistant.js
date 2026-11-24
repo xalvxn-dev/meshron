@@ -446,8 +446,14 @@ export function assistant ({ fail, limit, authed, clip }) {
       if (!r || !r.ok) throw fail('Listening isn\'t available right now', 502)
       const o = await r.json()
       let text = String(o.text || '').trim()
-      // Whisper sometimes "hears" these in silence or noise.
-      if (/^(thank you\.?|thanks for watching\.?|you\.?|bye\.?|\.+|subtitles by .*)$/i.test(text)) text = ''
+      // Whisper sometimes "hears" these (video sign-offs from its training) in silence or noise.
+      const GHOSTS = /^(thank you( (so|very) much)?( for watching| for listening)?|thanks( so much)?( for watching| for listening)?|please (like and )?subscribe|like and subscribe|see you (next time|in the next (video|one))|bye( bye)?|you|okay|subtitles by .*|transcribed by .*|amara\.org.*|\.+|♪+)[.!]*$/i
+      const clean = (t) => t.trim().replace(/^[\s.,!?]+|[\s.,!?]+$/g, '')
+      if (GHOSTS.test(clean(text))) text = ''
+      // "Hey Nova, open Spotify": the request is what follows the name.
+      const nm = name.toLowerCase().replace(/[^a-z0-9 ]/g, '')
+      if (nm && text) text = text.replace(new RegExp('^\\s*(hey|hi|ok(ay)?)?[\\s,]*' + nm.replace(/ /g, '\\s*') + '[\\s,.!?]*', 'i'), '').trim()
+      if (text && GHOSTS.test(clean(text))) text = ''
       // The hint itself echoed back means nothing was really said.
       if (text && prompt.includes(text)) text = ''
       return { text }

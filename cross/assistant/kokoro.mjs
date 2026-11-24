@@ -1,31 +1,26 @@
 // Kokoro (82M, Apache-2.0): a natural voice that runs on this PC, no account and no key.
 // The model (about 90 MB) downloads from Hugging Face the first time, then is kept on the PC and
-// works offline.
-import { KokoroTTS, env } from './vendor/kokoro.web.js'
+// works offline. The work happens in kokoro-worker.mjs, on a background thread, so the orb keeps
+// answering clicks and drags while it speaks.
 
-// The speech engine ships with the app (see prepare-asst.js), so nothing is fetched from a CDN.
-env.wasmPaths = new URL('./vendor/', import.meta.url).href
+const worker = new Worker(new URL('./kokoro-worker.mjs', import.meta.url), { type: 'module' })
+let seq = 0
+const waiting = new Map()
+let progress = null
+let isReady = false
+worker.onmessage = (e) => {
+  const m = e.data || {}
+  if (m.type === 'progress') { if (progress) progress(m.pct); return }
+  const w = waiting.get(m.id); if (!w) return
+  waiting.delete(m.id)
+  if (m.type === 'error') w.reject(new Error(m.error)); else w.resolve(m)
+}
+function ask (msg) { const id = ++seq; return new Promise((resolve, reject) => { waiting.set(id, { resolve, reject }); worker.postMessage({ ...msg, id }) }) }
 
-let tts = null
 let loading = null
-
-async function load (onProgress) {
-  if (tts) return tts
-  if (!loading) {
-    const progress_callback = (p) => { if (onProgress && p && p.status === 'progress' && p.total > 1e6) onProgress(Math.round((p.loaded / p.total) * 100)) }
-    // On the graphics card (WebGPU) it keeps up with speech; on the processor it's about half speed.
-    const gpu = !!(navigator.gpu && (await navigator.gpu.requestAdapter().catch(() => null)))
-    loading = (gpu
-      ? KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: 'fp32', device: 'webgpu', progress_callback }).catch(() => null)
-      : Promise.resolve(null))
-      .then((t) => t || KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: 'q8', device: 'wasm', progress_callback }))
-      .then(async (t) => {
-        // Warm up once (the GPU compiles its programs on the first run), so the first reply is quick.
-        await t.generate('Ready.', { voice: 'af_heart' }).catch(() => {})
-        tts = t; return t
-      })
-      .catch((e) => { loading = null; throw e })
-  }
+function load (onProgress) {
+  if (onProgress) progress = onProgress
+  if (!loading) loading = ask({ type: 'load' }).then(() => { isReady = true }).catch((e) => { loading = null; throw e })
   return loading
 }
 
@@ -36,7 +31,7 @@ function pieces (text) {
     const t = s.trim()
     if (!t) continue
     // The first piece stays short so it starts talking at once; later ones join up to ~160 characters.
-    if (out.length > 1 && (out[out.length - 1].length + t.length < 160)) out[out.length - 1] += " " + t
+    if (out.length > 1 && (out[out.length - 1].length + t.length < 160)) out[out.length - 1] += ' ' + t
     else out.push(t)
   }
   return out.slice(0, 24)
@@ -44,19 +39,20 @@ function pieces (text) {
 
 /** Generates the reply piece by piece; each piece is handed to play() as soon as it's ready. */
 async function speak (text, voice, play, onProgress) {
-  const t = await load(onProgress)
-  let next = null
+  await load(onProgress)
   const list = pieces(text)
+  const gen = (t) => ask({ type: 'gen', text: t, voice }).then((m) => m.blob)
+  let next = null
   for (let i = 0; i < list.length; i++) {
-    const audio = await (next || t.generate(list[i], { voice }))
-    next = i + 1 < list.length ? t.generate(list[i + 1], { voice }) : null
-    const stop = await play(audio.toBlob())
+    const blob = await (next || gen(list[i]))
+    next = i + 1 < list.length ? gen(list[i + 1]) : null
+    const stop = await play(blob)
     if (stop) return
   }
 }
 
 /** True once the model is downloaded and warmed up (until then, other voices speak). */
-const ready = () => !!tts
+const ready = () => isReady
 window.Kokoro = { speak, load, ready }
 
 // With a Kokoro voice chosen, get the model ready in the background (the first time it downloads).

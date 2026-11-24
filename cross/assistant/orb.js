@@ -87,6 +87,7 @@
   function tap () {
     if (mode === 'listening') { voiceTurn = false; Voice.listen.cancel && Voice.listen.cancel(); return }
     if (mode === 'speaking') { voiceTurn = false; Voice.hush(); A.mode('idle'); return }
+    if (mode === 'thinking') { A.cancel(); return } // a click while it thinks: stop that
     if (mode === 'idle') A.listen()
   }
 
