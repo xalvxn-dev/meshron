@@ -6,6 +6,7 @@ window.MeshronHelp = {
     ['Type instead', 'Type in the box at the bottom of this window and press Enter.'],
     ['It asks first', 'Anything risky (deleting files, sending messages) shows an Approve / Cancel box before it happens. Closing an app happens right away.'],
     ['The orb', 'Click it to talk. Drag it anywhere; drop it near an edge to dock it. Right-click opens this window.'],
+    ['Stop it talking', 'Say "stop", "be quiet" or "enough" while it talks (with Always listening on), or click the orb. Saying its name interrupts and lets you speak.'],
     ['Stop everything', 'Ctrl+Alt+G stops game mode and hand control at once.']
   ],
   sections: [

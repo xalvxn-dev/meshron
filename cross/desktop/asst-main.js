@@ -427,6 +427,13 @@ function reply (text) {
 /** A moment's expression on face skins: happy, sad, surprised or love. */
 function mood (m, ms) { for (const w of [orb, pal.window()]) if (w && !w.isDestroyed()) w.webContents.send('a-event', 'mood', { mood: m, ms }) }
 function say (text) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'say', text) }
+/** Stops it talking (the orb owns the speaker). */
+function hush () { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'hush'); if (state.mode === 'speaking') setMode('idle') }
+function stopPhrases () {
+  const n = String(settings().name || 'Meshron').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() || 'meshron'
+  const base = ['stop', 'stop it', 'stop talking', 'stop speaking', 'be quiet', 'quiet', 'shut up', 'shush', 'hush', 'enough', "that's enough", 'okay stop', 'ok stop', 'cancel', 'never mind', 'pause']
+  return [...base, ...['stop', 'be quiet', 'enough'].map((p) => n + ' ' + p)].map((p) => "'" + p.replace(/'/g, "''") + "'").join(', ')
+}
 
 /** Starts listening in the orb window (it owns the microphone and the speaker). */
 function listen () {
@@ -484,6 +491,10 @@ try { $r.SetInputToDefaultAudioDevice() } catch { [Console]::Out.WriteLine('ERR 
 $c = New-Object System.Speech.Recognition.Choices
 $c.Add([string[]]@(${wakePhrases()}))
 $g = New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($c))); $g.Name = 'wake'; $r.LoadGrammar($g)
+# "Stop" (and friends): cuts it off while it is talking.
+$sc = New-Object System.Speech.Recognition.Choices
+$sc.Add([string[]]@(${stopPhrases()}))
+$sg = New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($sc))); $sg.Name = 'stop'; $r.LoadGrammar($sg)
 # Ordinary speech goes to a dictation grammar, so talking near the PC isn't forced into the wake phrase.
 try { $d = New-Object System.Speech.Recognition.DictationGrammar; $d.Name = 'other'; $r.LoadGrammar($d) } catch { }
 # Listen in a plain loop: PowerShell can't run event handlers on the engine's own thread
@@ -505,6 +516,13 @@ while ($true) {
         // the bare name (easily confused with other words) at 80%. Other speech never matches it.
         const need = /^(hey|ok|okay|hi) /.test(said) ? 0.55 : 0.8
         const isWake = m[2] === 'wake'
+        // While it talks: "stop" cuts it off; its name interrupts and listens.
+        if (state.mode === 'speaking' && ((m[2] === 'stop' && conf >= 0.5) || (isWake && conf >= need))) {
+          wakeLog(said + ' (' + Math.round(conf * 100) + '% sure) stopped talking')
+          hush()
+          if (isWake) setTimeout(listen, 350)
+          continue
+        }
         const woke = isWake && conf >= need && !busy && state.mode === 'idle'
         if (isWake) wakeLog(said + ' (' + Math.round(conf * 100) + '% sure) ' + (woke ? 'woke up' : conf < need ? 'not sure enough, ignored' : 'busy, ignored'))
         if (woke) { if (orb && !orb.isDestroyed()) orb.webContents.send('a-event', 'chime'); setTimeout(listen, 250) }

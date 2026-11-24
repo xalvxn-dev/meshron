@@ -125,6 +125,7 @@
     if (ev === 'listen') startListening(false)
     if (ev === 'stop') { voiceTurn = false; Voice.listen.cancel && Voice.listen.cancel() }
     if (ev === 'chime') { chime(); reactor.feel('surprised', 900) }
+    if (ev === 'hush') { voiceTurn = false; Voice.hush(); if (mode === 'speaking') { A.mode('idle'); mode = 'idle' } }
     if (ev === 'say') Voice.say(data, (on) => { if (on) A.mode('speaking'); else { if (mode === 'speaking') { A.mode('idle'); mode = 'idle' } followUp() } })
   })
   A.state().then(render)

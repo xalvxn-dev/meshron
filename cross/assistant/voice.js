@@ -78,29 +78,34 @@
     // sentence is ready instead of after the whole reply.
     const parts = pieces(text)
     if (!parts.length) return false
+    const mine = gen
     const fetchPart = (p) => A.tts(p).catch(() => null)
     let next = fetchPart(parts[0])
     let spoke = false
     for (let i = 0; i < parts.length; i++) {
       const r = await next
+      if (gen !== mine) return true // stopped while the next sentence was coming
       next = i + 1 < parts.length ? fetchPart(parts[i + 1]) : null
       if (!r || !r.audio || !r.audio.length) { if (!spoke) return false; continue }
       spoke = true
       for (const clip of r.audio) {
+        if (gen !== mine) return true
         await new Promise((resolve) => {
           const a = new Audio('data:' + (r.mime || 'audio/wav') + ';base64,' + clip)
           current = a
           a.onended = a.onerror = () => resolve()
           a.play().catch(() => resolve())
         })
-        if (current === null) return true // stopped
+        if (gen !== mine) return true // stopped
       }
     }
     return spoke
   }
   /** Says it (queued after anything still being said); onState(true/false) as it starts and ends. */
   function say (text, onState) {
+    const asked = gen
     queue = queue.then(async () => {
+      if (gen !== asked) return // "stop" came before its turn
       onState && onState(true)
       const s = await A.settings()
       // Kokoro voices run on this PC (no server); the others come from the server; Windows' voice is last.
@@ -132,7 +137,16 @@
     } catch (e) { console.warn('kokoro', e); return false }
   }
   let stopped = false
-  function hush () { stopped = true; setTimeout(() => { stopped = false }, 300); speechSynthesis.cancel(); if (current) { current.pause(); current = null } }
+  let gen = 0 // which reply may speak: "stop" moves it on
+  /** Stops speaking now, including anything queued. A paused clip never "ends", so it is ended here
+   *  by hand, or whatever waits on it would wait forever (and the orb would stay "speaking"). */
+  function hush () {
+    gen++
+    stopped = true; setTimeout(() => { stopped = false }, 300)
+    speechSynthesis.cancel()
+    const a = current; current = null
+    if (a) { try { a.pause() } catch {} if (a.onended) a.onended() }
+  }
 
   window.Voice = { listen, say, hush }
 })()
