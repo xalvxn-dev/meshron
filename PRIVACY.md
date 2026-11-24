@@ -1,54 +1,95 @@
 # Meshron Privacy Policy
 
-_Last updated: 10 November 2026_
+_Last updated: 24 November 2026_
 
-Meshron is a messaging app by xalvxnLab. Messages and calls go directly between phones, end-to-end encrypted. **xalvxnLab collects no data about you and can't read your messages or calls.**
+Meshron is a messaging app by xalvxnLab, for Android and Windows. It is built so we hold as little about you as possible. This page explains what is collected, why, who else is involved, and your choices. The same policy is shown in the app (Me → Settings → Privacy Policy).
 
-## What we collect
+## Chats, calls and moments
 
-Nothing. Meshron has no accounts, no analytics, no ads and no crash reporting. xalvxnLab never receives your messages, contacts, phone number, location or any other data.
+Messages, voice and video calls, photos, files, voice messages and moments are **end-to-end encrypted** between the people in the chat and stored only on their devices, in an encrypted database. Meshron's servers never receive them and we cannot read them. Phones that carry messages for others (the mesh) only ever hold locked copies they cannot read.
 
-## What stays on your phone
+## Your account
 
-- **Your identity key.** It is created on your phone and locked with Android Keystore.
-- **Your messages, files and contacts.** They are stored in encrypted form (SQLCipher database, Keystore-encrypted contact list).
-- **Your recovery key.** It is shown only when you ask for it. Anyone who has it can use your Meshron ID, so keep it private.
+If you create a Meshron account, our server stores:
 
-Uninstalling Meshron deletes all of this from your phone. You can also delete single messages or whole chats at any time. Other people keep their own copies of chats you had with them.
+- your username and public ID,
+- your email address (for sign-in codes and account recovery),
+- a one-way hash of a key made from your password (never the password itself),
+- a locked copy of your identity that only your password can open.
 
-## How connections work, and what others can see
+Anonymous mode never uses the server.
 
-Meshron is peer-to-peer:
+## Your profile, reels and lives
 
-- **Internet:** Meshron uses the Hyperswarm network (a public, distributed hash table) to find your contacts. As with any peer-to-peer system:
-  - Other nodes on that network can see your public Meshron ID and your IP address and port.
-  - Phones you connect to can see your IP address.
-  - If two phones can't connect directly (common on mobile data), the connection goes through a relay: another Meshron phone with an open connection, or a relay run by xalvxnLab. A relay only passes on encrypted data it cannot read. It sees the two IP addresses, and keeps no logs of them.
-  - If you choose an @username, it is announced on this network in hashed form so others can look you up. Anyone who searches that exact @username can find your public ID.
-- **Same Wi-Fi, Bluetooth and Wi-Fi Direct:** nearby phones running Meshron see a random code that changes each time the app starts, never your ID.
-- **Encryption:** every connection is encrypted end to end (Noise protocol). Messages are also encrypted and signed, so nobody can read or alter them on the way.
-- **Passing messages on:** if "Pass messages on" is switched on, your phone may store other people's encrypted messages and hand them over when it meets the recipient. Your phone cannot read them, and they are not linked to anyone it can identify.
+Your name, @username, photo, bio, public videos, lives, likes, comments, follows and reposts are **public**. They are shared with the people who view them. Your saved and liked lists stay on your device.
 
-You can switch the internet, Wi-Fi, Bluetooth and message passing on or off in the **Me** tab.
+## Your birthday
 
-## Permissions
+Asked once, after you create your account. It is kept **only on your device**, is not shown on your profile and is not sent to our servers. It is used to check that you are old enough to use Meshron (13, or older where the law requires) and whether you may create or join 18+ groups.
 
-| Permission | Why |
+## Location
+
+- **Emergency SOS:** only when you trigger it, your message and your **precise location** (a map link with your coordinates) are sent to your Meshron contacts as an urgent, end-to-end encrypted message. You can also choose to send it as a text message (SMS) from your phone. Meshron's servers don't receive or keep it.
+- **Nearby suggestions:** off unless you turn it on. When on, your device shares only a rough area (a square of about 5 km), never your exact location, with Meshron users in the same area.
+
+## AI features
+
+Meshron AI (the AI chat, @meshronai in groups, translation, captions, smart replies and making pictures) works **only when you use it**. The text you send, and the recent messages needed for context when you ask in a group, is sent to our AI providers to produce the answer:
+
+- **Groq** (AI text models),
+- **Google** (Gemini, for text and pictures).
+
+Meshron does not use what you send to build a profile of you. A daily limit is counted per account.
+
+## Automatic safety checks
+
+When you post a comment, a group message, a caption, a description, a name, a username or a bio, its text is checked by Meshron AI against the Community Guidelines (in 18+ groups, the looser 18+ rules). The text is sent to an AI provider **only for this check**. If it breaks a rule you get a warning, kept with your moderation notices.
+
+## Reports and moderation
+
+When you report something, we receive your report, what you were looking at, the content in question and any screenshot you attach. Reports are reviewed by an automated moderator and by Meshron's moderators, and are emailed to the moderation team. We keep moderation records (hidden items, warnings, suspensions and appeals) to enforce the rules.
+
+## Verification
+
+If you ask for verification, we receive the name, category, reasons and links you provide, and keep the decision.
+
+## Who else handles data
+
+We use a small number of service providers, only to run the features above:
+
+| Provider | What for |
 |---|---|
-| Nearby devices, Bluetooth, Wi-Fi, location | To find and connect to Meshron phones nearby without internet. Android requires location permission for Bluetooth scanning. Meshron never reads or stores your location. |
-| Microphone | Voice and video calls, only while a call is running. Nothing is recorded. |
-| Camera | Video calls and scanning QR codes, only while you use them. Nothing is recorded. |
-| Notifications | To tell you about new messages and calls. These are created on your phone, not sent by a server. |
-| Run in background (foreground service) | "Stay connected" and ongoing calls, so messages and calls keep working while the app is closed. |
+| Cloudflare | Hosts Meshron's servers and stores account data |
+| Groq | AI answers and safety checks |
+| Google (Gemini) | AI answers and pictures |
+| Brevo, Resend | Sending sign-in and recovery codes by email |
+
+We don't sell or rent your data to anyone.
+
+## What we don't do
+
+No ads, no selling or renting your data, no tracking across other apps, no analytics on your private messages, and no reading of your private chats or calls.
+
+## How long we keep things
+
+- **Account data:** until you delete your account.
+- **Email codes:** expire after 10 minutes.
+- **Moderation notices:** 90 days.
+- **Reports and decisions:** as long as needed to keep Meshron safe and to meet legal duties.
+- **Messages:** follow your own settings, for example disappearing messages.
+
+## Your rights
+
+You can download your data (Settings → Your data), correct your profile, and delete your account and everything on your device. Depending on where you live you may have more rights, such as access, objection or a complaint to a data-protection authority. Contact us to use them.
 
 ## Children
 
-Meshron is not directed at children under 13.
+Meshron is not for children under 13. If we learn an account belongs to someone under 13, we remove it.
 
-## Changes
+## Security
 
-If this policy changes, the new version will be published at the same address with a new date.
+We use strong encryption and keep server data small, but no system is perfect. Protect your device with a screen lock and keep your recovery key private.
 
-## Contact
+## Changes and contact
 
-Questions: baxxkid@gmail.com
+We'll tell you in the app about important changes to this policy. Privacy questions: **xalvxn@gmail.com**.
