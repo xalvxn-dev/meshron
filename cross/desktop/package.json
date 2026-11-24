@@ -76,6 +76,17 @@
       "icon": "build/icon.png",
       "artifactName": "Meshron-Setup-${version}.${ext}"
     },
+    "appx": {
+      "identityName": "xalvxnLabArkhivestudios.Meshron",
+      "publisher": "CN=9CB58D44-D634-4EDC-A5E1-230E2C6268E9",
+      "publisherDisplayName": "xalvxnLab & Arkhive studios",
+      "applicationId": "Meshron",
+      "displayName": "Meshron",
+      "backgroundColor": "#1a1033",
+      "showNameOnTiles": true,
+      "capabilities": ["runFullTrust", "internetClient", "privateNetworkClientServer", "microphone", "webcam"],
+      "artifactName": "Meshron-${version}.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
